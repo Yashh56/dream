@@ -234,8 +234,13 @@ export const registerProjectGitRoutes = (app) => {
     app,
     "/api/project-files",
     projectFilesRequestSchema,
-    async ({ directory, maxResults, projectPath }) => {
-      const files = await listProjectFiles(projectPath, directory, maxResults);
+    async ({ directory, maxResults, projectPath }, c) => {
+      const files = await listProjectFiles(
+        projectPath,
+        directory,
+        maxResults,
+        c.req.raw.signal,
+      );
       return { count: files.length, files };
     },
     { errorMessage: "Unable to list files." },

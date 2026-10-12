@@ -10,6 +10,16 @@ model selection. `ProjectConfig` in `src/types/ide.ts`. A project is **open**
 (in the tab strip) or **closed** (kept in the closed list so it can be
 reopened with its chats intact).
 
+## Project file traversal
+
+The recursive selection of a Project's regular files for file-name lookup,
+Composer mentions and text search. It skips blocked directories, symlinks and
+paths excluded by any applicable `.gitignore` on the way down. Selecting a
+subdirectory keeps ancestor ignore rules and paths relative to the Project.
+The directory browser has a different purpose: it shows immediate entries,
+including ignored files and symlinks. Text search further filters the selected
+files by content, size and the user's query options.
+
 ## Worktree
 
 A project that is a git worktree of another project's repository.

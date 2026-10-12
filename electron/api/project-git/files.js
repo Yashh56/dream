@@ -106,48 +106,6 @@ export const resolveProjectPath = (projectRoot, filePath) => {
 export const hashContent = (content) =>
   createHash("sha256").update(content, "utf8").digest("hex");
 
-const loadProjectIgnore = async (root) => {
-  const projectIgnore = ignore();
-
-  try {
-    projectIgnore.add(await fs.readFile(path.join(root, ".gitignore"), "utf8"));
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-  }
-
-  return projectIgnore;
-};
-
-const walkFiles = async (root, current, maxResults, output, projectIgnore) => {
-  if (output.length >= maxResults) return;
-  const entries = await fs.readdir(current, { withFileTypes: true });
-  entries.sort((a, b) => a.name.localeCompare(b.name));
-  for (const entry of entries) {
-    if (output.length >= maxResults) return;
-    if (
-      entry.isDirectory() &&
-      BLOCKED_DIRECTORIES.has(entry.name.toLowerCase())
-    ) {
-      continue;
-    }
-    const absolute = path.join(current, entry.name);
-    const relative = normalizePath(path.relative(root, absolute));
-    if (entry.isDirectory()) {
-      if (projectIgnore.ignores(`${relative}/`)) {
-        continue;
-      }
-      await walkFiles(root, absolute, maxResults, output, projectIgnore);
-      continue;
-    }
-    if (projectIgnore.ignores(relative)) {
-      continue;
-    }
-    output.push(relative);
-  }
-};
-
 const readIgnoreFile = async (directory) => {
   try {
     return await fs.readFile(path.join(directory, ".gitignore"), "utf8");
@@ -160,23 +118,39 @@ const readIgnoreFile = async (directory) => {
 };
 
 /**
- * Every file under the project root, as root-relative POSIX paths in name
+ * Every regular file under the selected directory (the project root by
+ * default), as project-relative POSIX paths in depth-first name
  * order. Skips the blocked directories and whatever any `.gitignore` on the
  * way down ignores (each relative to its own directory). Symlinks are not
  * followed, so the walk never leaves the project. `skipDirectory` prunes a
- * directory by its relative path; stops early once `signal` aborts.
+ * directory by its relative path; stops early once `signal` aborts or its
+ * caller stops consuming. Subtree walks inherit the root/ancestor ignore
+ * scopes without entering unrelated sibling directories.
  *
  * @param {string} projectRoot
- * @param {{ signal?: AbortSignal, skipDirectory?: (relative: string) => boolean }} [options]
+ * @param {{ directory?: string, signal?: AbortSignal, skipDirectory?: (relative: string) => boolean }} [options]
  * @returns {AsyncGenerator<string>}
  */
 export async function* walkProjectFiles(projectRoot, options = {}) {
-  const { signal, skipDirectory } = options;
-  const root = path.resolve(projectRoot);
+  const { directory = ".", signal, skipDirectory } = options;
+  if (signal?.aborted) return;
+  const { directory: selectedDirectory, realProjectRoot: root } =
+    await resolveRealProjectDirectory(projectRoot, directory);
+  const subtree = selectedDirectory === "." ? "" : selectedDirectory;
 
   async function* walk(absoluteDirectory, relativeDirectory, matchers) {
     if (signal?.aborted) return;
-    const ignoreText = await readIgnoreFile(absoluteDirectory);
+    let ignoreText;
+    let entries;
+    try {
+      ignoreText = await readIgnoreFile(absoluteDirectory);
+      if (signal?.aborted) return;
+      entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
+    } catch (error) {
+      // A directory removed or unreadable mid-walk is skipped, not fatal.
+      if (error?.code === "ENOENT" || error?.code === "EACCES") return;
+      throw error;
+    }
     const scope = ignoreText
       ? [
           ...matchers,
@@ -189,14 +163,6 @@ export async function* walkProjectFiles(projectRoot, options = {}) {
         return rules.ignores(isDirectory ? `${local}/` : local);
       });
 
-    let entries;
-    try {
-      entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
-    } catch (error) {
-      // A directory removed or unreadable mid-walk is skipped, not fatal.
-      if (error?.code === "ENOENT" || error?.code === "EACCES") return;
-      throw error;
-    }
     entries.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const entry of entries) {
@@ -204,6 +170,16 @@ export async function* walkProjectFiles(projectRoot, options = {}) {
       const relative = relativeDirectory
         ? `${relativeDirectory}/${entry.name}`
         : entry.name;
+      // Visit only the selected subtree and the ancestors whose ignore
+      // scopes it inherits. Ancestor siblings are never traversed.
+      if (
+        subtree &&
+        relative !== subtree &&
+        !relative.startsWith(`${subtree}/`) &&
+        !subtree.startsWith(`${relative}/`)
+      ) {
+        continue;
+      }
       if (entry.isDirectory()) {
         if (
           BLOCKED_DIRECTORIES.has(entry.name.toLowerCase()) ||
@@ -222,22 +198,21 @@ export async function* walkProjectFiles(projectRoot, options = {}) {
   yield* walk(root, "", []);
 }
 
-export const listProjectFiles = async (projectRoot, directory, maxResults) => {
-  const targetDirectory = resolveProjectPath(projectRoot, directory);
-  const stats = await fs.stat(targetDirectory);
-  if (!stats.isDirectory()) {
-    throw new Error(`Not a directory: ${directory}`);
-  }
-
-  const projectIgnore = await loadProjectIgnore(path.resolve(projectRoot));
+export const listProjectFiles = async (
+  projectRoot,
+  directory,
+  maxResults,
+  signal,
+) => {
   const files = [];
-  await walkFiles(
-    path.resolve(projectRoot),
-    targetDirectory,
-    maxResults,
-    files,
-    projectIgnore,
-  );
+  if (maxResults <= 0) return files;
+  for await (const file of walkProjectFiles(projectRoot, {
+    directory,
+    signal,
+  })) {
+    files.push(file);
+    if (files.length >= maxResults) break;
+  }
   return files;
 };
 

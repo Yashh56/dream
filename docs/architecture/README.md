@@ -30,5 +30,7 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   improvements selected after the release retrospective.
 - `tasks/transcript-cache-ownership.md` tracks PDRY-01 from the October 11
   performance and DRY review: one owner for transcript loads and host refreshes.
+- `tasks/project-file-traversal.md` tracks PDRY-02 from the same review:
+  shared recursive traversal for file lists and text search.
 
 Module names and current ownership live in ../../GLOSSARY.md.
