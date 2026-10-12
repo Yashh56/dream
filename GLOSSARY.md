@@ -49,6 +49,14 @@ Older code calls this a _thread_; the chat runtime calls a running one a
 _session_; _remote conversation_ is the provider's id for it (see Provider
 session). All of them mean chat.
 
+## Chat transcript cache
+
+The transcripts this client currently holds for its chats. It owns both the
+first load of a transcript and refreshes when the host catalog says it changed.
+A transcript is **known saved** only when its retained messages match a saved
+snapshot; merging in a local answer can make it unsaved again. Live consumers
+and unsaved messages protect a transcript from eviction.
+
 ## Workspace document
 
 One client's **workspace**: which projects (on which hosts) are open or

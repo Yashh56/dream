@@ -28,5 +28,7 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   performance review and distinguishes shipped behavior from deferred proposals.
 - `tasks/retro-v026-environment.md` tracks implementation of the five environment
   improvements selected after the release retrospective.
+- `tasks/transcript-cache-ownership.md` tracks PDRY-01 from the October 11
+  performance and DRY review: one owner for transcript loads and host refreshes.
 
 Module names and current ownership live in ../../GLOSSARY.md.

@@ -18,7 +18,6 @@ import {
   getCatalogSync,
   getLoadedWorkspace,
   loadCatalog,
-  loadPersistedChatMessages,
   markHostLoaded,
 } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
@@ -40,7 +39,6 @@ export const createCatalogActions = (
   IdeState,
   | "adoptHostProjects"
   | "applyCatalogChanges"
-  | "applyCatalogTranscript"
   | "reloadCatalog"
   | "loadHostCatalog"
   | "setHostTurnRunning"
@@ -295,26 +293,6 @@ export const createCatalogActions = (
       if (running) next[chatId] = true;
       else delete next[chatId];
       set({ hostRunningChatIds: next });
-    },
-
-    applyCatalogTranscript: async (chatId) => {
-      const state = get();
-      // Not loaded here: it loads fresh when a panel opens it.
-      if (!Object.hasOwn(state.messagesByChatId, chatId)) return;
-      // A turn this window is streaming owns its transcript.
-      if (state.streamingChatIds[chatId]) return;
-      try {
-        const messages = await loadPersistedChatMessages(chatId);
-        if (
-          get().streamingChatIds[chatId] ||
-          !get().chats.some((chat) => chat.id === chatId)
-        ) {
-          return;
-        }
-        get().setMessagesForChat(chatId, messages);
-      } catch {
-        // The next change or a reopen loads it again.
-      }
     },
 
     loadHostCatalog: async (hostId) => {

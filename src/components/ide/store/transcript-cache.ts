@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { areMessagesEqual } from "./helpers";
 import {
   loadPersistedChatMessages,
   savePersistedChatMessages,
@@ -16,6 +17,11 @@ interface Entry {
   persisted: boolean;
 }
 
+interface PendingLoad {
+  promise: Promise<UIMessage[]>;
+  refreshRequested: boolean;
+}
+
 export const createTranscriptCache = (
   get: () => IdeState,
   set: (state: Partial<IdeState>) => void,
@@ -23,7 +29,7 @@ export const createTranscriptCache = (
   const entries = new Map<string, Entry>();
   const messageSizes = new WeakMap<UIMessage, number>();
   const mounted = new Map<string, number>();
-  const loads = new Map<string, Promise<UIMessage[]>>();
+  const loads = new Map<string, PendingLoad>();
   const saves = new Map<string, Promise<void>>();
   let clock = 0;
   let pruneScheduled = false;
@@ -46,6 +52,17 @@ export const createTranscriptCache = (
     state.streamingChatIds[id] ||
     state.awaitingAnswerChatIds[id] ||
     state.pendingChatSubmitByChatId[id];
+
+  const canLoad = (id: string, state: IdeState) => {
+    const chat = state.chats.find((chat) => chat.id === id);
+    return (
+      chat !== undefined &&
+      chat.deletedAt === null &&
+      !state.streamingChatIds[id] &&
+      (state.projects.some((project) => project.id === chat.projectId) ||
+        protectedChat(id, state))
+    );
+  };
 
   const prune = () => {
     const state = get();
@@ -102,6 +119,17 @@ export const createTranscriptCache = (
 
   const observe = (state: IdeState, previous: IdeState) => {
     if (
+      state.chats !== previous.chats ||
+      state.projects !== previous.projects ||
+      state.streamingChatIds !== previous.streamingChatIds
+    ) {
+      // Invalidate immediately: a close/reopen or start/stop in the same tick
+      // must not make an abandoned request current again.
+      for (const id of loads.keys()) {
+        if (!canLoad(id, state)) loads.delete(id);
+      }
+    }
+    if (
       state.activeProjectId !== previous.activeProjectId ||
       state.projects !== previous.projects
     ) {
@@ -143,9 +171,75 @@ export const createTranscriptCache = (
       schedulePrune();
   };
 
+  const load = (id: string): Promise<UIMessage[]> => {
+    const pending = loads.get(id);
+    if (pending) return pending.promise;
+
+    let request: PendingLoad;
+    // Install request identity before reading, including synchronous bursts
+    // of catalog notifications. All callers await the latest requested read.
+    const promise = Promise.resolve()
+      .then(async () => {
+        while (loads.get(id) === request && canLoad(id, get())) {
+          request.refreshRequested = false;
+          const previousMessages = get().messagesByChatId[id];
+          let messages: UIMessage[];
+          try {
+            messages = await loadPersistedChatMessages(id);
+          } catch (error) {
+            // A newer notification still deserves its read if this one failed.
+            if (loads.get(id) === request && request.refreshRequested) continue;
+            throw error;
+          }
+          if (loads.get(id) !== request || !canLoad(id, get())) break;
+          // One trailing read covers every notification during this read;
+          // its older snapshot never enters the store.
+          if (request.refreshRequested) continue;
+
+          const state = get();
+          // Local edits made while reading own the transcript now.
+          if (state.messagesByChatId[id] !== previousMessages) break;
+          // A notification triggered while publishing starts a new read;
+          // it must not join this request after its final freshness check.
+          loads.delete(id);
+          if (previousMessages === undefined) {
+            set({
+              chats: state.chats.map((chat) =>
+                chat.id === id
+                  ? { ...chat, messageCount: messages.length }
+                  : chat,
+              ),
+              messagesByChatId: { ...state.messagesByChatId, [id]: messages },
+            });
+          } else {
+            // Preserve the same history/answer merging used by local updates.
+            state.setMessagesForChat(id, messages);
+          }
+          const retained = get().messagesByChatId[id];
+          const entry = entries.get(id);
+          if (entry && entry.messages === retained) {
+            // A merge may retain local answers absent from the host snapshot.
+            entry.persisted = areMessagesEqual(retained, messages);
+          }
+          schedulePrune();
+          return retained ?? messages;
+        }
+        return get().messagesByChatId[id] ?? [];
+      })
+      .finally(() => {
+        if (loads.get(id) === request) loads.delete(id);
+      });
+    request = { promise, refreshRequested: false };
+    loads.set(id, request);
+    return promise;
+  };
+
   const actions: Pick<
     IdeState,
-    "retainChatTranscript" | "loadMessagesForChat" | "persistMessagesForChat"
+    | "retainChatTranscript"
+    | "loadMessagesForChat"
+    | "applyCatalogTranscript"
+    | "persistMessagesForChat"
   > = {
     retainChatTranscript: (id) => {
       mounted.set(id, (mounted.get(id) ?? 0) + 1);
@@ -168,37 +262,20 @@ export const createTranscriptCache = (
         if (entry) entry.used = ++clock;
         return existing;
       }
+      return load(id);
+    },
+    applyCatalogTranscript: async (id) => {
+      const state = get();
+      if (!canLoad(id, state)) return;
       const pending = loads.get(id);
-      if (pending) return pending;
-      const promise = loadPersistedChatMessages(id)
-        .then((messages) => {
-          if (
-            loads.get(id) !== promise ||
-            !get().chats.some((chat) => chat.id === id)
-          ) {
-            return messages;
-          }
-          const state = get();
-          if (!Object.hasOwn(state.messagesByChatId, id)) {
-            set({
-              chats: state.chats.map((chat) =>
-                chat.id === id
-                  ? { ...chat, messageCount: messages.length }
-                  : chat,
-              ),
-              messagesByChatId: { ...state.messagesByChatId, [id]: messages },
-            });
-            const entry = entries.get(id);
-            if (entry?.messages === messages) entry.persisted = true;
-          }
-          schedulePrune();
-          return get().messagesByChatId[id] ?? messages;
-        })
-        .finally(() => {
-          if (loads.get(id) === promise) loads.delete(id);
-        });
-      loads.set(id, promise);
-      return promise;
+      // Stay lazy, but don't lose a notification during the initial load.
+      if (!pending && !Object.hasOwn(state.messagesByChatId, id)) return;
+      if (pending) pending.refreshRequested = true;
+      try {
+        await load(id);
+      } catch {
+        // Keep the current messages. The next notification retries the read.
+      }
     },
     persistMessagesForChat: async (id, messages) => {
       if (messages) get().setMessagesForChat(id, messages);

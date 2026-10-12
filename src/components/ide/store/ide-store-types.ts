@@ -464,7 +464,7 @@ export interface IdeState {
     },
     hostId?: string,
   ) => void;
-  /** A transcript changed on the host; reloads it if this window has it. */
+  /** A host transcript changed; refreshes a cached or currently loading chat. */
   applyCatalogTranscript: (chatId: string) => Promise<void>;
   /** Re-reads a host's whole catalog (after its host socket says to). */
   reloadCatalog: (hostId?: string) => Promise<void>;
