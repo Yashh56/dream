@@ -36,6 +36,7 @@ export const projectSearchRequestSchema = z.object({
   exclude: z.string().max(2000).default(""),
   /** Comma-separated gitignore-style patterns; only matching files are searched. */
   include: z.string().max(2000).default(""),
+  /** Maximum individual matches retained, including within a single line. */
   maxResults: z.number().int().min(1).max(10_000).default(2000),
   projectPath: z.string().min(1),
   query: z.string().min(1).max(1000),

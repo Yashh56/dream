@@ -32,5 +32,7 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   performance and DRY review: one owner for transcript loads and host refreshes.
 - `tasks/project-file-traversal.md` tracks PDRY-02 from the same review:
   shared recursive traversal for file lists and text search.
+- `tasks/project-search-budget.md` tracks PDRY-03: bounded matching and
+  cancellable reads for Project text search.
 
 Module names and current ownership live in ../../GLOSSARY.md.

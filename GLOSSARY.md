@@ -20,6 +20,14 @@ The directory browser has a different purpose: it shows immediate entries,
 including ignored files and symlinks. Text search further filters the selected
 files by content, size and the user's query options.
 
+## Project search work budget
+
+The maximum number of individual matches a Project text search retains across
+all files and lines. A dense line can use the remaining budget without retaining
+every match on that line. Finding one additional match makes the result
+**truncated**; reaching the limit alone does not prove more matches exist.
+Cancelled searches return only the matches collected before stopping.
+
 ## Worktree
 
 A project that is a git worktree of another project's repository.

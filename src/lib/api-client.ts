@@ -287,7 +287,7 @@ export interface ProjectSearchLine {
   /** The first match on the line: its 0-based column and length. */
   column: number;
   length: number;
-  /** How many times the query matches on the line. */
+  /** Retained matches on the line; the result limit can cut this short. */
   matchCount: number;
   /** The line as shown: indentation dropped, long lines cut with "…". */
   preview: string;
@@ -304,7 +304,7 @@ export interface ProjectSearchFile {
 export interface ProjectSearchResponse {
   files: ProjectSearchFile[];
   matchCount: number;
-  /** The search stopped at its result limit; more matches may exist. */
+  /** An additional match was found beyond the retained result limit. */
   truncated: boolean;
 }
 
