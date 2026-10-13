@@ -12,21 +12,17 @@
   animation-fill-mode: backwards;
 }
 
-@keyframes sd-searIn {
+/* Opacity only, so the compositor runs it: a color or text-shadow keyframe
+   would repaint every animating word on the main thread each frame. */
+@keyframes sd-streamFadeIn {
   0% {
-    color: var(--streaming-sear-start-color);
-    opacity: var(--streaming-sear-start-opacity);
-    text-shadow: var(--streaming-sear-start-shadow);
+    opacity: 0;
   }
   45% {
-    color: var(--streaming-sear-peak-color);
-    opacity: var(--streaming-sear-peak-opacity);
-    text-shadow: var(--streaming-sear-peak-shadow);
+    opacity: 0.72;
   }
   100% {
-    color: inherit;
     opacity: 1;
-    text-shadow: none;
   }
 }
 
@@ -178,12 +174,6 @@
   --warning-surface: oklch(0.973 0.071 103.193);
   --warning-foreground: oklch(0.421 0.095 57.708);
   --warning-border: oklch(0.905 0.182 98.111);
-  --streaming-sear-start-color: currentColor;
-  --streaming-sear-start-opacity: 0;
-  --streaming-sear-start-shadow: none;
-  --streaming-sear-peak-color: currentColor;
-  --streaming-sear-peak-opacity: 0.72;
-  --streaming-sear-peak-shadow: none;
   --border: var(--surface-200);
   --input: var(--surface-200);
   --ring: var(--surface-400);
@@ -245,16 +235,6 @@
   --warning-surface: oklch(0.286 0.066 53.813);
   --warning-foreground: oklch(0.973 0.071 103.193);
   --warning-border: oklch(0.476 0.114 61.907);
-  --streaming-sear-start-color: rgb(255 255 255);
-  --streaming-sear-start-opacity: 0;
-  --streaming-sear-start-shadow:
-    0 0 2px rgb(255 255 255 / 0.95), 0 0 10px rgb(255 214 102 / 0.85),
-    0 0 24px rgb(255 122 48 / 0.7);
-  --streaming-sear-peak-color: rgb(255 250 219);
-  --streaming-sear-peak-opacity: 1;
-  --streaming-sear-peak-shadow:
-    0 0 2px rgb(255 255 255 / 0.9), 0 0 8px rgb(255 220 120 / 0.75),
-    0 0 18px rgb(255 138 64 / 0.55);
   --border: var(--surface-800);
   --input: var(--surface-800);
   --ring: var(--surface-500);

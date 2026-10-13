@@ -37,7 +37,7 @@ export const STREAMING_MAX_ANIMATED_TOKENS_PER_TICK = 8;
 export const STREAMING_FINISHED_MAX_ANIMATED_TOKENS_PER_TICK = 10;
 
 export const streamingTextAnimation = {
-  animation: "searIn",
+  animation: "streamFadeIn",
   duration: STREAMING_TEXT_REVEAL_DURATION_MS,
   easing: "cubic-bezier(0.16, 1, 0.3, 1)",
   sep: "word",
@@ -269,9 +269,9 @@ export const getInlineCodeRanges = (
   return ranges;
 };
 
-const getSearAnimationStyle = (delayMs: number) =>
+const getFadeAnimationStyle = (delayMs: number) =>
   [
-    "--sd-animation:sd-searIn",
+    "--sd-animation:sd-streamFadeIn",
     `--sd-duration:${STREAMING_TEXT_REVEAL_DURATION_MS}ms`,
     "--sd-easing:cubic-bezier(0.16, 1, 0.3, 1)",
     `--sd-delay:${delayMs}ms`,
@@ -318,7 +318,7 @@ const markNewListItemForRevealAnimation = (
   appendHastStyle(listItemNode, getListItemRevealAnimationStyle(delayMs));
 };
 
-const splitTextForSearAnimation = (
+const splitTextForFadeAnimation = (
   value: string,
   nodeStartOffset: number,
   animationStartOffset: number,
@@ -346,7 +346,7 @@ const splitTextForSearAnimation = (
       children: [{ type: "text", value: token }],
       properties: {
         "data-sd-animate": true,
-        style: getSearAnimationStyle(
+        style: getFadeAnimationStyle(
           animatedTokenIndex.current * streamingTextAnimation.stagger,
         ),
       },
@@ -423,7 +423,7 @@ export const dreamStreamingRehypePlugin = ({
             );
             child.properties = child.properties ?? {};
             child.properties["data-sd-animate"] = true;
-            appendHastStyle(child, getSearAnimationStyle(delayMs));
+            appendHastStyle(child, getFadeAnimationStyle(delayMs));
             animatedTokenIndex.current++;
           }
           continue;
@@ -440,7 +440,7 @@ export const dreamStreamingRehypePlugin = ({
           }
 
           const firstAnimatedTokenIndex = animatedTokenIndex.current;
-          const replacement = splitTextForSearAnimation(
+          const replacement = splitTextForFadeAnimation(
             child.value,
             offsets.start,
             animationStartOffset,
