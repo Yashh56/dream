@@ -61,6 +61,25 @@ test("auto-id prose shares one part per kind and switches kinds cleanly", () => 
   assert.notEqual(chunks[0].id, chunks[7].id, "a new part after the switch");
 });
 
+test("auto-id parts opened in the same millisecond stay distinct", () => {
+  const now = vi.spyOn(Date, "now").mockReturnValue(1);
+  try {
+    const { chunks, turn } = collect();
+    turn.text("one");
+    turn.reasoning("hmm");
+    turn.text("two");
+    turn.closeText();
+    const deltas = chunks.filter((chunk) => chunk.type === "text-delta");
+    assert.deepEqual(
+      deltas.map((chunk) => chunk.delta),
+      ["one", "two"],
+    );
+    assert.notEqual(deltas[0].id, deltas[1].id);
+  } finally {
+    now.mockRestore();
+  }
+});
+
 test("a streamed turn joins each part's deltas into fewer chunks", async () => {
   const response = streamAgentTurn({
     execute: async (turn) => {

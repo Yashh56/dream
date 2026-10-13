@@ -187,6 +187,8 @@ export const createAgentTurn = ({
   const activeParts = new Map();
   const closedParts = new Set();
   const autoPartIds = { reasoning: null, text: null };
+  // Numbers auto parts so two opened in the same millisecond stay distinct.
+  let autoPartCount = 0;
   const startedTools = new Set();
   const completedTools = new Set();
 
@@ -257,7 +259,8 @@ export const createAgentTurn = ({
       closePart(otherType, autoPartIds[otherType]);
     }
     if (!autoPartIds[type]) {
-      autoPartIds[type] = `${provider}-${type}-${Date.now()}`;
+      autoPartCount += 1;
+      autoPartIds[type] = `${provider}-${type}-${Date.now()}-${autoPartCount}`;
     }
     writeDeltaNow(type, autoPartIds[type], delta);
   };
