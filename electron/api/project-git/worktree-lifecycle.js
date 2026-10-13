@@ -33,7 +33,12 @@ import {
   runGitCommand,
   validateProjectGitBranchName,
 } from "./core.js";
-import { hashContent, normalizePath, resolveProjectPath } from "./files.js";
+import {
+  canonicalProjectRoot,
+  hashContent,
+  normalizePath,
+  toRepoRelativePath,
+} from "./files.js";
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
@@ -708,13 +713,9 @@ export const getProjectGitWorktreeCompareDiff = async (
   }
 
   const normalizedFilePath = normalizePath(filePath);
+  const projectRoot = canonicalProjectRoot(projectPath);
   const toRepoRelative = (value) =>
-    normalizePath(
-      path.relative(
-        context.worktreeRoot,
-        resolveProjectPath(projectPath, normalizePath(value)),
-      ),
-    );
+    toRepoRelativePath(context.worktreeRoot, projectRoot, normalizePath(value));
   const pathspec = [toRepoRelative(normalizedFilePath)];
   if (previousPath) {
     pathspec.push(toRepoRelative(previousPath));

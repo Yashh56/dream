@@ -4,7 +4,13 @@
 // in git processes.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, test, vi } from "vitest";
@@ -206,7 +212,11 @@ test("a project in a subfolder sees only its own changes", async () => {
     status.changes.map((change) => change.path),
     ["inside.txt"],
   );
-  assert.equal(status.repoRoot, path.resolve(repo).replaceAll("\\", "/"));
+  // git names the root as the file system does (symlinks, short names resolved).
+  assert.equal(
+    status.repoRoot,
+    realpathSync.native(repo).replaceAll("\\", "/"),
+  );
 });
 
 test("a folder outside any repository is not one", async () => {

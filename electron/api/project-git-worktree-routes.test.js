@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Hono } from "hono";
-import { afterEach, test } from "vitest";
+import { afterEach, test, vi } from "vitest";
 
 const { registerProjectGitRoutes } = await import("./project-git-routes.js");
 
@@ -16,13 +16,18 @@ const hasGit = await execFileAsync("git", ["--version"]).then(
 );
 const gitTest = hasGit ? test : test.skip;
 
+// Real git in temporary repositories is slow on Windows under a parallel run.
+vi.setConfig({ testTimeout: 30_000 });
+
 const temporaryDirectories = [];
 
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories
       .splice(0)
-      .map((directory) => fs.rm(directory, { force: true, recursive: true })),
+      .map((directory) =>
+        fs.rm(directory, { force: true, maxRetries: 5, recursive: true }),
+      ),
   );
 });
 

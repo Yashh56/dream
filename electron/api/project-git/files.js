@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 import ignore from "ignore";
 
@@ -102,6 +102,29 @@ export const resolveProjectPath = (projectRoot, filePath) => {
   }
   return fullPath;
 };
+
+/**
+ * The project folder as the file system names it, with symlinks and Windows
+ * short (8.3) names resolved: the spelling git uses for a repository root.
+ * Falls back to the resolved path when the folder cannot be read.
+ */
+export const canonicalProjectRoot = (projectRoot) => {
+  const root = path.resolve(projectRoot);
+  try {
+    return realpathSync.native(root);
+  } catch {
+    return root;
+  }
+};
+
+/**
+ * A project file's path relative to the repository root, as git names it.
+ * `projectRoot` is the project's `canonicalProjectRoot`.
+ */
+export const toRepoRelativePath = (repoRoot, projectRoot, filePath) =>
+  normalizePath(
+    path.relative(repoRoot, resolveProjectPath(projectRoot, filePath)),
+  );
 
 export const hashContent = (content) =>
   createHash("sha256").update(content, "utf8").digest("hex");

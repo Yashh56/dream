@@ -13,7 +13,7 @@ import {
   runGhCommand,
   runGitCommand,
 } from "./core.js";
-import { normalizePath } from "./files.js";
+import { canonicalProjectRoot, normalizePath } from "./files.js";
 
 const COMMIT_MESSAGE_DIFF_MAX_CHARS = 20_000;
 const COMMIT_MESSAGE_CACHE_MAX_ENTRIES = 30;
@@ -51,7 +51,7 @@ const ensureProjectGitRepository = async (projectPath) => {
 
 const getProjectGitPathspec = (projectPath, repoRoot) => {
   const relativeProjectPath = normalizePath(
-    path.relative(repoRoot, path.resolve(projectPath)),
+    path.relative(repoRoot, canonicalProjectRoot(projectPath)),
   );
 
   return relativeProjectPath && relativeProjectPath !== "."

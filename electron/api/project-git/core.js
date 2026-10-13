@@ -2,7 +2,13 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parsePatchFiles } from "@pierre/diffs";
 import { execFileAsync } from "../shared/cli.js";
-import { hashContent, normalizePath, resolveProjectPath } from "./files.js";
+import {
+  canonicalProjectRoot,
+  hashContent,
+  normalizePath,
+  resolveProjectPath,
+  toRepoRelativePath,
+} from "./files.js";
 import {
   createGitRepositoryContext,
   getGitCommandErrorMessage,
@@ -284,9 +290,9 @@ const isBinaryBuffer = (buffer) => {
   return false;
 };
 
-const toProjectRelativeGitPath = (projectPath, repoRoot, gitPath) => {
+/** `projectRoot` is the project's `canonicalProjectRoot`. */
+const toProjectRelativeGitPath = (projectRoot, repoRoot, gitPath) => {
   const absolutePath = path.resolve(repoRoot, gitPath);
-  const projectRoot = path.resolve(projectPath);
   const relativePath = path.relative(projectRoot, absolutePath);
 
   if (
@@ -508,13 +514,14 @@ const readProjectGitChanges = async (
     repoRoot,
   };
   const changes = [];
+  const projectRoot = canonicalProjectRoot(projectPath);
 
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
 
     if (entry.startsWith("? ")) {
       const projectRelativePath = toProjectRelativeGitPath(
-        projectPath,
+        projectRoot,
         repoInfo.repoRoot,
         entry.slice(2),
       );
@@ -535,7 +542,7 @@ const readProjectGitChanges = async (
     if (entry.startsWith("1 ")) {
       const fields = entry.split(" ");
       const projectRelativePath = toProjectRelativeGitPath(
-        projectPath,
+        projectRoot,
         repoInfo.repoRoot,
         fields.slice(8).join(" "),
       );
@@ -560,7 +567,7 @@ const readProjectGitChanges = async (
       index += 1;
 
       const projectRelativePath = toProjectRelativeGitPath(
-        projectPath,
+        projectRoot,
         repoInfo.repoRoot,
         currentPath,
       );
@@ -570,7 +577,7 @@ const readProjectGitChanges = async (
       }
 
       const previousProjectRelativePath = toProjectRelativeGitPath(
-        projectPath,
+        projectRoot,
         repoInfo.repoRoot,
         previousPath,
       );
@@ -779,13 +786,10 @@ const getProjectGitChangeStats = async (
   { baseRef: knownBaseRef = null } = {},
 ) => {
   const statsByPath = new Map();
+  const projectRoot = canonicalProjectRoot(projectPath);
   const trackedPaths = changes
     .filter((change) => change.status !== "untracked")
-    .map((change) =>
-      normalizePath(
-        path.relative(repoRoot, resolveProjectPath(projectPath, change.path)),
-      ),
-    );
+    .map((change) => toRepoRelativePath(repoRoot, projectRoot, change.path));
 
   if (trackedPaths.length > 0) {
     const baseRef = knownBaseRef ?? (await getGitDiffBaseRef(repoRoot));
@@ -813,7 +817,7 @@ const getProjectGitChangeStats = async (
       }
 
       const projectRelativePath = toProjectRelativeGitPath(
-        projectPath,
+        projectRoot,
         repoRoot,
         repoRelativePath,
       );
@@ -930,11 +934,10 @@ export const getProjectGitDiff = async (
     };
   }
 
-  const repoRelativePath = normalizePath(
-    path.relative(
-      repoInfo.repoRoot,
-      resolveProjectPath(projectPath, normalizedFilePath),
-    ),
+  const repoRelativePath = toRepoRelativePath(
+    repoInfo.repoRoot,
+    canonicalProjectRoot(projectPath),
+    normalizedFilePath,
   );
   const baseRef = await getGitDiffBaseRef(repoInfo.repoRoot);
   const diffResult = await runGitCommand(repoInfo.repoRoot, [
@@ -964,11 +967,10 @@ export const getProjectGitFileAtHead = async (projectPath, filePath) => {
   }
 
   const normalizedFilePath = normalizePath(filePath);
-  const repoRelativePath = normalizePath(
-    path.relative(
-      repoInfo.repoRoot,
-      resolveProjectPath(projectPath, normalizedFilePath),
-    ),
+  const repoRelativePath = toRepoRelativePath(
+    repoInfo.repoRoot,
+    canonicalProjectRoot(projectPath),
+    normalizedFilePath,
   );
   const baseRef = await getGitDiffBaseRef(repoInfo.repoRoot);
   if (baseRef === EMPTY_GIT_TREE_HASH) {
@@ -1021,16 +1023,10 @@ export const revertProjectGitFile = async (
     return { filePath: normalizedFilePath, reverted: true };
   }
 
+  const projectRoot = canonicalProjectRoot(projectPath);
   const repoRelativePaths = [normalizedFilePath, previousPath]
     .filter((value) => typeof value === "string" && value.trim())
-    .map((value) =>
-      normalizePath(
-        path.relative(
-          repoInfo.repoRoot,
-          resolveProjectPath(projectPath, value),
-        ),
-      ),
-    );
+    .map((value) => toRepoRelativePath(repoInfo.repoRoot, projectRoot, value));
   const uniqueRepoRelativePaths = [...new Set(repoRelativePaths)];
   if (uniqueRepoRelativePaths.length === 0) {
     throw new Error("No file path was provided.");
@@ -1094,11 +1090,10 @@ export const getProjectGitCachedDiff = async (
   }
 
   const normalizedFilePath = normalizePath(filePath);
-  const repoRelativePath = normalizePath(
-    path.relative(
-      repoInfo.repoRoot,
-      resolveProjectPath(projectPath, normalizedFilePath),
-    ),
+  const repoRelativePath = toRepoRelativePath(
+    repoInfo.repoRoot,
+    canonicalProjectRoot(projectPath),
+    normalizedFilePath,
   );
   const diffResult = await runGitCommand(repoInfo.repoRoot, [
     "diff",
@@ -1148,13 +1143,9 @@ export const getProjectGitBulkDiff = async (projectPath, changes) => {
   // Single git diff for all tracked files
   if (trackedChanges.length > 0) {
     const baseRef = await getGitDiffBaseRef(repoInfo.repoRoot);
+    const projectRoot = canonicalProjectRoot(projectPath);
     const repoRelativePaths = trackedChanges.map((c) =>
-      normalizePath(
-        path.relative(
-          repoInfo.repoRoot,
-          resolveProjectPath(projectPath, normalizePath(c.path)),
-        ),
-      ),
+      toRepoRelativePath(repoInfo.repoRoot, projectRoot, normalizePath(c.path)),
     );
 
     const diffResult = await runGitCommand(repoInfo.repoRoot, [
@@ -1211,13 +1202,9 @@ export const getProjectGitBulkCachedDiff = async (projectPath, changes) => {
     throw new Error("Project is not a Git repository.");
   }
 
+  const projectRoot = canonicalProjectRoot(projectPath);
   const repoRelativePaths = changes.map((c) =>
-    normalizePath(
-      path.relative(
-        repoInfo.repoRoot,
-        resolveProjectPath(projectPath, normalizePath(c.path)),
-      ),
-    ),
+    toRepoRelativePath(repoInfo.repoRoot, projectRoot, normalizePath(c.path)),
   );
 
   const diffResult = await runGitCommand(repoInfo.repoRoot, [
