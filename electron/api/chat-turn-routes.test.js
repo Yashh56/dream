@@ -72,13 +72,33 @@ const { configureHostDataDirectory } = await import("../host/host-paths.js");
 const persisted = await import("../persisted-state.js");
 
 let directory = null;
+let turns = null;
+// Writes the host started; a turn's last ones land after it stops running.
+const pendingWrites = new Set();
+const trackWrite = (write) => {
+  const promise = Promise.resolve().then(write);
+  pendingWrites.add(promise);
+  promise.then(
+    () => pendingWrites.delete(promise),
+    () => pendingWrites.delete(promise),
+  );
+  return promise;
+};
+
 afterEach(async () => {
   gate.release?.();
   gate.release = null;
   gate.signal = null;
   gate.steps = null;
+  // A write after the database closes would reopen it and keep it locked.
+  if (turns) await waitFor(() => !turns.isRunning("c1"));
+  await waitFor(() => pendingWrites.size === 0);
+  turns = null;
   persisted.closePersistedStateDatabase();
-  if (directory) await rm(directory, { force: true, recursive: true });
+  // Windows can hold the database file for a moment after it is closed.
+  if (directory) {
+    await rm(directory, { force: true, maxRetries: 5, recursive: true });
+  }
   directory = null;
 });
 
@@ -90,11 +110,11 @@ const setup = async () => {
   const catalog = createHostCatalog({
     events: { publish: (event) => events.push(event) },
     getWriter: () => ({
-      applyCatalogChanges: async (changes) =>
-        persisted.applyPersistedCatalogChanges(changes),
-      saveChatMessages: async (payload) => {
+      applyCatalogChanges: (changes) =>
+        trackWrite(() => persisted.applyPersistedCatalogChanges(changes)),
+      saveChatMessages: (payload) => {
         saves.push(payload);
-        return persisted.savePersistedChatMessages(payload);
+        return trackWrite(() => persisted.savePersistedChatMessages(payload));
       },
     }),
   });
@@ -102,7 +122,7 @@ const setup = async () => {
     chats: [{ id: "c1", projectId: "p1", title: "Chat" }],
     projects: [{ id: "p1", path: directory }],
   });
-  const turns = createTurnRegistry();
+  turns = createTurnRegistry();
   const app = new Hono();
   registerChatRoutes(app, { catalog, turns });
 
