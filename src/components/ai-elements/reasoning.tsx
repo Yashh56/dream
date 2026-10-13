@@ -274,11 +274,17 @@ export const ReasoningContent = memo(
         ).length,
       [rawMarkdownAnimationStartOffset, renderedChildren],
     );
-    const streamingMarkdownBlockContext: StreamingMarkdownBlockContextValue = {
-      animateStreamedText: isTextAnimating,
-      markdownAnimationStartOffset,
-      markdownText,
-    };
+    // Every markdown block consumes this context, so keep it stable while the
+    // rendered text and animation are unchanged.
+    const streamingMarkdownBlockContext =
+      useMemo<StreamingMarkdownBlockContextValue>(
+        () => ({
+          animateStreamedText: isTextAnimating,
+          markdownAnimationStartOffset,
+          markdownText,
+        }),
+        [isTextAnimating, markdownAnimationStartOffset, markdownText],
+      );
 
     useEffect(() => {
       if (revealTimeoutIdRef.current !== null) {

@@ -3,11 +3,9 @@ import {
   createContext,
   lazy,
   Suspense,
-  startTransition,
-  useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import type { BlockProps } from "streamdown";
@@ -913,6 +911,41 @@ export const getNextStreamingFrame = (
   };
 };
 
+type StreamingTail = {
+  animationStartOffset: number;
+  settled: boolean;
+  text: string;
+};
+
+const getSettledStreamingTail = (text: string): StreamingTail => ({
+  animationStartOffset: text.length,
+  settled: true,
+  text,
+});
+
+const getNextStreamingTail = (
+  previousText: string,
+  nextText: string,
+): StreamingTail => {
+  const appendedCharacterCount = nextText.startsWith(previousText)
+    ? nextText.length - previousText.length
+    : Number.POSITIVE_INFINITY;
+
+  if (appendedCharacterCount >= STREAMING_BACKLOG_FULL_SPEED_CHARS) {
+    return getSettledStreamingTail(nextText);
+  }
+
+  return {
+    animationStartOffset: getStreamingTailAnimationStartOffset({
+      currentText: previousText,
+      maxAnimatedTokens: STREAMING_MAX_ANIMATED_TOKENS_PER_TICK,
+      nextText,
+    }),
+    settled: false,
+    text: nextText,
+  };
+};
+
 export const StreamingMessageResponse = ({
   isStreaming,
   projectPath,
@@ -922,90 +955,43 @@ export const StreamingMessageResponse = ({
   projectPath: string;
   text: string;
 }) => {
-  const visibleTextRef = useRef(isStreaming ? "" : text);
-  const animationStartOffsetRef = useRef(0);
-  const animationTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const [visibleText, setVisibleText] = useState(visibleTextRef.current);
-  const [animateStreamedText, setAnimateStreamedText] = useState(false);
+  // The markdown pipeline renders at deferred priority: the chat panel's
+  // update commits without it, and a newer delta can interrupt it.
+  const deferredText = useDeferredValue(text, isStreaming ? "" : text);
+  // A later part (including a grouped tool call) must flush this part in the
+  // same render, so a finished part never waits for the deferred value.
+  const renderedText = isStreaming ? deferredText : text;
+  const [tail, setTail] = useState(() => getSettledStreamingTail(renderedText));
 
-  const keepTextAnimationActive = useCallback(
-    (settleAfterFinalTick: boolean) => {
-      if (animationTimeoutIdRef.current !== null) {
-        clearTimeout(animationTimeoutIdRef.current);
-        animationTimeoutIdRef.current = null;
-      }
-
-      setAnimateStreamedText(true);
-
-      if (settleAfterFinalTick) {
-        animationTimeoutIdRef.current = setTimeout(() => {
-          animationTimeoutIdRef.current = null;
-          setAnimateStreamedText(false);
-        }, STREAMING_TEXT_REVEAL_DURATION_MS + STREAMING_TEXT_REVEAL_SETTLE_MS);
-      }
-    },
-    [],
-  );
+  // Derived during render rather than in an effect, so a new delta costs one
+  // markdown render instead of an extra stale render plus an effect pass.
+  if (tail.text !== renderedText) {
+    setTail(
+      isStreaming
+        ? getNextStreamingTail(tail.text, renderedText)
+        : getSettledStreamingTail(renderedText),
+    );
+  }
 
   useEffect(() => {
-    if (!isStreaming) {
-      if (animationTimeoutIdRef.current !== null) {
-        clearTimeout(animationTimeoutIdRef.current);
-        animationTimeoutIdRef.current = null;
-      }
-      animationStartOffsetRef.current = text.length;
-      visibleTextRef.current = text;
-      setVisibleText(text);
-      setAnimateStreamedText(false);
+    if (!isStreaming || tail.settled) {
       return;
     }
 
-    if (visibleTextRef.current !== text) {
-      const currentText = visibleTextRef.current;
-      const appendedCharacterCount = text.startsWith(currentText)
-        ? text.length - currentText.length
-        : Number.POSITIVE_INFINITY;
-      const shouldAnimateStreamedText =
-        appendedCharacterCount < STREAMING_BACKLOG_FULL_SPEED_CHARS;
-      animationStartOffsetRef.current = shouldAnimateStreamedText
-        ? getStreamingTailAnimationStartOffset({
-            currentText,
-            holdIncompleteInlineCode: isStreaming,
-            maxAnimatedTokens: isStreaming
-              ? STREAMING_MAX_ANIMATED_TOKENS_PER_TICK
-              : STREAMING_FINISHED_MAX_ANIMATED_TOKENS_PER_TICK,
-            nextText: text,
-          })
-        : text.length;
-      visibleTextRef.current = text;
-      if (shouldAnimateStreamedText) {
-        keepTextAnimationActive(true);
-      } else {
-        setAnimateStreamedText(false);
-      }
-      startTransition(() => {
-        setVisibleText(text);
-      });
-    }
-  }, [isStreaming, keepTextAnimationActive, text]);
+    // Keep the reveal spans until the last tick's words finish fading in.
+    // A newer tail replaces this one and re-arms the timer.
+    const timeoutId = setTimeout(() => {
+      setTail((current) =>
+        current === tail ? { ...current, settled: true } : current,
+      );
+    }, STREAMING_TEXT_REVEAL_DURATION_MS + STREAMING_TEXT_REVEAL_SETTLE_MS);
 
-  useEffect(() => {
-    return () => {
-      if (animationTimeoutIdRef.current !== null) {
-        clearTimeout(animationTimeoutIdRef.current);
-        animationTimeoutIdRef.current = null;
-      }
-    };
-  }, []);
+    return () => clearTimeout(timeoutId);
+  }, [isStreaming, tail]);
 
-  // A later part (including a grouped tool call) must flush this part in the
-  // same render. Do not wait for effects or a pending text transition.
-  const renderedText = isStreaming ? visibleText : text;
-  const isTextAnimating = isStreaming && animateStreamedText;
+  const isTextAnimating = isStreaming && !tail.settled;
   const animationStartOffset = isTextAnimating
-    ? animationStartOffsetRef.current
+    ? tail.animationStartOffset
     : renderedText.length;
   const markdownText = useMemo(
     () =>
@@ -1024,11 +1010,17 @@ export const StreamingMessageResponse = ({
           ).length,
     [animationStartOffset, projectPath, renderedText],
   );
-  const streamingMarkdownBlockContext: StreamingMarkdownBlockContextValue = {
-    animateStreamedText: isTextAnimating,
-    markdownAnimationStartOffset,
-    markdownText,
-  };
+  // Every markdown block consumes this context, so a new value re-renders all
+  // of them. Keep it stable while the rendered text and animation are unchanged.
+  const streamingMarkdownBlockContext =
+    useMemo<StreamingMarkdownBlockContextValue>(
+      () => ({
+        animateStreamedText: isTextAnimating,
+        markdownAnimationStartOffset,
+        markdownText,
+      }),
+      [isTextAnimating, markdownAnimationStartOffset, markdownText],
+    );
   const markdownComponents = useMemo<
     NonNullable<MessageResponseProps["components"]>
   >(
