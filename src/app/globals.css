@@ -40,6 +40,16 @@
   animation: none;
 }
 
+/* Sweeps the highlight of <Shimmer> across its text, right to left. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 100% center;
+  }
+  to {
+    background-position: 0% center;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
