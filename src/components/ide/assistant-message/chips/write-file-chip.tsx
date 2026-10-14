@@ -25,7 +25,6 @@ import {
   isToolLikePart,
   type MessagePart,
   type ToolLikePart,
-  type WriteToolCall,
 } from "../../assistant-message-tools";
 import { IdeDiffViewer } from "../../diff-viewer";
 import { normalizeProjectPathKey } from "../../ide-state";
@@ -54,18 +53,42 @@ import {
   type ToolApprovalHandler,
 } from "../shared";
 
-const getEditDiff = (
-  edit: WriteToolCall["edit"],
-  filePath: string | null,
-): string | null =>
-  edit && filePath
-    ? buildWriteDiff({
-        content: edit.next,
-        filePath,
-        mode: null,
-        previousContent: edit.previous,
-      })
-    : null;
+const getWriteDiffCode = ({
+  content,
+  editNext,
+  editPrevious,
+  filePath,
+  mode,
+  previousContent,
+  savedDiff,
+}: {
+  content: string | null;
+  editNext: string | null;
+  editPrevious: string | null;
+  filePath: string | null;
+  mode: string | null;
+  previousContent: string | null;
+  savedDiff: string | null;
+}): string | null => {
+  if (savedDiff) {
+    return savedDiff;
+  }
+  if (!filePath) {
+    return null;
+  }
+  if (previousContent !== null && content !== null) {
+    return buildWriteDiff({ content, filePath, mode, previousContent });
+  }
+  if (editPrevious !== null && editNext !== null) {
+    return buildWriteDiff({
+      content: editNext,
+      filePath,
+      mode: null,
+      previousContent: editPrevious,
+    });
+  }
+  return null;
+};
 
 const normalizePathForCompare = (value: string) =>
   value.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
@@ -334,11 +357,30 @@ export const WriteFileChip = ({
     content !== null ? normalizeEmbeddedLineNumbers(content) : null;
   const previewCode = normalizedContent?.code ?? content ?? "";
   const previewStartLine = normalizedContent?.startingLineNumber ?? 1;
-  const diffCode =
-    savedDiff ??
-    (previousContent !== null && content !== null && filePath
-      ? buildWriteDiff({ content, filePath, mode, previousContent })
-      : getEditDiff(edit, filePath));
+  // describeWrite returns a new `edit` object each render, so key on its text.
+  const editPrevious = edit?.previous ?? null;
+  const editNext = edit?.next ?? null;
+  const diffCode = useMemo(
+    () =>
+      getWriteDiffCode({
+        content,
+        editNext,
+        editPrevious,
+        filePath,
+        mode,
+        previousContent,
+        savedDiff,
+      }),
+    [
+      content,
+      editNext,
+      editPrevious,
+      filePath,
+      mode,
+      previousContent,
+      savedDiff,
+    ],
+  );
   const siblingCommandDiffCode = useMemo(
     () =>
       findSiblingCommandDiff({

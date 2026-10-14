@@ -18,6 +18,31 @@ test("buildLineDiff handles pure additions, deletions, and CRLF input", () => {
   assert.equal(buildLineDiff("a\r\nb", "a\nb"), " a\n b");
 });
 
+test("buildLineDiff keeps unchanged lines around an edit in a large file", () => {
+  const lines = Array.from({ length: 6000 }, (_, index) => `line ${index}`);
+  const edited = [...lines];
+  edited[3000] = "changed";
+
+  const diff = buildLineDiff(lines.join("\n"), edited.join("\n")).split("\n");
+
+  assert.equal(diff.length, 6001);
+  assert.equal(diff[0], " line 0");
+  assert.deepEqual(diff.slice(2999, 3003), [
+    " line 2999",
+    "-line 3000",
+    "+changed",
+    " line 3001",
+  ]);
+  assert.equal(diff[6000], " line 5999");
+});
+
+test("buildLineDiff handles unchanged ends that overlap", () => {
+  assert.equal(buildLineDiff("a\na", "a\na\na"), " a\n a\n+a");
+  assert.equal(buildLineDiff("a\na\na", "a\na"), " a\n a\n-a");
+  assert.equal(buildLineDiff("a\nb", "a\nb"), " a\n b");
+  assert.equal(buildLineDiff("", ""), " ");
+});
+
 test("buildWriteDiff produces a unified diff for an overwrite", () => {
   const diff = buildWriteDiff({
     content: "a\nB\nc",

@@ -141,8 +141,12 @@ export const IdeDiffViewer = ({
     [fileDiff.lang, fileDiff.name, fileDiff.prevName],
   );
   // A content-derived cacheKey lets the pool pre-highlight this diff and
-  // reuse the result when the same diff is opened again.
-  const keyedDiff = useMemo(() => withDiffCacheKey(fileDiff), [fileDiff]);
+  // reuse the result when the same diff is opened again. A guarded diff is
+  // not rendered, so it is not hashed until someone chooses to render it.
+  const keyedDiff = useMemo(
+    () => (guarded ? fileDiff : withDiffCacheKey(fileDiff)),
+    [fileDiff, guarded],
+  );
   const { pool, ready: poolReady } = useDiffWorkerPool(!guarded);
   const poolWorking = poolReady && pool?.isWorkingPool() === true;
   // Without a working pool (no Worker support, or the workers failed), Pierre

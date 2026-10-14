@@ -1,8 +1,36 @@
 import { parsePatchFiles } from "@pierre/diffs";
 
 export const buildLineDiff = (previousContent: string, nextContent: string) => {
-  const previousLines = previousContent.replace(/\r\n/g, "\n").split("\n");
-  const nextLines = nextContent.replace(/\r\n/g, "\n").split("\n");
+  const allPreviousLines = previousContent.replace(/\r\n/g, "\n").split("\n");
+  const allNextLines = nextContent.replace(/\r\n/g, "\n").split("\n");
+
+  // The LCS table below is quadratic, so match the unchanged lines at both
+  // ends first: a small edit to a large file then diffs only the edited span.
+  const shorterLength = Math.min(allPreviousLines.length, allNextLines.length);
+  let prefixLength = 0;
+  while (
+    prefixLength < shorterLength &&
+    allPreviousLines[prefixLength] === allNextLines[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+  let suffixLength = 0;
+  while (
+    suffixLength < shorterLength - prefixLength &&
+    allPreviousLines[allPreviousLines.length - 1 - suffixLength] ===
+      allNextLines[allNextLines.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const previousLines = allPreviousLines.slice(
+    prefixLength,
+    allPreviousLines.length - suffixLength,
+  );
+  const nextLines = allNextLines.slice(
+    prefixLength,
+    allNextLines.length - suffixLength,
+  );
   const lengths = Array.from({ length: previousLines.length + 1 }, () =>
     Array<number>(nextLines.length + 1).fill(0),
   );
@@ -16,7 +44,9 @@ export const buildLineDiff = (previousContent: string, nextContent: string) => {
     }
   }
 
-  const lines: string[] = [];
+  const lines = allPreviousLines
+    .slice(0, prefixLength)
+    .map((line) => ` ${line}`);
   let previousIndex = 0;
   let nextIndex = 0;
 
@@ -45,6 +75,14 @@ export const buildLineDiff = (previousContent: string, nextContent: string) => {
   while (nextIndex < nextLines.length) {
     lines.push(`+${nextLines[nextIndex]}`);
     nextIndex += 1;
+  }
+
+  for (
+    let index = allPreviousLines.length - suffixLength;
+    index < allPreviousLines.length;
+    index += 1
+  ) {
+    lines.push(` ${allPreviousLines[index]}`);
   }
 
   return lines.join("\n");
