@@ -87,6 +87,16 @@ const trackWrite = (write) => {
   return promise;
 };
 
+// Settled: no write pending across a whole turn of the event loop. The host
+// observer's last steps (the final save, then the chat read and the session
+// change) each start when the one before settles, a few microtasks later,
+// so a check made between two of them would see none pending.
+const writesSettled = async () => {
+  if (pendingWrites.size > 0) return false;
+  await new Promise((resolve) => setImmediate(resolve));
+  return pendingWrites.size === 0;
+};
+
 afterEach(async () => {
   gate.release?.();
   gate.release = null;
@@ -94,7 +104,7 @@ afterEach(async () => {
   gate.steps = null;
   // A write after the database closes would reopen it and keep it locked.
   if (turns) await waitFor(() => !turns.isRunning("c1"));
-  await waitFor(() => pendingWrites.size === 0);
+  await waitFor(writesSettled);
   turns = null;
   persisted.closePersistedStateDatabase();
   // Windows can hold the database file for a moment after it is closed.

@@ -104,6 +104,12 @@ Not done, measured as not worth it: grouping writes into shared transactions
 - The bundled host runtime (`scripts/build-host-runtime.mjs`) was built and
   run as a daemon: catalog changes, transcript save, raw transcript read,
   search and list answered through the pool; `stop` shut it down.
+- Windows CI (run 38680071638) timed out in chat-turn-routes cleanup: the
+  turn observer's final save, chat read and session change take more
+  microtask steps now, and the hook saw no write pending between them, closed
+  the database, and the session change reopened it. The hook now waits until
+  no write is pending across a turn of the event loop; a probe counting
+  writes after close found 1 before the fix and 0 after, over three runs.
 - Not run: the Electron app itself (no development server was started).
   Electron main's startup reads, theme caching and install id write are
   covered by inspection only.
