@@ -96,7 +96,7 @@ test("decode keeps every project ui preference", () => {
           changesDiffWordWrap: true,
           chatHistoryPanelOpen: true,
           fileEditorWordWrap: true,
-          panelSizes: { gitLogPanelWidth: 500, terminalHeight: 300 },
+          panelSizes: { chatHistoryPanelWidth: 450, terminalHeight: 300 },
           rightPanelView: "terminal",
         },
       }),
@@ -107,10 +107,18 @@ test("decode keeps every project ui preference", () => {
   assert.equal(ui.changesDiffWordWrap, true);
   assert.equal(ui.chatHistoryPanelOpen, true);
   assert.equal(ui.fileEditorWordWrap, true);
-  assert.equal(ui.panelSizes.gitLogPanelWidth, 500);
+  assert.equal(ui.panelSizes.chatHistoryPanelWidth, 450);
   assert.equal(ui.panelSizes.terminalHeight, 300);
   assert.equal(ui.panelSizes.leftSidebarWidth, 240);
   assert.equal(ui.rightPanelView, "terminal");
+});
+
+test("decode opens the Git view for the retired pull request view", () => {
+  const decoded = decodePersistedState({
+    projects: [createRawProject({ ui: { rightPanelView: "pull-requests" } })],
+  });
+
+  assert.equal(decoded.projects[0].ui.rightPanelView, "git");
 });
 
 test("decode reads the retired panelVisibility and previewUrl fields", () => {

@@ -13,7 +13,6 @@ import {
   File,
   GitBranch,
   GitMerge,
-  GitPullRequest,
   type LucideIcon,
   Pencil,
   RotateCw,
@@ -31,7 +30,6 @@ import {
 } from "react";
 import { Streamdown, type StreamdownProps } from "streamdown";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -60,9 +58,9 @@ import type { ProjectConfig, ProjectGitStatusEntry } from "@/types/ide";
 import type { DiffViewMode } from "../changes";
 import { FileChangeHeader } from "../changes/file-change-header";
 import { IdeDiffViewer } from "../diff-viewer";
+import { GitPanelHeaderActions } from "../git-panel/header-actions";
 import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
-import { RightPanelHeaderIconButton } from "../right-panel-header-icon-button";
 import {
   type Page,
   type PrAction,
@@ -77,29 +75,12 @@ import {
 
 import { PrMarkdownImage } from "./markdown-image";
 import { MergePrDialog } from "./merge-pr-dialog";
+import { PullRequestStatus } from "./status-badge";
 
 const message = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;
 const draftKey = (repository: string, number: number, kind: string) =>
   `dream:code-pr:${repository}:${number}:${kind}`;
-
-function PullRequestStatus({ pr }: { pr: PullRequestSummary }) {
-  const t = useTranslations();
-  const state = pr.state === "open" && pr.draft ? "draft" : pr.state;
-  const styles = {
-    open: "border-success-border bg-success-surface text-success-foreground",
-    merged:
-      "border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-300",
-    closed: "border-destructive-border bg-destructive-surface text-destructive",
-    draft: "border-border bg-muted text-muted-foreground",
-  };
-  return (
-    <Badge variant="outline" className={styles[state]}>
-      <GitPullRequest className="size-3" />
-      {state === "draft" ? t("git.draft") : t(`pullRequests.${state}`)}
-    </Badge>
-  );
-}
 
 function checkSummary(
   checks: PullRequestDetail["checks"],
@@ -1420,14 +1401,13 @@ function Detail({
   );
 }
 
-export function PullRequestsPanel({
+/** The pull request for the project's current branch: the Git panel's tab. */
+export function PullRequestView({
   project,
   active = true,
-  onClosePanel,
 }: {
   project: ProjectConfig;
   active?: boolean;
-  onClosePanel: () => void;
 }) {
   const t = useTranslations();
   const context = usePullRequestContext(project.path, active);
@@ -1445,14 +1425,7 @@ export function PullRequestsPanel({
   const panelsT = useTranslations("panels");
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-[50px] shrink-0 items-center gap-2 border-b border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-3 py-2">
-        <RightPanelHeaderIconButton
-          icon={GitPullRequest}
-          onClose={onClosePanel}
-        />
-        <span className="flex-1 truncate text-sm font-medium">
-          {t("pullRequests.title")}
-        </span>
+      <GitPanelHeaderActions active={active}>
         {current?.state === "open" ? (
           <Button
             size="sm"
@@ -1491,7 +1464,7 @@ export function PullRequestsPanel({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </GitPanelHeaderActions>
       {context.error ? (
         <div role="alert" className="p-4 text-sm space-y-3">
           <p className="text-destructive whitespace-pre-wrap">

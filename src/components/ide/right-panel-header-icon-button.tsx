@@ -1,5 +1,6 @@
-import { ArrowRight, type LucideIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
+import type { ComponentType } from "react";
 import { cn } from "@/lib/utils";
 
 export const RightPanelHeaderIconButton = ({
@@ -8,7 +9,7 @@ export const RightPanelHeaderIconButton = ({
   onClose,
 }: {
   className?: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
   onClose: () => void;
 }) => {
   const commonT = useTranslations("common");

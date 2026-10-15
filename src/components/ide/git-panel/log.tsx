@@ -1,14 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import {
-  memo,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
@@ -18,13 +10,6 @@ import { cn } from "@/lib/utils";
 import type { ProjectGitLogCommit, ProjectGitLogResponse } from "@/types/ide";
 import { formatLastActiveTime } from "../activity-time";
 import { projectResourceKey, useProjectResource } from "../project-resources";
-import {
-  GIT_LOG_PANEL_MAX_WIDTH_PX,
-  GIT_LOG_PANEL_MIN_WIDTH_PX,
-  SLIDING_PANEL_TRANSITION,
-  WORKSPACE_SIDE_NAV_WIDTH_PX,
-} from "./constants";
-import { WorkspaceSlidingPanel } from "./sliding-panel";
 
 const GIT_LOG_PAGE_SIZE = 100;
 const COPIED_FEEDBACK_MS = 1500;
@@ -43,6 +28,29 @@ const fetchGitLog = async (
 // An empty message falls back to the translated generic error when rendered.
 const getErrorMessage = (error: unknown) => getApiErrorMessage(error, "");
 
+/**
+ * The log's first page, a project resource shared by the log and the
+ * overview's recent commits: read while shown, again after commits, pushes
+ * and branch switches (the git refresh key).
+ */
+export const useGitLogFirstPage = (projectPath: string, active: boolean) =>
+  useProjectResource(
+    projectResourceKey("gitLog", projectPath, {
+      params: { limit: GIT_LOG_PAGE_SIZE },
+    }),
+    { active },
+  );
+
+/** Formats a commit's age the way the log rows show it. */
+export const useCommitTimeFormatter = () => {
+  const locale = useLocale();
+  return useMemo(
+    () =>
+      new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "narrow" }),
+    [locale],
+  );
+};
+
 const matchesCommit = (commit: ProjectGitLogCommit, query: string) =>
   commit.subject.toLowerCase().includes(query) ||
   commit.authorName.toLowerCase().includes(query) ||
@@ -50,7 +58,7 @@ const matchesCommit = (commit: ProjectGitLogCommit, query: string) =>
   commit.hash.toLowerCase().startsWith(query) ||
   commit.refs.some((ref) => ref.toLowerCase().includes(query));
 
-const GitLogRow = ({
+export const GitLogRow = ({
   commit,
   relativeTimeFormatter,
 }: {
@@ -143,30 +151,19 @@ const GitLogRow = ({
   );
 };
 
-const GitLogList = ({
-  open,
+/** The commit history of the project's HEAD, searchable, a page at a time. */
+export const GitLog = ({
+  active,
   projectPath,
 }: {
-  open: boolean;
+  active: boolean;
   projectPath: string;
 }) => {
-  const locale = useLocale();
   const gitT = useTranslations("git");
   const panelsT = useTranslations("panels");
   const pullRequestsT = useTranslations("pullRequests");
-  const relativeTimeFormatter = useMemo(
-    () =>
-      new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "narrow" }),
-    [locale],
-  );
-  // The first page is a project resource: read while the panel is open,
-  // again after commits, pushes and branch switches (the git refresh key).
-  const firstPage = useProjectResource(
-    projectResourceKey("gitLog", projectPath, {
-      params: { limit: GIT_LOG_PAGE_SIZE },
-    }),
-    { active: open },
-  );
+  const relativeTimeFormatter = useCommitTimeFormatter();
+  const firstPage = useGitLogFirstPage(projectPath, active);
   const firstPageData =
     firstPage.error === undefined ? firstPage.data : undefined;
   // Later pages, kept only while the first page they continue is current.
@@ -264,11 +261,9 @@ const GitLogList = ({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-surface-300 bg-background shadow-md dark:border-surface-700">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="px-3 py-3">
-        <p className="font-medium text-sm">{gitT("history")}</p>
         <SearchInput
-          className="mt-2"
           clearLabel={panelsT("clearSearch")}
           onValueChange={setSearchQuery}
           placeholder={gitT("searchCommits")}
@@ -322,50 +317,3 @@ const GitLogList = ({
     </div>
   );
 };
-
-export interface WorkspaceGitLogPanelProps {
-  active: boolean;
-  onClose: () => void;
-  onResizeEnd: (width: number) => void;
-  open: boolean;
-  panelRef: RefObject<HTMLDivElement | null>;
-  projectPath: string;
-  width: number;
-}
-
-const WorkspaceGitLogPanelImpl = ({
-  active,
-  onClose,
-  onResizeEnd,
-  open,
-  panelRef,
-  projectPath,
-  width,
-}: WorkspaceGitLogPanelProps) => {
-  const widthRef = useRef(width);
-
-  return (
-    <WorkspaceSlidingPanel
-      className="z-30"
-      contentClassName="py-2"
-      contentMinWidth={GIT_LOG_PANEL_MIN_WIDTH_PX}
-      maxWidth={GIT_LOG_PANEL_MAX_WIDTH_PX}
-      minWidth={GIT_LOG_PANEL_MIN_WIDTH_PX}
-      onHandleDoubleClick={onClose}
-      onResizeEnd={onResizeEnd}
-      open={open}
-      reserveSpace={false}
-      side="right"
-      slotRef={panelRef}
-      style={{ right: WORKSPACE_SIDE_NAV_WIDTH_PX }}
-      transition={SLIDING_PANEL_TRANSITION}
-      width={width}
-      widthRef={widthRef}
-    >
-      {active ? <GitLogList open={open} projectPath={projectPath} /> : null}
-    </WorkspaceSlidingPanel>
-  );
-};
-
-export const WorkspaceGitLogPanel = memo(WorkspaceGitLogPanelImpl);
-WorkspaceGitLogPanel.displayName = "WorkspaceGitLogPanel";

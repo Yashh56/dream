@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} has {count, plural, one {# commit} other {# commits}} not yet in {base}. They stay on the branch."
   },
   "git": {
-    "actions": "Git actions",
     "aheadAndBehind": "ahead, {behind} behind",
     "autoGenerateMessage": "Auto generate message",
     "autoGeneratePrDetails": "Auto generate PR details",
@@ -708,7 +707,6 @@
     "includeUnstaged": "Include unstaged",
     "nextSteps": "Next steps",
     "noSubject": "(no subject)",
-    "openActions": "Open Git actions",
     "openPrPage": "Open PR page",
     "push": "Push",
     "pushAndCreatePr": "Push & create PR",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "Unable to preview commits.",
     "unableToPush": "Unable to push changes.",
     "copyCommitHash": "Copy commit hash",
-    "history": "Git history",
     "noCommits": "No commits yet",
     "noMatchingCommits": "No matching commits",
     "searchCommits": "Search commits",
     "unableToLoadLog": "Unable to load Git history.",
-    "viewLog": "View log"
+    "title": "Git",
+    "views": "Git views",
+    "overview": "Overview",
+    "log": "Log",
+    "pullRequest": "Pull request",
+    "upstream": "Upstream",
+    "notPublished": "Not published",
+    "upToDate": "Up to date",
+    "stagedCount": "{count} staged",
+    "recentCommits": "Recent commits",
+    "viewAll": "View all",
+    "worktree": "Worktree"
   },
   "navigation": {
     "breadcrumb": "Breadcrumb",
@@ -1034,6 +1042,7 @@
       "showFiles": "Show files",
       "showChanges": "Show changes",
       "showBrowser": "Show browser",
+      "showGit": "Show Git",
       "showPullRequests": "Show pull requests",
       "showStash": "Show stash",
       "findInFiles": "Find in files",

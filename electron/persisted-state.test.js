@@ -867,7 +867,6 @@ const FULL_PROJECT_UI = {
   multiChat: true,
   panelSizes: {
     chatHistoryPanelWidth: 450,
-    gitLogPanelWidth: 500,
     leftSidebarWidth: 300,
     rightPanelWidth: 600,
     terminalHeight: 320,

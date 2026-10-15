@@ -6,9 +6,9 @@ import type { ProjectConfig } from "@/types/ide";
 import type { RightPanelView } from "./ide-types";
 import { useHostAway } from "./ssh/host-away-notice";
 
-const PullRequestsPanel = lazy(() =>
-  import("./pull-requests/panel").then((module) => ({
-    default: module.PullRequestsPanel,
+const GitPanel = lazy(() =>
+  import("./git-panel/panel").then((module) => ({
+    default: module.GitPanel,
   })),
 );
 
@@ -119,15 +119,15 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
       >
         <div className="relative min-h-0 flex-1">
           <Suspense fallback={<RightPanelLoadingFallback />}>
-            {visitedPersistentViews.has("pull-requests") ? (
-              <RightPanelViewSlot active={rightPanelView === "pull-requests"}>
-                <PullRequestsPanel
+            {visitedPersistentViews.has("git") ? (
+              <RightPanelViewSlot active={rightPanelView === "git"}>
+                <GitPanel
                   key={props.project.id}
                   project={props.project}
                   active={
-                    props.active &&
+                    Boolean(props.active) &&
                     props.open &&
-                    rightPanelView === "pull-requests"
+                    rightPanelView === "git"
                   }
                   onClosePanel={props.onClosePanel}
                 />

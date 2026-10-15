@@ -14,16 +14,13 @@ import {
   CHAT_HISTORY_PANEL_DEFAULT_WIDTH_PX,
   CHAT_PANEL_MIN_WIDTH_PX,
   clampChatHistoryPanelWidth,
-  clampGitLogPanelWidth,
   EMPTY_TERMINAL_SESSION_IDS,
-  GIT_LOG_PANEL_DEFAULT_WIDTH_PX,
   PANEL_EDGE_PADDING_PX,
   PANEL_RESIZE_HANDLE_SIZE_PX,
   RESERVED_SLIDING_PANEL_TRANSITION,
   WORKSPACE_SIDE_NAV_WIDTH_PX,
 } from "../workspace";
 import { WorkspaceChatStack } from "../workspace/chat-stack";
-import { WorkspaceGitLogPanel } from "../workspace/git-log-panel";
 import { WorkspaceHistoryPanel } from "../workspace/history-panel";
 import { WorkspaceRightPanel } from "../workspace/right-panel";
 import { WorkspaceRightRail } from "../workspace/right-rail";
@@ -64,12 +61,7 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     (s) => s.activeBrowserTabIdByProject[projectId] ?? null,
   );
   const historyOpen = projectUi.chatHistoryPanelOpen;
-  const gitLogOpen = useIdeStore(
-    (s) => s.projectGitLogPanelOpenByProject[projectId] ?? false,
-  );
-  const setProjectGitLogPanelOpen = useIdeStore(
-    (s) => s.setProjectGitLogPanelOpen,
-  );
+  const setProjectGitPanelTab = useIdeStore((s) => s.setProjectGitPanelTab);
   const setProjectPanelSizes = useIdeStore((s) => s.setProjectPanelSizes);
   const setProjectChatHistoryPanelOpen = useIdeStore(
     (s) => s.setProjectChatHistoryPanelOpen,
@@ -103,11 +95,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     clampChatHistoryPanelWidth(
       projectPanelSizes.chatHistoryPanelWidth ??
         CHAT_HISTORY_PANEL_DEFAULT_WIDTH_PX,
-    ),
-  );
-  const [gitLogPanelWidth, setGitLogPanelWidth] = useState(() =>
-    clampGitLogPanelWidth(
-      projectPanelSizes.gitLogPanelWidth ?? GIT_LOG_PANEL_DEFAULT_WIDTH_PX,
     ),
   );
   const [rightPanelView, setRightPanelView] = useState<RightPanelView>(
@@ -173,32 +160,9 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [historyOpen, projectId, setProjectChatHistoryPanelOpen]);
 
-  const savedGitLogPanelWidth = clampGitLogPanelWidth(
-    projectPanelSizes.gitLogPanelWidth ?? GIT_LOG_PANEL_DEFAULT_WIDTH_PX,
-  );
-
   useEffect(() => {
     setHistoryPanelWidth(savedHistoryPanelWidth);
   }, [savedHistoryPanelWidth]);
-
-  useEffect(() => {
-    setGitLogPanelWidth(savedGitLogPanelWidth);
-  }, [savedGitLogPanelWidth]);
-
-  useEffect(() => {
-    if (!gitLogOpen) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setProjectGitLogPanelOpen(projectId, false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gitLogOpen, projectId, setProjectGitLogPanelOpen]);
 
   useEffect(() => {
     if (!active || activeChatId) {
@@ -215,7 +179,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   const rightPanelRef = useRef<HTMLDivElement | null>(null);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const historyPanelRef = useRef<HTMLDivElement | null>(null);
-  const gitLogPanelRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   const rightPanelViewPersistTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -264,41 +227,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       setProjectChatHistoryPanelOpen(projectId, false);
     }
   }, [active, historyOpen, projectId, setProjectChatHistoryPanelOpen]);
-
-  useEffect(() => {
-    if (!active || !gitLogOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (
-        gitLogPanelRef.current?.contains(target) ||
-        (target instanceof Element &&
-          target.closest(
-            '[data-slot="dialog-content"], [data-slot="dropdown-menu-content"]',
-          ))
-      ) {
-        return;
-      }
-
-      setProjectGitLogPanelOpen(projectId, false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    return () =>
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-  }, [active, gitLogOpen, projectId, setProjectGitLogPanelOpen]);
-
-  useEffect(() => {
-    if (!active && gitLogOpen) {
-      setProjectGitLogPanelOpen(projectId, false);
-    }
-  }, [active, gitLogOpen, projectId, setProjectGitLogPanelOpen]);
 
   const getHorizontalChromeWidth = useCallback(() => {
     const rightHandleWidth =
@@ -391,26 +319,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     },
     [active, projectId, setProjectPanelSizes],
   );
-
-  const handleGitLogResizeEnd = useCallback(
-    (width: number) => {
-      setGitLogPanelWidth(width);
-
-      if (!active) {
-        return;
-      }
-
-      setProjectPanelSizes(projectId, (current) => ({
-        ...current,
-        gitLogPanelWidth: width,
-      }));
-    },
-    [active, projectId, setProjectPanelSizes],
-  );
-
-  const closeGitLogPanel = useCallback(() => {
-    setProjectGitLogPanelOpen(projectId, false);
-  }, [projectId, setProjectGitLogPanelOpen]);
 
   const closeHistoryPanel = useCallback(() => {
     setProjectChatHistoryPanelOpen(projectId, false);
@@ -617,12 +525,35 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     ],
   );
 
+  // The pull request is a tab of the Git panel: show it there, or close the
+  // panel when it is what the panel already shows.
+  const handleShowPullRequest = useCallback(() => {
+    const gitPanelTab =
+      useIdeStore.getState().projectGitPanelTabByProject[projectId] ??
+      "overview";
+    const gitPanelVisible = rightVisible && rightPanelView === "git";
+    if (gitPanelVisible && gitPanelTab === "pull-request") {
+      handleSelectRightPanelView("git");
+      return;
+    }
+
+    setProjectGitPanelTab(projectId, "pull-request");
+    if (!gitPanelVisible) {
+      handleSelectRightPanelView("git");
+    }
+  }, [
+    handleSelectRightPanelView,
+    projectId,
+    rightPanelView,
+    rightVisible,
+    setProjectGitPanelTab,
+  ]);
+
   // ── Keyboard shortcuts ───────────────────────────────────────────────
   // Every project's workspace stays mounted; only the visible one answers.
   const focusChatInput = useCallback(() => {
     setRightPanelExpandedRequested(false);
     setProjectChatHistoryPanelOpen(projectId, false);
-    setProjectGitLogPanelOpen(projectId, false);
     // After the panels above have closed, so the composer is on screen.
     requestAnimationFrame(() => {
       const root = horizontalPanelsRef.current;
@@ -639,12 +570,7 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       const end = textarea.value.length;
       textarea.setSelectionRange(end, end);
     });
-  }, [
-    activeChatId,
-    projectId,
-    setProjectChatHistoryPanelOpen,
-    setProjectGitLogPanelOpen,
-  ]);
+  }, [activeChatId, projectId, setProjectChatHistoryPanelOpen]);
 
   useShortcut("newChat", handleAddChat, active);
   useShortcut("focusChatInput", focusChatInput, active);
@@ -667,11 +593,8 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     () => handleSelectRightPanelView("browser"),
     active,
   );
-  useShortcut(
-    "showPullRequests",
-    () => handleSelectRightPanelView("pull-requests"),
-    active,
-  );
+  useShortcut("showGit", () => handleSelectRightPanelView("git"), active);
+  useShortcut("showPullRequests", handleShowPullRequest, active);
   useShortcut("showStash", () => handleSelectRightPanelView("stash"), active);
   useShortcut(
     "findInFiles",
@@ -848,16 +771,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
           panelExpanded ? rightPanelExpandedWidth : desiredRightWidthRef.current
         }
         widthRef={renderedRightWidthRef}
-      />
-
-      <WorkspaceGitLogPanel
-        active={active}
-        onClose={closeGitLogPanel}
-        onResizeEnd={handleGitLogResizeEnd}
-        open={gitLogOpen}
-        panelRef={gitLogPanelRef}
-        projectPath={project.path}
-        width={gitLogPanelWidth}
       />
 
       <WorkspaceRightRail

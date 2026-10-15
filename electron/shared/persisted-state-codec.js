@@ -105,7 +105,6 @@ export const DEFAULT_PANEL_VISIBILITY = {
 /** @type {PanelSizes} */
 export const DEFAULT_PANEL_SIZES = {
   chatHistoryPanelWidth: 400,
-  gitLogPanelWidth: 400,
   leftSidebarWidth: 240,
   rightPanelWidth: 520,
   terminalHeight: 260,
@@ -267,7 +266,21 @@ const isRightPanelView = (value) =>
   value === "changes" ||
   value === "terminal" ||
   value === "stash" ||
-  value === "pull-requests";
+  value === "git";
+
+/**
+ * The saved right-panel view, or the default. The pull request view became
+ * a tab of the Git view, so a saved "pull-requests" opens Git.
+ *
+ * @param {unknown} value
+ * @returns {RightPanelView}
+ */
+const normalizeRightPanelView = (value) => {
+  if (value === "pull-requests") {
+    return "git";
+  }
+  return isRightPanelView(value) ? value : DEFAULT_PROJECT_UI.rightPanelView;
+};
 
 /**
  * @param {unknown} value
@@ -318,6 +331,7 @@ const normalizeStashItem = (value) => {
     id,
     model: asString(value.model),
     modelSpeed: normalizeModelSpeed(value.modelSpeed),
+    ...(typeof value.newChat === "boolean" ? { newChat: value.newChat } : {}),
     permissionMode: normalizeChatPermissionMode(
       value.permissionMode,
       value.agentMode,
@@ -477,14 +491,6 @@ const normalizePanelSizes = (value, fallback = DEFAULT_PANEL_SIZES) => {
         200,
       ),
     ),
-    gitLogPanelWidth: Math.min(
-      600,
-      normalizePanelSize(
-        sizes.gitLogPanelWidth,
-        fallback.gitLogPanelWidth,
-        260,
-      ),
-    ),
     leftSidebarWidth: normalizePanelSize(
       sizes.leftSidebarWidth,
       fallback.leftSidebarWidth,
@@ -600,9 +606,7 @@ const normalizeProjectUi = (value) => {
       ui.rightPanelOpen,
       asBoolean(panelVisibility.right, DEFAULT_PROJECT_UI.rightPanelOpen),
     ),
-    rightPanelView: isRightPanelView(ui.rightPanelView)
-      ? ui.rightPanelView
-      : DEFAULT_PROJECT_UI.rightPanelView,
+    rightPanelView: normalizeRightPanelView(ui.rightPanelView),
     stashItems: normalizeStashItems(ui.stashItems),
   };
 };
@@ -1402,9 +1406,7 @@ const encodeProjectUi = (value) => {
         DEFAULT_PROJECT_UI.rightPanelOpen,
       ),
     ),
-    rightPanelView: isRightPanelView(ui.rightPanelView)
-      ? ui.rightPanelView
-      : DEFAULT_PROJECT_UI.rightPanelView,
+    rightPanelView: normalizeRightPanelView(ui.rightPanelView),
     stashItems: Array.isArray(ui.stashItems) ? ui.stashItems : [],
   };
 };

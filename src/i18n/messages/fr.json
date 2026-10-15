@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} a {count, plural, one {# commit} other {# commits}} qui ne sont pas encore dans {base}. Ils restent sur la branche."
   },
   "git": {
-    "actions": "Actions Git",
     "aheadAndBehind": "devant, {behind} derrière",
     "autoGenerateMessage": "Générer automatiquement un message",
     "autoGeneratePrDetails": "Générer automatiquement les détails du PR",
@@ -708,7 +707,6 @@
     "includeUnstaged": "Inclure les fichiers non préparés",
     "nextSteps": "Étapes suivantes",
     "noSubject": "(sans sujet)",
-    "openActions": "Ouvrir les actions Git",
     "openPrPage": "Ouvrir la page de la PR",
     "push": "Pousser",
     "pushAndCreatePr": "Pousser et créer un PR",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "Impossible de prévisualiser les commits.",
     "unableToPush": "Impossible de transmettre les modifications.",
     "copyCommitHash": "Copier le hash du commit",
-    "history": "Historique Git",
     "noCommits": "Aucun commit pour le moment",
     "noMatchingCommits": "Aucun commit correspondant",
     "searchCommits": "Rechercher des commits",
     "unableToLoadLog": "Impossible de charger l'historique Git.",
-    "viewLog": "Voir le journal"
+    "title": "Git",
+    "views": "Vues Git",
+    "overview": "Vue d'ensemble",
+    "log": "Journal",
+    "pullRequest": "Pull request",
+    "upstream": "Branche distante",
+    "notPublished": "Non publiée",
+    "upToDate": "À jour",
+    "stagedCount": "{count, plural, one {# indexé} other {# indexés}}",
+    "recentCommits": "Validations récentes",
+    "viewAll": "Tout afficher",
+    "worktree": "Arbre de travail"
   },
   "navigation": {
     "breadcrumb": "Fil d'Ariane",
@@ -1034,6 +1042,7 @@
       "showFiles": "Afficher les fichiers",
       "showChanges": "Afficher les modifications",
       "showBrowser": "Afficher le navigateur",
+      "showGit": "Afficher Git",
       "showPullRequests": "Afficher les pull requests",
       "showStash": "Afficher le stash",
       "findInFiles": "Rechercher dans les fichiers",

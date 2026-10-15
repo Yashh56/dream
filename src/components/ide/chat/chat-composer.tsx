@@ -258,6 +258,8 @@ export interface ChatComposerProps {
   modelId: string;
   /** The model, effort and speed the pickers show, and what they offer. */
   modelSelection: ChatModelSelection;
+  /** Extra controls beside the stash delete button. */
+  footerActions?: ReactNode;
   onDelete?: () => void;
   onModelChange: (option: ChatPanelModelOption) => void;
   onModelSpeedChange: (speed: ModelSpeed) => void;
@@ -299,6 +301,7 @@ export const ChatComposer = ({
   isProviderInstalled,
   modelId,
   modelSelection,
+  footerActions,
   onDelete,
   onModelChange,
   onModelSpeedChange,
@@ -808,17 +811,20 @@ export const ChatComposer = ({
                 />
 
                 {hideUsageAndContext ? (
-                  onDelete ? (
-                    <div className="ml-auto flex items-center">
-                      <button
-                        aria-label={chatT("deleteStashItem")}
-                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
-                        onClick={onDelete}
-                        title={chatT("deleteStashItem")}
-                        type="button"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                  onDelete || footerActions ? (
+                    <div className="ml-auto flex items-center gap-2">
+                      {footerActions}
+                      {onDelete ? (
+                        <button
+                          aria-label={chatT("deleteStashItem")}
+                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                          onClick={onDelete}
+                          title={chatT("deleteStashItem")}
+                          type="button"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      ) : null}
                     </div>
                   ) : null
                 ) : (
