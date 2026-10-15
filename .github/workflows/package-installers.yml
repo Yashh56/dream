@@ -461,10 +461,13 @@ jobs:
 
   # The host runtime an SSH host runs (scripts/build-host-runtime.mjs), built
   # on each target platform's own runner: its Node and node-pty are native.
+  # Linux builds use Ubuntu 20.04 so node-pty also runs with glibc 2.31;
+  # building on the runner's Ubuntu 24.04 links it to a newer glibc.
   package-host:
     needs: validate
     name: Package host runtime (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -472,11 +475,21 @@ jobs:
         include:
           - target: linux-x64
             runner: blacksmith-4vcpu-ubuntu-2404
+            container: ubuntu:20.04
           - target: linux-arm64
             runner: blacksmith-4vcpu-ubuntu-2404-arm
+            container: ubuntu:20.04
           - target: darwin-arm64
             runner: blacksmith-6vcpu-macos-15
     steps:
+      - name: Install Linux host build tools
+        if: startsWith(matrix.target, 'linux-')
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates curl git make python3 g++-10
+          echo "CC=gcc-10" >> "$GITHUB_ENV"
+          echo "CXX=g++-10" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v6.0.3
 
@@ -494,6 +507,8 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: pnpm install --frozen-lockfile
 
       - name: Build host runtime
@@ -505,16 +520,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          home="$(mktemp -d)"
+          host_home="$(mktemp -d)"
           release/host/bin/dream-host version
-          release/host/bin/dream-host ensure --home "$home" --idle-timeout 0 > ensure.json
+          release/host/bin/dream-host ensure --home "$host_home" --idle-timeout 0 > ensure.json
           port="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("ensure.json","utf8")).port)')"
           token="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("ensure.json","utf8")).token)')"
           curl -sf -X POST -H "x-dream-api-token: $token" -H "content-type: application/json" \
             -d '{"projects":[{"id":"p","path":"/tmp"}]}' "http://127.0.0.1:$port/api/catalog/changes"
           curl -sf -X POST -H "x-dream-api-token: $token" -H "content-type: application/json" \
             -d '{"sessionId":"__project_terminal__:p:smoke","cwd":"/tmp"}' "http://127.0.0.1:$port/api/terminal-start" | grep -q '"transport":"pty"'
-          release/host/bin/dream-host stop --home "$home"
+          release/host/bin/dream-host stop --home "$host_home"
 
       - name: Upload host runtime
         uses: actions/upload-artifact@v7.0.1
