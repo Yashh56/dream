@@ -120,6 +120,8 @@ export interface StashItem {
   id: string;
   model: string;
   modelSpeed: ModelSpeed;
+  /** Missing on older items, which open a new chat. */
+  newChat?: boolean;
   permissionMode: ChatPermissionMode;
   provider: AiProvider;
   reasoningEffort: ReasoningEffort | null;
@@ -259,19 +261,21 @@ export interface PanelVisibility {
 
 export interface PanelSizes {
   chatHistoryPanelWidth: number;
-  gitLogPanelWidth: number;
   leftSidebarWidth: number;
   rightPanelWidth: number;
   terminalHeight: number;
 }
 
 export type RightPanelView =
-  | "pull-requests"
+  | "git"
   | "browser"
   | "explorer"
   | "changes"
   | "terminal"
   | "stash";
+
+/** A tab of the Git right-panel view. */
+export type GitPanelTab = "overview" | "log" | "pull-request";
 
 /** Top-level surface shown by the shell; not owned by any project. */
 export type AppView = "code";

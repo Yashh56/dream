@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} tem {count, plural, one {# commit} other {# commits}} que ainda não estão em {base}. Eles permanecem no branch."
   },
   "git": {
-    "actions": "Ações do Git",
     "aheadAndBehind": "à frente, {behind} atrás",
     "autoGenerateMessage": "Gerar mensagem automaticamente",
     "autoGeneratePrDetails": "Gerar automaticamente detalhes de PR",
@@ -708,7 +707,6 @@
     "includeUnstaged": "Incluir não preparado",
     "nextSteps": "Próximas etapas",
     "noSubject": "(sem assunto)",
-    "openActions": "Abrir ações do Git",
     "openPrPage": "Abrir página de PR",
     "push": "Enviar",
     "pushAndCreatePr": "Enviar e criar PR",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "Não foi possível visualizar os commits.",
     "unableToPush": "Não é possível enviar alterações.",
     "copyCommitHash": "Copiar hash do commit",
-    "history": "Histórico do Git",
     "noCommits": "Ainda não há commits",
     "noMatchingCommits": "Nenhum commit correspondente",
     "searchCommits": "Pesquisar commits",
     "unableToLoadLog": "Não foi possível carregar o histórico do Git.",
-    "viewLog": "Ver log"
+    "title": "Git",
+    "views": "Visualizações do Git",
+    "overview": "Visão geral",
+    "log": "Log",
+    "pullRequest": "Pull request",
+    "upstream": "Upstream",
+    "notPublished": "Não publicado",
+    "upToDate": "Atualizado",
+    "stagedCount": "{count} preparados",
+    "recentCommits": "Confirmações recentes",
+    "viewAll": "Ver tudo",
+    "worktree": "Árvore de trabalho"
   },
   "navigation": {
     "breadcrumb": "Caminho de navegação",
@@ -1034,6 +1042,7 @@
       "showFiles": "Mostrar arquivos",
       "showChanges": "Mostrar alterações",
       "showBrowser": "Mostrar navegador",
+      "showGit": "Mostrar Git",
       "showPullRequests": "Mostrar pull requests",
       "showStash": "Mostrar stash",
       "findInFiles": "Localizar nos arquivos",

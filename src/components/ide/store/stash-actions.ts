@@ -1,5 +1,6 @@
 import { createStashItem } from "@/lib/ide-defaults";
 import type { StashItem } from "@/types/ide";
+import { getFirstActiveDiffChatId } from "../diff-feedback";
 import { updateProjectUiInList } from "./helpers";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 
@@ -106,7 +107,7 @@ export const createStashActions = (
     const item = getProjectStashItems(project).find(
       (entry) => entry.id === itemId,
     );
-    if (!project || !item) {
+    if (!project || !item || state.activeProjectId !== projectId) {
       return null;
     }
 
@@ -114,35 +115,42 @@ export const createStashActions = (
       return null;
     }
 
-    const chatId = project.ui.multiChat
-      ? get().addChatBeside(projectId)
-      : get().addChat(projectId, undefined, { forceNew: true });
+    const newChat = item.newChat !== false;
+    const chatId = newChat
+      ? project.ui.multiChat
+        ? get().addChatBeside(projectId)
+        : get().addChat(projectId, undefined, { forceNew: true })
+      : getFirstActiveDiffChatId(project, state.chats);
     if (!chatId) {
       return null;
     }
 
-    get().updateChat(chatId, (chat) => ({
-      ...chat,
+    if (newChat)
+      get().updateChat(chatId, (chat) => ({
+        ...chat,
 
-      model: item.model,
-      modelSpeed: item.modelSpeed,
-      permissionMode: item.permissionMode,
-      provider: item.provider,
-      reasoningEffort: item.reasoningEffort,
-      remoteConversationId: null,
-      remoteConversationModel: null,
-      remoteConversationModelSpeed: null,
-      remoteConversationProjectPath: null,
-    }));
+        model: item.model,
+        modelSpeed: item.modelSpeed,
+        permissionMode: item.permissionMode,
+        provider: item.provider,
+        reasoningEffort: item.reasoningEffort,
+        remoteConversationId: null,
+        remoteConversationModel: null,
+        remoteConversationModelSpeed: null,
+        remoteConversationProjectPath: null,
+      }));
+
+    if (
+      !get().queueChatSubmit(chatId, {
+        references: item.references,
+        text: item.text,
+        ...(!newChat ? { preserveDraft: true } : {}),
+      })
+    ) {
+      return null;
+    }
 
     set((current) => ({
-      pendingChatSubmitByChatId: {
-        ...current.pendingChatSubmitByChatId,
-        [chatId]: {
-          references: item.references,
-          text: item.text,
-        },
-      },
       projects: updateProjectUiInList(current.projects, projectId, (entry) => ({
         ...entry.ui,
         stashItems: getProjectStashItems(entry).filter(

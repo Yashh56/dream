@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} có {count} commit chưa có trong {base}. Chúng vẫn được giữ trên nhánh."
   },
   "git": {
-    "actions": "Hành động Git",
     "aheadAndBehind": "phía trước, {behind} phía sau",
     "autoGenerateMessage": "Tự động tạo tin nhắn",
     "autoGeneratePrDetails": "Tự động tạo chi tiết PR",
@@ -708,7 +707,6 @@
     "includeUnstaged": "Bao gồm thay đổi chưa được stage",
     "nextSteps": "Các bước tiếp theo",
     "noSubject": "(không có chủ đề)",
-    "openActions": "Mở hành động Git",
     "openPrPage": "Mở trang PR",
     "push": "Đẩy",
     "pushAndCreatePr": "Đẩy và tạo PR",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "Không thể xem trước các commit.",
     "unableToPush": "Không thể đẩy các thay đổi.",
     "copyCommitHash": "Sao chép mã hash commit",
-    "history": "Lịch sử Git",
     "noCommits": "Chưa có commit nào",
     "noMatchingCommits": "Không có commit phù hợp",
     "searchCommits": "Tìm kiếm commit",
     "unableToLoadLog": "Không thể tải lịch sử Git.",
-    "viewLog": "Xem nhật ký"
+    "title": "Git",
+    "views": "Chế độ xem Git",
+    "overview": "Tổng quan",
+    "log": "Nhật ký",
+    "pullRequest": "Pull request",
+    "upstream": "Upstream",
+    "notPublished": "Chưa xuất bản",
+    "upToDate": "Đã cập nhật",
+    "stagedCount": "Đã stage {count}",
+    "recentCommits": "Commit gần đây",
+    "viewAll": "Xem tất cả",
+    "worktree": "Cây công việc"
   },
   "navigation": {
     "breadcrumb": "Đường dẫn",
@@ -1034,6 +1042,7 @@
       "showFiles": "Hiện tệp",
       "showChanges": "Hiện thay đổi",
       "showBrowser": "Hiện trình duyệt",
+      "showGit": "Hiện Git",
       "showPullRequests": "Hiện pull request",
       "showStash": "Hiện stash",
       "findInFiles": "Tìm trong các tệp",

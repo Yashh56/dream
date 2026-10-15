@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} hat {count, plural, one {# Commit} other {# Commits}}, die noch nicht in {base} sind. Sie bleiben auf dem Branch erhalten."
   },
   "git": {
-    "actions": "Git-Aktionen",
     "aheadAndBehind": "vorne, {behind} hinten",
     "autoGenerateMessage": "Nachricht automatisch generieren",
     "autoGeneratePrDetails": "PR-Details automatisch generieren",
@@ -708,7 +707,6 @@
     "includeUnstaged": "Unstaged einschließen",
     "nextSteps": "Nächste Schritte",
     "noSubject": "(kein Betreff)",
-    "openActions": "Öffnen Sie Git-Aktionen",
     "openPrPage": "PR-Seite öffnen",
     "push": "Pushen",
     "pushAndCreatePr": "PR pushen und erstellen",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "Commits können nicht in der Vorschau angezeigt werden.",
     "unableToPush": "Änderungen können nicht übertragen werden.",
     "copyCommitHash": "Commit-Hash kopieren",
-    "history": "Git-Verlauf",
     "noCommits": "Noch keine Commits",
     "noMatchingCommits": "Keine passenden Commits",
     "searchCommits": "Commits durchsuchen",
     "unableToLoadLog": "Git-Verlauf konnte nicht geladen werden.",
-    "viewLog": "Log anzeigen"
+    "title": "Git",
+    "views": "Git-Ansichten",
+    "overview": "Übersicht",
+    "log": "Log",
+    "pullRequest": "Pull Request",
+    "upstream": "Upstream",
+    "notPublished": "Nicht veröffentlicht",
+    "upToDate": "Aktuell",
+    "stagedCount": "{count} vorgemerkt",
+    "recentCommits": "Letzte Commits",
+    "viewAll": "Alle anzeigen",
+    "worktree": "Arbeitsbaum"
   },
   "navigation": {
     "breadcrumb": "Breadcrumb",
@@ -1034,6 +1042,7 @@
       "showFiles": "Dateien anzeigen",
       "showChanges": "Änderungen anzeigen",
       "showBrowser": "Browser anzeigen",
+      "showGit": "Git anzeigen",
       "showPullRequests": "Pull Requests anzeigen",
       "showStash": "Stash anzeigen",
       "findInFiles": "In Dateien suchen",

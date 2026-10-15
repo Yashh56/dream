@@ -17,7 +17,7 @@ export const PROJECT_KEYED_RUNTIME_STATE = [
   "projectFileOpenRequests",
   "projectFileSearchRequests",
   "projectFilesRefreshKeys",
-  "projectGitLogPanelOpenByProject",
+  "projectGitPanelTabByProject",
   "projectGitRefreshKeys",
   "projectTerminalPanelOpenByProject",
   "projectTerminalSessionIds",

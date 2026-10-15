@@ -683,7 +683,6 @@
     "unmergedCommitsKept": "{branch} 有 {count} 个提交尚未进入 {base}。它们会保留在该分支上。"
   },
   "git": {
-    "actions": "Git 操作",
     "aheadAndBehind": "个提交领先，落后 {behind} 个提交",
     "autoGenerateMessage": "自动生成消息",
     "autoGeneratePrDetails": "自动生成 PR 详细信息",
@@ -708,7 +707,6 @@
     "includeUnstaged": "包括未暂存的",
     "nextSteps": "后续步骤",
     "noSubject": "（无主题）",
-    "openActions": "打开 Git 操作",
     "openPrPage": "打开 PR 页面",
     "push": "推送",
     "pushAndCreatePr": "推送并创建 PR",
@@ -722,12 +720,22 @@
     "unableToPreviewCommits": "无法预览提交。",
     "unableToPush": "无法推送更改。",
     "copyCommitHash": "复制提交哈希",
-    "history": "Git 历史",
     "noCommits": "暂无提交",
     "noMatchingCommits": "没有匹配的提交",
     "searchCommits": "搜索提交",
     "unableToLoadLog": "无法加载 Git 历史。",
-    "viewLog": "查看日志"
+    "title": "Git",
+    "views": "Git 视图",
+    "overview": "概览",
+    "log": "日志",
+    "pullRequest": "拉取请求",
+    "upstream": "上游",
+    "notPublished": "未发布",
+    "upToDate": "已是最新",
+    "stagedCount": "已暂存 {count} 个",
+    "recentCommits": "最近提交",
+    "viewAll": "查看全部",
+    "worktree": "工作树"
   },
   "navigation": {
     "breadcrumb": "面包屑",
@@ -1034,6 +1042,7 @@
       "showFiles": "显示文件",
       "showChanges": "显示更改",
       "showBrowser": "显示浏览器",
+      "showGit": "显示 Git",
       "showPullRequests": "显示拉取请求",
       "showStash": "显示暂存",
       "findInFiles": "在文件中查找",

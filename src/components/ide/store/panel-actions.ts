@@ -10,7 +10,7 @@ export const createPanelActions = (
   | "setPanelSizes"
   | "setProjectPanelSizes"
   | "setProjectChatHistoryPanelOpen"
-  | "setProjectGitLogPanelOpen"
+  | "setProjectGitPanelTab"
   | "setProjectRightPanelOpen"
   | "setProjectRightPanelView"
   | "setAppView"
@@ -106,18 +106,18 @@ export const createPanelActions = (
     }));
   },
 
-  setProjectGitLogPanelOpen: (projectId, open) => {
+  setProjectGitPanelTab: (projectId, tab) => {
     set((state) => {
       if (
-        (state.projectGitLogPanelOpenByProject[projectId] ?? false) === open
+        (state.projectGitPanelTabByProject[projectId] ?? "overview") === tab
       ) {
         return state;
       }
 
       return {
-        projectGitLogPanelOpenByProject: {
-          ...state.projectGitLogPanelOpenByProject,
-          [projectId]: open,
+        projectGitPanelTabByProject: {
+          ...state.projectGitPanelTabByProject,
+          [projectId]: tab,
         },
       };
     });

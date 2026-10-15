@@ -83,6 +83,7 @@ export const SHORTCUT_ACTIONS = [
   { category: "panels", defaults: same("Mod+Shift+E"), id: "showFiles" },
   { category: "panels", defaults: same("Ctrl+Shift+G"), id: "showChanges" },
   { category: "panels", defaults: same(null), id: "showBrowser" },
+  { category: "panels", defaults: same(null), id: "showGit" },
   { category: "panels", defaults: same(null), id: "showPullRequests" },
   { category: "panels", defaults: same(null), id: "showStash" },
   { category: "panels", defaults: same(null), id: "findInFiles" },

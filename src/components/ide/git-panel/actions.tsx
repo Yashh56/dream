@@ -1,22 +1,13 @@
 import {
-  Code,
   FolderX,
   GitCommitHorizontal,
   GitMerge,
   GitPullRequest,
-  SquareText,
   UploadCloud,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { memo, useCallback, useMemo, useState } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useProjectGitStatus } from "@/hooks/use-project-git-status";
+import { useCallback, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type {
   AiProvider,
@@ -26,19 +17,16 @@ import type {
   ProjectWorktreeInfo,
   ReasoningEffort,
 } from "@/types/ide";
-import { getPullRequestBranchError } from "./git-actions/branch-utils";
-import { CommitDialog } from "./git-actions/commit-dialog";
-import { CreatePrDialog } from "./git-actions/create-pr-dialog";
-import { PushDialog } from "./git-actions/push-dialog";
-import { GitMenuDeltaSummary } from "./git-actions/summary";
-import { getStatusFileCount, hasPushableCommits } from "./git-actions/utils";
+import { getPullRequestBranchError } from "../git-actions/branch-utils";
+import { CommitDialog } from "../git-actions/commit-dialog";
+import { CreatePrDialog } from "../git-actions/create-pr-dialog";
+import { PushDialog } from "../git-actions/push-dialog";
+import { getStatusFileCount, hasPushableCommits } from "../git-actions/utils";
 import {
   WorktreeActionDialog,
   type WorktreeDialogAction,
-} from "./git-actions/worktree-action-dialog";
-import { useIdeStore } from "./ide-store";
-import { SourceControlIcon } from "./source-control-icon";
-import { WorkspaceNavButton } from "./workspace/nav-button";
+} from "../git-actions/worktree-action-dialog";
+import { useIdeStore } from "../ide-store";
 
 type GitActionDialog = "commit" | "push" | "pr" | WorktreeDialogAction | null;
 type ActiveGitActionDialog = Exclude<
@@ -50,11 +38,6 @@ type WorktreeProject = ProjectConfig & { worktree: ProjectWorktreeInfo };
 const isWorktreeDialog = (
   dialog: GitActionDialog,
 ): dialog is WorktreeDialogAction => dialog === "merge" || dialog === "remove";
-
-interface GitActionsMenuProps {
-  projectId: string;
-  projectPath: string;
-}
 
 const GitActionDialogHost = ({
   action,
@@ -131,11 +114,23 @@ const GitActionDialogHost = ({
   );
 };
 
-const GitActionsMenuImpl = ({
+/**
+ * The Git actions for the project's current branch: commit, push and
+ * create a pull request, plus merge and remove for a worktree. Each opens
+ * its dialog.
+ */
+export const GitActions = ({
+  branch,
   projectId,
   projectPath,
-}: GitActionsMenuProps) => {
-  const commonT = useTranslations("common");
+  status,
+}: {
+  branch: string | null;
+  projectId: string;
+  projectPath: string;
+  /** A full status read: push and pull requests need the remote details. */
+  status: ProjectGitStatusResponse | null;
+}) => {
   const gitT = useTranslations("git");
   const worktreeT = useTranslations("worktrees");
   const worktreeProject = useIdeStore((s) => {
@@ -148,18 +143,6 @@ const GitActionsMenuImpl = ({
   const bumpProjectGitRefreshKey = useIdeStore(
     (s) => s.bumpProjectGitRefreshKey,
   );
-  const setProjectRightPanelOpen = useIdeStore(
-    (s) => s.setProjectRightPanelOpen,
-  );
-  const setProjectRightPanelView = useIdeStore(
-    (s) => s.setProjectRightPanelView,
-  );
-  const setProjectChatHistoryPanelOpen = useIdeStore(
-    (s) => s.setProjectChatHistoryPanelOpen,
-  );
-  const setProjectGitLogPanelOpen = useIdeStore(
-    (s) => s.setProjectGitLogPanelOpen,
-  );
   const openExternalUrl = useIdeStore((s) => s.openExternalUrl);
   const settings = useIdeStore((s) => s.settings);
   const gitGenerationModelSelection = useMemo(
@@ -170,14 +153,6 @@ const GitActionsMenuImpl = ({
   // Kept after close, so a closing dialog does not switch modes mid-animation.
   const [worktreeAction, setWorktreeAction] =
     useState<WorktreeDialogAction>("merge");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const projectHostId = useIdeStore(
-    (s) => s.projects.find((item) => item.id === projectId)?.hostId,
-  );
-  const { branch, status } = useProjectGitStatus(projectPath, {
-    detail: menuOpen || activeDialog ? "full" : "summary",
-    hostId: projectHostId,
-  });
   const hasGitChanges = getStatusFileCount(status) > 0;
   const canPush = hasPushableCommits(status);
   const isPullRequestHeadBranch =
@@ -187,31 +162,10 @@ const GitActionsMenuImpl = ({
       sameBranch: () => "same",
     });
   const canCreatePr = hasGitChanges || canPush || isPullRequestHeadBranch;
-  const hasGitActivity = hasGitChanges || canPush;
   // Same fallback the merge uses: the base recorded at creation, else the
   // repository's default base branch.
   const worktreeMergeBase =
     worktreeProject?.worktree.baseRef ?? status?.baseBranch ?? null;
-
-  const handleOpenChanges = useCallback(() => {
-    setProjectRightPanelView(projectId, "changes");
-    setProjectRightPanelOpen(projectId, true);
-  }, [projectId, setProjectRightPanelOpen, setProjectRightPanelView]);
-
-  const handleOpenLog = useCallback(() => {
-    setProjectChatHistoryPanelOpen(projectId, false);
-    setProjectGitLogPanelOpen(projectId, true);
-  }, [projectId, setProjectChatHistoryPanelOpen, setProjectGitLogPanelOpen]);
-
-  const handleMenuOpenChange = useCallback(
-    (open: boolean) => {
-      setMenuOpen(open);
-      if (open) {
-        bumpProjectGitRefreshKey(projectId);
-      }
-    },
-    [bumpProjectGitRefreshKey, projectId],
-  );
 
   const handleOpenDialog = useCallback(
     (dialog: GitActionDialog) => {
@@ -261,74 +215,57 @@ const GitActionsMenuImpl = ({
 
   return (
     <>
-      <DropdownMenu onOpenChange={handleMenuOpenChange} open={menuOpen}>
-        <DropdownMenuTrigger
-          render={
-            <WorkspaceNavButton
-              aria-label={gitT("openActions")}
-              accent={hasGitActivity}
-              title={gitT("actions")}
-            />
-          }
+      <div className="flex flex-wrap gap-2">
+        <Button
+          disabled={!hasGitChanges}
+          onClick={() => handleOpenDialog("commit")}
+          size="sm"
+          variant="outline"
         >
-          <SourceControlIcon className="size-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          side="left"
-          className="w-52 [-webkit-app-region:no-drag]"
+          <GitCommitHorizontal className="size-4" />
+          {gitT("commit")}
+        </Button>
+        <Button
+          disabled={!canPush}
+          onClick={() => handleOpenDialog("push")}
+          size="sm"
+          variant="outline"
         >
-          <DropdownMenuItem onClick={handleOpenLog}>
-            <SquareText className="size-4" />
-            {gitT("viewLog")}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleOpenChanges}>
-            <Code className="size-4" />
-            {commonT("changes")}
-            <GitMenuDeltaSummary status={status} />
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!hasGitChanges}
-            onClick={() => handleOpenDialog("commit")}
-          >
-            <GitCommitHorizontal className="size-4" />
-            {gitT("commit")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!canPush}
-            onClick={() => handleOpenDialog("push")}
-          >
-            <UploadCloud className="size-4" />
-            {gitT("push")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!canCreatePr}
-            onClick={() => handleOpenDialog("pr")}
-          >
-            <GitPullRequest className="size-4" />
-            {gitT("createPullRequest")}
-          </DropdownMenuItem>
-          {worktreeProject ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleOpenDialog("merge")}>
-                <GitMerge className="size-4" />
-                {worktreeMergeBase
-                  ? worktreeT("mergeInto", { base: worktreeMergeBase })
-                  : worktreeT("merge")}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleOpenDialog("remove")}
-                variant="destructive"
-              >
-                <FolderX className="size-4" />
-                {worktreeT("removeWorktree")}
-              </DropdownMenuItem>
-            </>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+          <UploadCloud className="size-4" />
+          {gitT("push")}
+        </Button>
+        <Button
+          disabled={!canCreatePr}
+          onClick={() => handleOpenDialog("pr")}
+          size="sm"
+          variant="outline"
+        >
+          <GitPullRequest className="size-4" />
+          {gitT("createPullRequest")}
+        </Button>
+        {worktreeProject ? (
+          <>
+            <Button
+              onClick={() => handleOpenDialog("merge")}
+              size="sm"
+              variant="outline"
+            >
+              <GitMerge className="size-4" />
+              {worktreeMergeBase
+                ? worktreeT("mergeInto", { base: worktreeMergeBase })
+                : worktreeT("merge")}
+            </Button>
+            <Button
+              onClick={() => handleOpenDialog("remove")}
+              size="sm"
+              variant="destructive"
+            >
+              <FolderX className="size-4" />
+              {worktreeT("removeWorktree")}
+            </Button>
+          </>
+        ) : null}
+      </div>
 
       {activeDialog && !isWorktreeDialog(activeDialog) ? (
         <GitActionDialogHost
@@ -357,6 +294,3 @@ const GitActionsMenuImpl = ({
     </>
   );
 };
-
-export const GitActionsMenu = memo(GitActionsMenuImpl);
-GitActionsMenu.displayName = "GitActionsMenu";

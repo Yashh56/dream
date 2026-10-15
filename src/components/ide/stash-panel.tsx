@@ -1,8 +1,10 @@
 import type { ChatStatus } from "ai";
 import { Inbox } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useId, useMemo, useState } from "react";
+import { toast } from "sonner";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { Switch } from "@/components/ui/switch";
 import { getDefaultModelSelection } from "@/lib/ide-defaults";
 import { DEFAULT_SPARKLES_PALETTE } from "@/lib/sparkles-palettes";
 import type {
@@ -19,6 +21,7 @@ import {
   resolveChatModelSelection,
 } from "./chat/chat-model-selection";
 import type { ChatTodoSummary } from "./chat/todo-list";
+import { getFirstActiveDiffChatId } from "./diff-feedback";
 import { AppShellPlaceholder } from "./ide-helpers";
 import { useIdeStore } from "./ide-store";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
@@ -56,6 +59,7 @@ const StashItemComposer = ({
   onDelete,
   onSubmit,
   onUpdate,
+  projectId,
   projectPath,
 }: {
   allModelOptions: ChatPanelModelOption[];
@@ -63,10 +67,25 @@ const StashItemComposer = ({
   isProviderInstalled: boolean;
   item: StashItem;
   onDelete: () => void;
-  onSubmit: () => void;
+  onSubmit: () => string | null;
   onUpdate: (updater: (current: StashItem) => StashItem) => void;
+  projectId: string;
   projectPath: string;
 }) => {
+  const browserT = useTranslations("browser");
+  const toggleId = useId();
+  const newChat = item.newChat !== false;
+  const canSubmit = useIdeStore((state) => {
+    if (state.activeProjectId !== projectId) return false;
+    if (newChat) return true;
+    const project = state.projects.find((entry) => entry.id === projectId);
+    const chatId = getFirstActiveDiffChatId(project, state.chats);
+    return (
+      !!chatId &&
+      !state.streamingChatIds[chatId] &&
+      !state.pendingChatSubmitByChatId[chatId]
+    );
+  });
   const selection = resolveChatModelSelection(item, allModelOptions);
 
   const handleSubmit = useCallback(
@@ -76,7 +95,12 @@ const StashItemComposer = ({
         references: prompt.references ?? [],
         text: prompt.text,
       }));
-      onSubmit();
+      if (!onSubmit()) {
+        const message =
+          "Unable to send. Open an available chat or enable New chat.";
+        toast.error(message);
+        throw new Error(message);
+      }
     },
     [onSubmit, onUpdate],
   );
@@ -88,7 +112,23 @@ const StashItemComposer = ({
       contextWindow={0}
       contextUsedTokens={0}
       hideUsageAndContext
-      isActive={isActive}
+      footerActions={
+        <label
+          htmlFor={toggleId}
+          className="flex h-7 cursor-pointer items-center gap-2 whitespace-nowrap text-xs font-medium text-muted-foreground"
+        >
+          <Switch
+            id={toggleId}
+            size="sm"
+            checked={newChat}
+            onCheckedChange={(checked) =>
+              onUpdate((current) => ({ ...current, newChat: checked }))
+            }
+          />
+          {browserT("feedbackNewChat")}
+        </label>
+      }
+      isActive={isActive && canSubmit}
       isProcessing={false}
       isProviderInstalled={isProviderInstalled}
       modelId=""
@@ -293,6 +333,7 @@ const StashPanelImpl = ({
                 onUpdate={(updater) =>
                   updateStashItem(project.id, item.id, updater)
                 }
+                projectId={project.id}
                 projectPath={project.path}
               />
             ))}

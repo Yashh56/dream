@@ -2,8 +2,7 @@ import { Code, Files, Globe, Inbox, TerminalSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo } from "react";
 import type { RightPanelView } from "@/types/ide";
-import { GitActionsMenu } from "../git-actions-menu";
-import { PullRequestNavButton } from "../pull-requests/nav-button";
+import { GitNavButton } from "../git-panel/nav-button";
 import { useShortcutTitle } from "../shortcuts/shortcut-keys";
 import { WorkspaceNavButton } from "./nav-button";
 
@@ -43,7 +42,6 @@ const WorkspaceRightRailImpl = ({
 
   return (
     <aside className="relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 py-2">
-      <GitActionsMenu projectId={projectId} projectPath={projectPath} />
       <WorkspaceNavButton
         active={rightVisible && rightPanelView === "changes"}
         accent={changesAvailable}
@@ -76,11 +74,12 @@ const WorkspaceRightRailImpl = ({
       >
         <TerminalSquare className="size-4" />
       </WorkspaceNavButton>
-      <PullRequestNavButton
-        visible={active}
+      <GitNavButton
+        active={rightVisible && rightPanelView === "git"}
+        onClick={() => onSelectRightPanelView("git")}
+        projectId={projectId}
         projectPath={projectPath}
-        active={rightVisible && rightPanelView === "pull-requests"}
-        onClick={() => onSelectRightPanelView("pull-requests")}
+        visible={active}
       />
       <WorkspaceNavButton
         active={rightVisible && rightPanelView === "stash"}

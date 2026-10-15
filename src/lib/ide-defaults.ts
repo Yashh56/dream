@@ -95,6 +95,7 @@ export const createStashItem = (
       StashItem,
       | "model"
       | "modelSpeed"
+      | "newChat"
       | "permissionMode"
       | "provider"
       | "reasoningEffort"
@@ -110,6 +111,7 @@ export const createStashItem = (
     id: crypto.randomUUID(),
     model: overrides?.model ?? project.model,
     modelSpeed: overrides?.modelSpeed ?? project.modelSpeed,
+    newChat: overrides?.newChat ?? true,
     permissionMode: overrides?.permissionMode ?? "full-access",
     provider: overrides?.provider ?? project.provider,
     reasoningEffort:

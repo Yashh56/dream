@@ -264,7 +264,7 @@ test("purging a worktree leaves no state keyed by it, its sessions, tabs or chat
       [worktree.id]: { filePath: "a.ts", requestId: 1 },
     },
     projectFilesRefreshKeys: { [worktree.id]: 1 },
-    projectGitLogPanelOpenByProject: { [worktree.id]: true },
+    projectGitPanelTabByProject: { [worktree.id]: "log" },
     projectGitRefreshKeys: { [worktree.id]: 1 },
     projectTerminalPanelOpenByProject: { [worktree.id]: true },
     projectTerminalSessionIds: { [worktree.id]: [sessionId] },

@@ -8,6 +8,7 @@ import type {
   BrowserTabState,
   ChatConfig,
   ChatSortOrder,
+  GitPanelTab,
   HostConnectionState,
   HostStatusEvent,
   PanelSizes,
@@ -132,7 +133,8 @@ export interface IdeState {
   projectTerminalSessionIds: Record<string, string[]>;
   activeTerminalSessionIdByProject: Record<string, string | null>;
   projectTerminalPanelOpenByProject: Record<string, boolean>;
-  projectGitLogPanelOpenByProject: Record<string, boolean>;
+  /** The Git panel tab each project last showed (absent: overview). */
+  projectGitPanelTabByProject: Record<string, GitPanelTab>;
   outputPanelOpen: boolean;
   browserError: string | null;
   browserLoading: Record<string, boolean>;
@@ -348,7 +350,7 @@ export interface IdeState {
     updater: PanelSizes | ((prev: PanelSizes) => PanelSizes),
   ) => void;
   setProjectChatHistoryPanelOpen: (projectId: string, open: boolean) => void;
-  setProjectGitLogPanelOpen: (projectId: string, open: boolean) => void;
+  setProjectGitPanelTab: (projectId: string, tab: GitPanelTab) => void;
   setProjectRightPanelOpen: (projectId: string, open: boolean) => void;
   setProjectRightPanelView: (projectId: string, view: RightPanelView) => void;
   setAppView: (view: AppView) => void;
