@@ -450,6 +450,9 @@ export const ChatPanel = ({
   );
 
   const showChatHeader = messages.length > 0 || canCloseChat;
+  // The reusable draft ID tracks only one chat; any empty chat is a draft.
+  // Keep saved chats' actions available while their transcript is loading.
+  const canShowChatMenu = messages.length > 0 || chat.messageCount > 0;
 
   return (
     <>
@@ -463,6 +466,7 @@ export const ChatPanel = ({
         {showChatHeader ? (
           <ChatPanelHeader
             canCloseChat={canCloseChat}
+            canShowChatMenu={canShowChatMenu}
             chatMenuOpen={chatMenuOpen}
             continueInTerminalDisabled={isProcessing}
             isTitleGenerating={isTitleGenerating}

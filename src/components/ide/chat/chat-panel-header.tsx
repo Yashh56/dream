@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export interface ChatPanelHeaderProps {
+  canShowChatMenu: boolean;
   canCloseChat?: boolean;
   chatMenuOpen: boolean;
   continueInTerminalDisabled?: boolean;
@@ -36,6 +37,7 @@ export interface ChatPanelHeaderProps {
 }
 
 export const ChatPanelHeader = ({
+  canShowChatMenu,
   canCloseChat = false,
   chatMenuOpen,
   continueInTerminalDisabled = false,
@@ -92,69 +94,76 @@ export const ChatPanelHeader = ({
           </div>
         </div>
 
-        <div
-          className="flex shrink-0 cursor-default items-center gap-1"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <DropdownMenu onOpenChange={onChatMenuOpenChange} open={chatMenuOpen}>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  aria-label={chatT("chatActions", { title })}
-                  className="h-8 w-8 p-0"
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                />
-              }
-            >
-              <Ellipsis className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {onContinueInTerminal ? (
-                <DropdownMenuItem
-                  disabled={continueInTerminalDisabled}
-                  onClick={onContinueInTerminal}
+        {canShowChatMenu || canCloseChat ? (
+          <div
+            className="flex shrink-0 cursor-default items-center gap-1"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {canShowChatMenu ? (
+              <DropdownMenu
+                onOpenChange={onChatMenuOpenChange}
+                open={chatMenuOpen}
+              >
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      aria-label={chatT("chatActions", { title })}
+                      className="h-8 w-8 p-0"
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                    />
+                  }
                 >
-                  <SquareTerminal className="size-4" />
-                  {chatT("continueInTerminal")}
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={onEditChat}>
-                <FilePenLine className="size-4" />
-                {commonT("edit")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onTogglePinned}>
-                {isPinned ? (
-                  <PinOff className="size-4" />
-                ) : (
-                  <Pin className="size-4" />
-                )}
-                {projectsT(isPinned ? "unpinChat" : "pinChat")}
-              </DropdownMenuItem>
-              {onDeleteChat ? (
-                <DropdownMenuItem onClick={onDeleteChat}>
-                  <Archive className="size-4" />
-                  {commonT("archive")}
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <Ellipsis className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {onContinueInTerminal ? (
+                    <DropdownMenuItem
+                      disabled={continueInTerminalDisabled}
+                      onClick={onContinueInTerminal}
+                    >
+                      <SquareTerminal className="size-4" />
+                      {chatT("continueInTerminal")}
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onClick={onEditChat}>
+                    <FilePenLine className="size-4" />
+                    {commonT("edit")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onTogglePinned}>
+                    {isPinned ? (
+                      <PinOff className="size-4" />
+                    ) : (
+                      <Pin className="size-4" />
+                    )}
+                    {projectsT(isPinned ? "unpinChat" : "pinChat")}
+                  </DropdownMenuItem>
+                  {onDeleteChat ? (
+                    <DropdownMenuItem onClick={onDeleteChat}>
+                      <Archive className="size-4" />
+                      {commonT("archive")}
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
 
-          {canCloseChat ? (
-            <Button
-              aria-label={chatT("closeNamedChat", { title })}
-              className="h-8 w-8 p-0"
-              onClick={onCloseChat}
-              size="icon-sm"
-              title={chatT("closeChat")}
-              type="button"
-              variant="ghost"
-            >
-              <X className="size-4" />
-            </Button>
-          ) : null}
-        </div>
+            {canCloseChat ? (
+              <Button
+                aria-label={chatT("closeNamedChat", { title })}
+                className="h-8 w-8 p-0"
+                onClick={onCloseChat}
+                size="icon-sm"
+                title={chatT("closeChat")}
+                type="button"
+                variant="ghost"
+              >
+                <X className="size-4" />
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
