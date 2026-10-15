@@ -160,9 +160,6 @@ export const ChatPanel = ({
     Object.hasOwn(s.messagesByChatId, chat.id),
   );
   const loadMessagesForChat = useIdeStore((s) => s.loadMessagesForChat);
-  const isDraftChat = useIdeStore(
-    (s) => s.draftChatIdByProject[project.id] === chat.id,
-  );
   const isTitleGenerating = useIdeStore(
     (s) => !!s.titleGeneratingChatIds[chat.id],
   );
@@ -453,7 +450,6 @@ export const ChatPanel = ({
   );
 
   const showChatHeader = messages.length > 0 || canCloseChat;
-  const canShowChatMenu = !isDraftChat || messages.length > 0;
 
   return (
     <>
@@ -467,7 +463,6 @@ export const ChatPanel = ({
         {showChatHeader ? (
           <ChatPanelHeader
             canCloseChat={canCloseChat}
-            canShowChatMenu={canShowChatMenu}
             chatMenuOpen={chatMenuOpen}
             continueInTerminalDisabled={isProcessing}
             isTitleGenerating={isTitleGenerating}
