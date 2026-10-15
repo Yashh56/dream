@@ -7,8 +7,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { GitPanelTab, ProjectConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
+import { DEFAULT_GIT_PANEL_TAB } from "../ide-types";
+import { RightPanelExpandButton } from "../right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "../right-panel-header-icon-button";
 import { SourceControlIcon } from "../source-control-icon";
+import { GitChanges } from "./changes";
 import { GitPanelHeaderSlotContext } from "./header-actions";
 import { GitLog } from "./log";
 import { GitOverview } from "./overview";
@@ -22,6 +25,7 @@ const PullRequestView = lazy(() =>
 );
 
 const GIT_PANEL_TABS: readonly GitPanelTab[] = [
+  "changes",
   "overview",
   "log",
   "pull-request",
@@ -37,34 +41,33 @@ const TabLoadingFallback = () => (
 );
 
 /**
- * The Git right-panel view: the current branch's overview, its log and its
- * pull request, as tabs under one header. A tab mounts the first time it is
- * shown and stays mounted, so the log keeps its loaded pages and search.
+ * The Git right-panel view: the working tree's changes, the current branch's
+ * overview, its log and its pull request, as tabs under one header. A tab
+ * mounts the first time it is shown and stays mounted, so the log keeps its
+ * loaded pages and search.
  */
 export const GitPanel = ({
   active,
+  expanded = false,
   onClosePanel,
+  onToggleExpanded,
   project,
 }: {
   active: boolean;
+  expanded?: boolean;
   onClosePanel: () => void;
+  onToggleExpanded?: () => void;
   project: ProjectConfig;
 }) => {
   const commonT = useTranslations("common");
   const gitT = useTranslations("git");
   const projectId = project.id;
   const tab = useIdeStore(
-    (s) => s.projectGitPanelTabByProject[projectId] ?? "overview",
+    (s) => s.projectGitPanelTabByProject[projectId] ?? DEFAULT_GIT_PANEL_TAB,
   );
   const setProjectGitPanelTab = useIdeStore((s) => s.setProjectGitPanelTab);
   const bumpProjectGitRefreshKey = useIdeStore(
     (s) => s.bumpProjectGitRefreshKey,
-  );
-  const setProjectRightPanelOpen = useIdeStore(
-    (s) => s.setProjectRightPanelOpen,
-  );
-  const setProjectRightPanelView = useIdeStore(
-    (s) => s.setProjectRightPanelView,
   );
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [visitedTabs, setVisitedTabs] = useState(
@@ -99,22 +102,19 @@ export const GitPanel = ({
     [projectId, setProjectGitPanelTab],
   );
 
-  const handleOpenChanges = useCallback(() => {
-    setProjectRightPanelView(projectId, "changes");
-    setProjectRightPanelOpen(projectId, true);
-  }, [projectId, setProjectRightPanelOpen, setProjectRightPanelView]);
-
   const handleRefresh = useCallback(() => {
     bumpProjectGitRefreshKey(projectId);
   }, [bumpProjectGitRefreshKey, projectId]);
 
   const renderTab = (value: GitPanelTab) => {
     const tabActive = active && tab === value;
+    if (value === "changes") {
+      return <GitChanges active={tabActive} projectId={projectId} />;
+    }
     if (value === "overview") {
       return (
         <GitOverview
           active={tabActive}
-          onOpenChanges={handleOpenChanges}
           onShowTab={handleShowTab}
           project={project}
         />
@@ -143,6 +143,7 @@ export const GitPanel = ({
             onClose={onClosePanel}
           />
           <TabsList aria-label={gitT("views")} className="min-w-0">
+            <TabsTrigger value="changes">{commonT("changes")}</TabsTrigger>
             <TabsTrigger value="overview">{gitT("overview")}</TabsTrigger>
             <TabsTrigger value="log">{gitT("log")}</TabsTrigger>
             <TabsTrigger value="pull-request">
@@ -151,7 +152,8 @@ export const GitPanel = ({
           </TabsList>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <div className="contents" ref={setHeaderSlot} />
-            {tab === "pull-request" ? null : (
+            {/* Changes and the pull request refresh from their own menus. */}
+            {tab === "changes" || tab === "pull-request" ? null : (
               <Button
                 aria-label={commonT("refresh")}
                 className="size-7 text-muted-foreground"
@@ -163,6 +165,12 @@ export const GitPanel = ({
                 <RotateCw className="size-4" />
               </Button>
             )}
+            {onToggleExpanded ? (
+              <RightPanelExpandButton
+                expanded={expanded}
+                onToggle={onToggleExpanded}
+              />
+            ) : null}
           </div>
         </div>
         <div className="relative min-h-0 flex-1">

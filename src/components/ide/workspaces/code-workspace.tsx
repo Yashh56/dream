@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useProjectGitStatus } from "@/hooks/use-project-git-status";
-import type { BrowserTabState, ProjectConfig } from "@/types/ide";
+import type { BrowserTabState, GitPanelTab, ProjectConfig } from "@/types/ide";
 import { getStatusFileCount } from "../git-actions/utils";
 import { areProjectsEqualExceptLastUsedAt } from "../ide-state";
 import { useIdeStore } from "../ide-store";
-import type { RightPanelView } from "../ide-types";
+import { DEFAULT_GIT_PANEL_TAB, type RightPanelView } from "../ide-types";
 import { useShortcut } from "../shortcuts/shortcuts";
 import { moveTabItem } from "../standard-tabs";
 import {
@@ -61,6 +61,9 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     (s) => s.activeBrowserTabIdByProject[projectId] ?? null,
   );
   const historyOpen = projectUi.chatHistoryPanelOpen;
+  const gitPanelTab = useIdeStore(
+    (s) => s.projectGitPanelTabByProject[projectId] ?? DEFAULT_GIT_PANEL_TAB,
+  );
   const setProjectGitPanelTab = useIdeStore((s) => s.setProjectGitPanelTab);
   const setProjectPanelSizes = useIdeStore((s) => s.setProjectPanelSizes);
   const setProjectChatHistoryPanelOpen = useIdeStore(
@@ -130,10 +133,8 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     browserTabs[0] ??
     null;
   const browserPanelVisible = rightVisible && rightPanelView === "browser";
-  const filesPanelVisible = rightVisible && rightPanelView === "explorer";
-  const expandablePanelVisible =
-    browserPanelVisible || filesPanelVisible || terminalPanelVisible;
-  const panelExpanded = rightPanelExpandedRequested && expandablePanelVisible;
+  // Every right-panel view can expand over the chats.
+  const panelExpanded = rightPanelExpandedRequested && rightVisible;
   const browserHiddenWithActiveTab =
     Boolean(activeBrowserTab?.url) && !browserPanelVisible;
   const rightPanelTransitionEnabledRef = useRef(false);
@@ -504,10 +505,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       if (rightPanelView === "terminal" && view !== "terminal") {
         setProjectTerminalPanelOpen(projectId, false);
       }
-      if (view !== "browser" && view !== "explorer") {
-        setRightPanelExpandedRequested(false);
-      }
-
       setRightPanelView(view);
       schedulePersistRightPanelView(view);
 
@@ -525,29 +522,50 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     ],
   );
 
-  // The pull request is a tab of the Git panel: show it there, or close the
-  // panel when it is what the panel already shows.
-  const handleShowPullRequest = useCallback(() => {
-    const gitPanelTab =
-      useIdeStore.getState().projectGitPanelTabByProject[projectId] ??
-      "overview";
-    const gitPanelVisible = rightVisible && rightPanelView === "git";
-    if (gitPanelVisible && gitPanelTab === "pull-request") {
-      handleSelectRightPanelView("git");
+  // Changes and the pull request are tabs of the Git panel: show the tab
+  // there, or close the panel when it is what the panel already shows.
+  const handleShowGitPanelTab = useCallback(
+    (tab: GitPanelTab) => {
+      const gitPanelVisible = rightVisible && rightPanelView === "git";
+      if (gitPanelVisible && gitPanelTab === tab) {
+        handleSelectRightPanelView("git");
+        return;
+      }
+
+      setProjectGitPanelTab(projectId, tab);
+      if (!gitPanelVisible) {
+        handleSelectRightPanelView("git");
+      }
+    },
+    [
+      gitPanelTab,
+      handleSelectRightPanelView,
+      projectId,
+      rightPanelView,
+      rightVisible,
+      setProjectGitPanelTab,
+    ],
+  );
+
+  const handleShowChanges = useCallback(
+    () => handleShowGitPanelTab("changes"),
+    [handleShowGitPanelTab],
+  );
+
+  const handleShowPullRequest = useCallback(
+    () => handleShowGitPanelTab("pull-request"),
+    [handleShowGitPanelTab],
+  );
+
+  // Changes has its own rail button, so Git leaves the changes tab for the
+  // overview; on any other tab it shows or closes the panel as it is.
+  const handleShowGit = useCallback(() => {
+    if (gitPanelTab === "changes") {
+      handleShowGitPanelTab("overview");
       return;
     }
-
-    setProjectGitPanelTab(projectId, "pull-request");
-    if (!gitPanelVisible) {
-      handleSelectRightPanelView("git");
-    }
-  }, [
-    handleSelectRightPanelView,
-    projectId,
-    rightPanelView,
-    rightVisible,
-    setProjectGitPanelTab,
-  ]);
+    handleSelectRightPanelView("git");
+  }, [gitPanelTab, handleSelectRightPanelView, handleShowGitPanelTab]);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────
   // Every project's workspace stays mounted; only the visible one answers.
@@ -583,17 +601,13 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     () => handleSelectRightPanelView("explorer"),
     active,
   );
-  useShortcut(
-    "showChanges",
-    () => handleSelectRightPanelView("changes"),
-    active,
-  );
+  useShortcut("showChanges", handleShowChanges, active);
   useShortcut(
     "showBrowser",
     () => handleSelectRightPanelView("browser"),
     active,
   );
-  useShortcut("showGit", () => handleSelectRightPanelView("git"), active);
+  useShortcut("showGit", handleShowGit, active);
   useShortcut("showPullRequests", handleShowPullRequest, active);
   useShortcut("showStash", () => handleSelectRightPanelView("stash"), active);
   useShortcut(
@@ -611,10 +625,10 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   }, [persistedRightPanelView]);
 
   useEffect(() => {
-    if (!expandablePanelVisible && rightPanelExpandedRequested) {
+    if (!rightVisible && rightPanelExpandedRequested) {
       setRightPanelExpandedRequested(false);
     }
-  }, [expandablePanelVisible, rightPanelExpandedRequested]);
+  }, [rightPanelExpandedRequested, rightVisible]);
 
   useEffect(() => {
     if (!active || !panelExpanded) {
@@ -777,8 +791,11 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
         active={active}
         browserHiddenWithActiveTab={browserHiddenWithActiveTab}
         changesAvailable={changesAvailable}
+        gitPanelTab={gitPanelTab}
         onOpenTerminal={handleOpenTerminal}
         onSelectRightPanelView={handleSelectRightPanelView}
+        onShowChanges={handleShowChanges}
+        onShowGit={handleShowGit}
         projectId={projectId}
         projectPath={project.path}
         rightPanelView={rightPanelView}

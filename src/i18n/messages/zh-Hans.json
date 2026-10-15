@@ -109,7 +109,9 @@
     "title": "标题",
     "unknown": "未知",
     "remove": "移除",
-    "stop": "停止"
+    "stop": "停止",
+    "expand": "展开",
+    "collapse": "折叠"
   },
   "branches": {
     "branchAlreadyExists": "已存在同名分支。",
@@ -230,9 +232,7 @@
     "clearCache": "清除缓存",
     "clearCookies": "清除 Cookie",
     "closeTab": "关闭 {label}",
-    "collapse": "折叠浏览器",
     "enterUrl": "输入 URL...",
-    "expand": "展开浏览器",
     "feedbackCancel": "取消",
     "feedbackChatBusy": "聊天正忙",
     "feedbackNewChat": "新聊天",
@@ -258,7 +258,6 @@
     "agentActive": "智能体操作中"
   },
   "panels": {
-    "addProjectForChanges": "添加项目以检查其 Git 更改。",
     "addProjectForFiles": "添加项目以浏览其文件。",
     "changesActions": "更改操作",
     "clearSearch": "清除搜索",
@@ -271,8 +270,6 @@
     "saveChangesTitle": "是否要保存对 {name} 的更改?",
     "saveChangesDescription": "如果不保存,你的更改将会丢失。",
     "dontSave": "不保存",
-    "collapse": "折叠文件",
-    "expand": "展开文件",
     "unsavedChanges": "未保存的更改",
     "reloadDraftWarning": "从磁盘重新加载将替换本地草稿。",
     "reloadFromDisk": "从磁盘重新加载",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "关闭{name}",
-    "collapse": "折叠终端",
     "commandPrompt": "命令提示符",
-    "expand": "展开终端",
     "openAnotherTerminal": "打开另一个终端",
     "systemShell": "系统外壳",
     "terminalNumber": "终端 {number}",

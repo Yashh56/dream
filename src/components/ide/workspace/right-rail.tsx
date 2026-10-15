@@ -1,7 +1,7 @@
 import { Code, Files, Globe, Inbox, TerminalSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo } from "react";
-import type { RightPanelView } from "@/types/ide";
+import type { GitPanelTab, RightPanelView } from "@/types/ide";
 import { GitNavButton } from "../git-panel/nav-button";
 import { useShortcutTitle } from "../shortcuts/shortcut-keys";
 import { WorkspaceNavButton } from "./nav-button";
@@ -10,8 +10,13 @@ export interface WorkspaceRightRailProps {
   active: boolean;
   browserHiddenWithActiveTab: boolean;
   changesAvailable: boolean;
+  gitPanelTab: GitPanelTab;
   onOpenTerminal: () => void;
   onSelectRightPanelView: (view: RightPanelView) => void;
+  /** Shows the Git panel's changes tab, or closes the panel on it. */
+  onShowChanges: () => void;
+  /** Shows the Git panel off its changes tab, or closes the panel. */
+  onShowGit: () => void;
   projectId: string;
   projectPath: string;
   rightPanelView: RightPanelView;
@@ -24,8 +29,11 @@ const WorkspaceRightRailImpl = ({
   active,
   browserHiddenWithActiveTab,
   changesAvailable,
+  gitPanelTab,
   onOpenTerminal,
   onSelectRightPanelView,
+  onShowChanges,
+  onShowGit,
   projectId,
   projectPath,
   rightPanelView,
@@ -39,13 +47,17 @@ const WorkspaceRightRailImpl = ({
   const browserTitle = useShortcutTitle("showBrowser", t("browser"));
   const terminalTitle = useShortcutTitle("toggleTerminal", t("terminal"));
   const stashTitle = useShortcutTitle("showStash", t("stash"));
+  // Changes is a tab of the Git panel with its own button here; the Git
+  // button stands for the panel's other tabs.
+  const gitVisible = rightVisible && rightPanelView === "git";
+  const changesVisible = gitVisible && gitPanelTab === "changes";
 
   return (
     <aside className="relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 py-2">
       <WorkspaceNavButton
-        active={rightVisible && rightPanelView === "changes"}
+        active={changesVisible}
         accent={changesAvailable}
-        onClick={() => onSelectRightPanelView("changes")}
+        onClick={onShowChanges}
         title={changesTitle}
       >
         <Code className="size-4" />
@@ -75,8 +87,8 @@ const WorkspaceRightRailImpl = ({
         <TerminalSquare className="size-4" />
       </WorkspaceNavButton>
       <GitNavButton
-        active={rightVisible && rightPanelView === "git"}
-        onClick={() => onSelectRightPanelView("git")}
+        active={gitVisible && !changesVisible}
+        onClick={onShowGit}
         projectId={projectId}
         projectPath={projectPath}
         visible={active}

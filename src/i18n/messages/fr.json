@@ -109,7 +109,9 @@
     "title": "Titre",
     "unknown": "Inconnu",
     "remove": "Retirer",
-    "stop": "Arrêter"
+    "stop": "Arrêter",
+    "expand": "Développer",
+    "collapse": "Réduire"
   },
   "branches": {
     "branchAlreadyExists": "Une branche portant ce nom existe déjà.",
@@ -230,9 +232,7 @@
     "clearCache": "Vider le cache",
     "clearCookies": "Effacer les cookies",
     "closeTab": "Fermer {label}",
-    "collapse": "Réduire le navigateur",
     "enterUrl": "Saisir une URL...",
-    "expand": "Agrandir le navigateur",
     "feedbackCancel": "Annuler",
     "feedbackChatBusy": "Chat occupé",
     "feedbackNewChat": "Nouveau chat",
@@ -258,7 +258,6 @@
     "agentActive": "Agent actif"
   },
   "panels": {
-    "addProjectForChanges": "Ajoutez un projet pour inspecter ses modifications Git.",
     "addProjectForFiles": "Ajoutez un projet pour parcourir ses fichiers.",
     "changesActions": "Actions sur les modifications",
     "clearSearch": "Effacer la recherche",
@@ -271,8 +270,6 @@
     "saveChangesTitle": "Voulez-vous enregistrer les modifications apportées à {name} ?",
     "saveChangesDescription": "Vos modifications seront perdues si vous ne les enregistrez pas.",
     "dontSave": "Ne pas enregistrer",
-    "collapse": "Réduire les fichiers",
-    "expand": "Développer les fichiers",
     "unsavedChanges": "Modifications non enregistrées",
     "reloadDraftWarning": "Recharger depuis le disque remplacera votre brouillon local.",
     "reloadFromDisk": "Recharger depuis le disque",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "Fermer {name}",
-    "collapse": "Réduire le terminal",
     "commandPrompt": "Invite de commandes",
-    "expand": "Agrandir le terminal",
     "openAnotherTerminal": "Ouvrir un autre terminal",
     "systemShell": "shell système",
     "terminalNumber": "Terminal {number}",

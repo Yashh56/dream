@@ -9,8 +9,6 @@ import {
   ExternalLink,
   Globe,
   HardDrive,
-  Maximize2,
-  Minimize2,
   Minus,
   MousePointerClick,
   Plus,
@@ -53,6 +51,7 @@ import {
 } from "./browser-inspector-script";
 import { normalizeBrowserUrlInput } from "./browser-url";
 import { useIdeStore } from "./ide-store";
+import { RightPanelExpandButton } from "./right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 import { type StandardTabItem, StandardTabs } from "./standard-tabs";
 
@@ -928,20 +927,10 @@ const BrowserPanelImpl = ({
           onReorder={handleReorderTab}
         />
         {onToggleExpanded ? (
-          <button
-            aria-label={expanded ? browserT("collapse") : browserT("expand")}
-            aria-pressed={expanded}
-            className="mb-px flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-0 text-muted-foreground transition-colors hover:bg-surface-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-400 dark:hover:bg-surface-800 dark:focus-visible:ring-surface-500"
-            onClick={onToggleExpanded}
-            title={expanded ? browserT("collapse") : browserT("expand")}
-            type="button"
-          >
-            {expanded ? (
-              <Minimize2 className="size-4" />
-            ) : (
-              <Maximize2 className="size-4" />
-            )}
-          </button>
+          <RightPanelExpandButton
+            expanded={Boolean(expanded)}
+            onToggle={onToggleExpanded}
+          />
         ) : null}
       </div>
 

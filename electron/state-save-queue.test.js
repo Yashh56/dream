@@ -39,7 +39,7 @@ const createProject = (id, lastUsedAt) => ({
       terminalHeight: 260,
     },
     rightPanelOpen: true,
-    rightPanelView: "changes",
+    rightPanelView: "git",
     savedPrompts: [],
   },
   worktree: null,

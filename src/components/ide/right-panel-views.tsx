@@ -17,11 +17,6 @@ const BrowserPanel = lazy(() =>
     default: module.BrowserPanel,
   })),
 );
-const ChangesPanel = lazy(() =>
-  import("./changes-panel").then((module) => ({
-    default: module.ChangesPanel,
-  })),
-);
 const FileExplorerPanel = lazy(() =>
   import("./file-explorer-panel").then((module) => ({
     default: module.FileExplorerPanel,
@@ -129,7 +124,9 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
                     props.open &&
                     rightPanelView === "git"
                   }
+                  expanded={props.panelExpanded}
                   onClosePanel={props.onClosePanel}
+                  onToggleExpanded={props.onTogglePanelExpanded}
                 />
               </RightPanelViewSlot>
             ) : null}
@@ -143,17 +140,6 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
                   expanded={props.panelExpanded}
                   onClosePanel={props.onClosePanel}
                   onToggleExpanded={props.onTogglePanelExpanded}
-                  projectId={props.project.id}
-                />
-              </RightPanelViewSlot>
-            ) : null}
-            {visitedPersistentViews.has("changes") ? (
-              <RightPanelViewSlot active={rightPanelView === "changes"}>
-                <ChangesPanel
-                  active={
-                    props.active && props.open && rightPanelView === "changes"
-                  }
-                  onClosePanel={props.onClosePanel}
                   projectId={props.project.id}
                 />
               </RightPanelViewSlot>
@@ -177,7 +163,9 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
                   active={
                     props.active && props.open && rightPanelView === "stash"
                   }
+                  expanded={props.panelExpanded}
                   onClosePanel={props.onClosePanel}
+                  onToggleExpanded={props.onTogglePanelExpanded}
                   project={props.project}
                 />
               </RightPanelViewSlot>

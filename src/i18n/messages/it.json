@@ -109,7 +109,9 @@
     "title": "Titolo",
     "unknown": "Sconosciuto",
     "remove": "Rimuovi",
-    "stop": "Ferma"
+    "stop": "Ferma",
+    "expand": "Espandi",
+    "collapse": "Comprimi"
   },
   "branches": {
     "branchAlreadyExists": "Esiste già un branch con questo nome.",
@@ -230,9 +232,7 @@
     "clearCache": "Svuota cache",
     "clearCookies": "Cancella cookie",
     "closeTab": "Chiudi {label}",
-    "collapse": "Comprimi browser",
     "enterUrl": "Inserisci URL...",
-    "expand": "Espandi browser",
     "feedbackCancel": "Annulla",
     "feedbackChatBusy": "Chat occupata",
     "feedbackNewChat": "Nuova chat",
@@ -258,13 +258,10 @@
     "agentActive": "Agente attivo"
   },
   "panels": {
-    "addProjectForChanges": "Aggiungi un progetto per ispezionare le modifiche Git.",
     "addProjectForFiles": "Aggiungi un progetto per esplorare i file.",
     "changesActions": "Azioni modifiche",
     "clearSearch": "Cancella ricerca",
-    "collapse": "Comprimi file",
     "enableWordWrap": "Abilita ritorno a capo",
-    "expand": "Espandi file",
     "fileActions": "Azioni file",
     "revertAllChanges": "Annulla tutte le modifiche",
     "searchFiles": "Cerca file",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "Chiudi {name}",
-    "collapse": "Comprimi terminale",
     "commandPrompt": "Prompt dei comandi",
-    "expand": "Espandi terminale",
     "openAnotherTerminal": "Apri un altro terminale",
     "systemShell": "shell di sistema",
     "terminalNumber": "Terminale {number}",

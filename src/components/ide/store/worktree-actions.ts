@@ -137,7 +137,8 @@ export const createWorktreeActions = (
           // On the parent's host: the worktree is a folder there.
           hostId: parentProject.hostId,
           // A new worktree project takes after its parent and opens on its
-          // changes, which are what the worktree is for.
+          // changes (the Git panel's first tab), which are what the worktree
+          // is for.
           create: (project) => ({
             ...project,
             browserUrl: parentProject.browserUrl,
@@ -147,7 +148,7 @@ export const createWorktreeActions = (
             provider: parentProject.provider,
             reasoningEffort: parentProject.reasoningEffort,
             runCommand: parentProject.runCommand,
-            ui: { ...project.ui, rightPanelView: "changes" },
+            ui: { ...project.ui, rightPanelView: "git" },
           }),
           replaceWorktree: true,
           seed: seed

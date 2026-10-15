@@ -1,7 +1,6 @@
 import {
   ChevronsDownUp,
   ChevronsUpDown,
-  Code,
   Columns2,
   Ellipsis,
   RotateCw,
@@ -28,21 +27,21 @@ import type {
   ProjectGitDiffResponse,
   ProjectGitStatusEntry,
 } from "@/types/ide";
-import { ChangesRow, type DiffViewMode } from "./changes";
-import { toggleExpandedPathForProject } from "./changes/expansion-state";
-import { AppShellPlaceholder } from "./ide-helpers";
-import { useIdeStore } from "./ide-store";
-import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
+import { ChangesRow, type DiffViewMode } from "../changes";
+import { toggleExpandedPathForProject } from "../changes/expansion-state";
+import { AppShellPlaceholder } from "../ide-helpers";
+import { useIdeStore } from "../ide-store";
+import { GitPanelHeaderActions } from "./header-actions";
 
 type DiffLoadRequest = {
   filePath: string;
   refreshKey: number;
 };
 
-export interface ChangesPanelProps {
-  active?: boolean;
-  onClosePanel: () => void;
-  projectId?: string | null;
+export interface GitChangesProps {
+  /** Whether this tab is the one shown in a visible Git panel. */
+  active: boolean;
+  projectId: string;
 }
 
 const getExpandedPaths = (
@@ -56,18 +55,19 @@ const getExpandedPaths = (
   return expandedPathsByProject[projectId] ?? [];
 };
 
-const ChangesPanelImpl = ({
-  active = true,
-  onClosePanel,
+/**
+ * The Git panel's changes tab: the working tree's changed files, each with
+ * its diff, and the actions to revert them.
+ */
+const GitChangesImpl = ({
+  active,
   projectId: requestedProjectId,
-}: ChangesPanelProps) => {
+}: GitChangesProps) => {
   const commonT = useTranslations("common");
   const panelsT = useTranslations("panels");
-  const activeProject = useIdeStore((s) =>
-    requestedProjectId
-      ? (s.projects.find((project) => project.id === requestedProjectId) ??
-        null)
-      : s.getActiveProject(),
+  const activeProject = useIdeStore(
+    (s) =>
+      s.projects.find((project) => project.id === requestedProjectId) ?? null,
   );
   const diffLoadInFlightPathsRef = useRef(new Map<string, number>());
   const diffLoadQueueRef = useRef<DiffLoadRequest[]>([]);
@@ -78,8 +78,6 @@ const ChangesPanelImpl = ({
   const projectDiffRefreshKeysRef = useRef<Record<string, number>>({});
   const projectDiffsRef = useRef<Record<string, ProjectGitDiffResponse>>({});
   const queuedProjectIdRef = useRef<string | null>(null);
-  const wasActiveRef = useRef(false);
-  const activeProjectIdRef = useRef<string | null>(null);
   const latestGitRefreshKeyRef = useRef(0);
   const changesByPathRef = useRef(new Map<string, ProjectGitStatusEntry>());
 
@@ -238,19 +236,6 @@ const ChangesPanelImpl = ({
       [projectId]: remainingHiddenPaths,
     }));
   }, [changesByPath, hiddenRevertedPaths, projectId]);
-
-  useEffect(() => {
-    const shouldRefresh =
-      active &&
-      !!projectId &&
-      (!wasActiveRef.current || activeProjectIdRef.current !== projectId);
-    wasActiveRef.current = active;
-    activeProjectIdRef.current = projectId;
-
-    if (shouldRefresh) {
-      bumpProjectGitRefreshKey(projectId);
-    }
-  }, [active, bumpProjectGitRefreshKey, projectId]);
 
   const processQueuedDiffLoads = useCallback(async () => {
     if (
@@ -741,29 +726,12 @@ const ChangesPanelImpl = ({
   );
 
   if (!activeProject) {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-3 py-2 text-sm font-medium">
-          <RightPanelHeaderIconButton icon={Code} onClose={onClosePanel} />
-          <span>{commonT("changes")}</span>
-        </div>
-        <div className="min-h-0 flex-1 p-3">
-          <AppShellPlaceholder message={panelsT("addProjectForChanges")} />
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="changes-panel flex h-full flex-col overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-3 py-2">
-        <RightPanelHeaderIconButton icon={Code} onClose={onClosePanel} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">
-            {commonT("changes")}
-          </div>
-        </div>
-
+    <div className="flex h-full flex-col overflow-hidden">
+      <GitPanelHeaderActions active={active}>
         <Tabs
           value={diffViewMode}
           onValueChange={(value) => {
@@ -849,7 +817,7 @@ const ChangesPanelImpl = ({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </GitPanelHeaderActions>
 
       <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
         {statusError ? (
@@ -908,5 +876,5 @@ const ChangesPanelImpl = ({
   );
 };
 
-export const ChangesPanel = memo(ChangesPanelImpl);
-ChangesPanel.displayName = "ChangesPanel";
+export const GitChanges = memo(GitChangesImpl);
+GitChanges.displayName = "GitChanges";

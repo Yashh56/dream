@@ -109,7 +109,9 @@
     "title": "Título",
     "unknown": "Desconocido",
     "remove": "Eliminar",
-    "stop": "Detener"
+    "stop": "Detener",
+    "expand": "Expandir",
+    "collapse": "Contraer"
   },
   "branches": {
     "branchAlreadyExists": "Ya existe una rama con ese nombre.",
@@ -230,9 +232,7 @@
     "clearCache": "Borrar caché",
     "clearCookies": "Borrar cookies",
     "closeTab": "Cerrar {label}",
-    "collapse": "Contraer navegador",
     "enterUrl": "Introduce URL...",
-    "expand": "Expandir navegador",
     "feedbackCancel": "Cancelar",
     "feedbackChatBusy": "Chat ocupado",
     "feedbackNewChat": "Nuevo chat",
@@ -258,7 +258,6 @@
     "agentActive": "Agente activo"
   },
   "panels": {
-    "addProjectForChanges": "Agrega un proyecto para inspeccionar sus cambios de Git.",
     "addProjectForFiles": "Agrega un proyecto para explorar sus archivos.",
     "changesActions": "Acciones de cambios",
     "clearSearch": "Borrar búsqueda",
@@ -271,8 +270,6 @@
     "saveChangesTitle": "¿Quieres guardar los cambios realizados en {name}?",
     "saveChangesDescription": "Los cambios se perderán si no los guardas.",
     "dontSave": "No guardar",
-    "collapse": "Contraer archivos",
-    "expand": "Expandir archivos",
     "unsavedChanges": "Cambios sin guardar",
     "reloadDraftWarning": "Al recargar desde el disco se reemplazará tu borrador local.",
     "reloadFromDisk": "Recargar desde el disco",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "Cerrar {name}",
-    "collapse": "Contraer terminal",
     "commandPrompt": "Símbolo del sistema",
-    "expand": "Expandir terminal",
     "openAnotherTerminal": "Abrir otra terminal",
     "systemShell": "shell del sistema",
     "terminalNumber": "Terminal {number}",

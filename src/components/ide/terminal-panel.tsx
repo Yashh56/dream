@@ -2,7 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { Maximize2, Minimize2, Plus, TerminalSquare, X } from "lucide-react";
+import { Plus, TerminalSquare, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import { type HTMLAttributes, useEffect, useRef } from "react";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { echoPipeFallbackInput } from "./ide-helpers";
 import { useIdeStore } from "./ide-store";
 import { TERMINAL_MIN_HEIGHT_PX } from "./ide-types";
+import { RightPanelExpandButton } from "./right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 import { isAppShortcutForTerminal } from "./shortcuts/shortcuts";
 import { StandardTabs } from "./standard-tabs";
@@ -687,20 +688,10 @@ export const ProjectTerminalTabsPanel = ({
           />
         </div>
         {onToggleExpanded ? (
-          <button
-            aria-label={expanded ? terminalT("collapse") : terminalT("expand")}
-            aria-pressed={expanded}
-            className="mb-px flex h-8 w-8 shrink-0 items-center justify-center rounded-lg p-0 text-muted-foreground transition-colors hover:bg-surface-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface-400 dark:hover:bg-surface-800 dark:focus-visible:ring-surface-500"
-            onClick={onToggleExpanded}
-            title={expanded ? terminalT("collapse") : terminalT("expand")}
-            type="button"
-          >
-            {expanded ? (
-              <Minimize2 className="size-4" />
-            ) : (
-              <Maximize2 className="size-4" />
-            )}
-          </button>
+          <RightPanelExpandButton
+            expanded={Boolean(expanded)}
+            onToggle={onToggleExpanded}
+          />
         ) : null}
       </div>
       <div className="relative min-h-0 flex-1">

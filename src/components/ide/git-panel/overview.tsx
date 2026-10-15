@@ -274,12 +274,10 @@ const RecentCommitsSection = ({
  */
 export const GitOverview = ({
   active,
-  onOpenChanges,
   onShowTab,
   project,
 }: {
   active: boolean;
-  onOpenChanges: () => void;
   onShowTab: (tab: GitPanelTab) => void;
   project: ProjectConfig;
 }) => {
@@ -316,7 +314,10 @@ export const GitOverview = ({
           projectPath={project.path}
           status={status}
         />
-        <ChangesSection onOpenChanges={onOpenChanges} status={status} />
+        <ChangesSection
+          onOpenChanges={() => onShowTab("changes")}
+          status={status}
+        />
         <PullRequestSection
           active={active}
           onShowPullRequest={() => onShowTab("pull-request")}

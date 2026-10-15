@@ -125,12 +125,9 @@ const getNestedNumberRecord = (parent, key) => {
   );
 };
 
-const getNestedRightPanelView = (parent, key, fallback = "changes") => {
+const getNestedRightPanelView = (parent, key, fallback = "git") => {
   const value = parent?.[key];
-  return value === "browser" ||
-    value === "explorer" ||
-    value === "changes" ||
-    value === "terminal"
+  return value === "browser" || value === "explorer" || value === "terminal"
     ? value
     : fallback;
 };

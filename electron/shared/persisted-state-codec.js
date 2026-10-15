@@ -121,7 +121,7 @@ export const DEFAULT_PROJECT_UI = {
   multiChat: false,
   panelSizes: DEFAULT_PANEL_SIZES,
   rightPanelOpen: DEFAULT_PANEL_VISIBILITY.right,
-  rightPanelView: "changes",
+  rightPanelView: "git",
   stashItems: [],
 };
 
@@ -263,20 +263,20 @@ export const normalizeAppView = (value) =>
 const isRightPanelView = (value) =>
   value === "browser" ||
   value === "explorer" ||
-  value === "changes" ||
   value === "terminal" ||
   value === "stash" ||
   value === "git";
 
 /**
- * The saved right-panel view, or the default. The pull request view became
- * a tab of the Git view, so a saved "pull-requests" opens Git.
+ * The saved right-panel view, or the default. The pull request and changes
+ * views became tabs of the Git view, so a saved "pull-requests" or "changes"
+ * opens Git (whose first tab is the changes).
  *
  * @param {unknown} value
  * @returns {RightPanelView}
  */
 const normalizeRightPanelView = (value) => {
-  if (value === "pull-requests") {
+  if (value === "pull-requests" || value === "changes") {
     return "git";
   }
   return isRightPanelView(value) ? value : DEFAULT_PROJECT_UI.rightPanelView;

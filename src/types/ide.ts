@@ -270,12 +270,11 @@ export type RightPanelView =
   | "git"
   | "browser"
   | "explorer"
-  | "changes"
   | "terminal"
   | "stash";
 
 /** A tab of the Git right-panel view. */
-export type GitPanelTab = "overview" | "log" | "pull-request";
+export type GitPanelTab = "changes" | "overview" | "log" | "pull-request";
 
 /** Top-level surface shown by the shell; not owned by any project. */
 export type AppView = "code";

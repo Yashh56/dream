@@ -24,6 +24,7 @@ import type { ChatTodoSummary } from "./chat/todo-list";
 import { getFirstActiveDiffChatId } from "./diff-feedback";
 import { AppShellPlaceholder } from "./ide-helpers";
 import { useIdeStore } from "./ide-store";
+import { RightPanelExpandButton } from "./right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 
 const EMPTY_TODO_SUMMARY: ChatTodoSummary = {
@@ -38,7 +39,9 @@ const READY_STATUS: ChatStatus = "ready";
 
 export interface StashPanelProps {
   active?: boolean;
+  expanded?: boolean;
   onClosePanel: () => void;
+  onToggleExpanded?: () => void;
   project: ProjectConfig;
 }
 
@@ -281,7 +284,9 @@ const StashDraftComposer = ({
 
 const StashPanelImpl = ({
   active = true,
+  expanded = false,
   onClosePanel,
+  onToggleExpanded,
   project,
 }: StashPanelProps) => {
   const commonT = useTranslations("common");
@@ -307,9 +312,16 @@ const StashPanelImpl = ({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-surface-200 bg-surface-50 px-3 py-2 text-sm font-medium dark:border-surface-800 dark:bg-surface-900">
+      <div className="flex min-h-[50px] items-center gap-2 border-b border-surface-200 bg-surface-50 px-3 py-2 text-sm font-medium dark:border-surface-800 dark:bg-surface-900">
         <RightPanelHeaderIconButton icon={Inbox} onClose={onClosePanel} />
         <span>{commonT("stash")}</span>
+        <div className="flex-1" />
+        {onToggleExpanded ? (
+          <RightPanelExpandButton
+            expanded={expanded}
+            onToggle={onToggleExpanded}
+          />
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

@@ -121,6 +121,14 @@ test("decode opens the Git view for the retired pull request view", () => {
   assert.equal(decoded.projects[0].ui.rightPanelView, "git");
 });
 
+test("decode opens the Git view for the retired changes view", () => {
+  const decoded = decodePersistedState({
+    projects: [createRawProject({ ui: { rightPanelView: "changes" } })],
+  });
+
+  assert.equal(decoded.projects[0].ui.rightPanelView, "git");
+});
+
 test("decode reads the retired panelVisibility and previewUrl fields", () => {
   const decoded = decodePersistedState({
     projects: [

@@ -76,7 +76,7 @@ const createProject = (id, lastUsedAt) => ({
       terminalHeight: 260,
     },
     rightPanelOpen: true,
-    rightPanelView: "changes",
+    rightPanelView: "git",
     stashItems: [],
   },
   worktree: null,

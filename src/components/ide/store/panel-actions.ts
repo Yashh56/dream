@@ -1,4 +1,5 @@
 import type { ProjectConfig } from "@/types/ide";
+import { DEFAULT_GIT_PANEL_TAB } from "../ide-types";
 import { updateProjectUiInList } from "./helpers";
 import type { IdeState, IdeStoreSet } from "./ide-store-types";
 
@@ -109,7 +110,8 @@ export const createPanelActions = (
   setProjectGitPanelTab: (projectId, tab) => {
     set((state) => {
       if (
-        (state.projectGitPanelTabByProject[projectId] ?? "overview") === tab
+        (state.projectGitPanelTabByProject[projectId] ??
+          DEFAULT_GIT_PANEL_TAB) === tab
       ) {
         return state;
       }

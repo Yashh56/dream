@@ -1,6 +1,7 @@
 import type { ModelOption } from "@/lib/models";
 import type {
   AiProvider,
+  GitPanelTab,
   ModelSpeed,
   ReasoningEffort,
   RightPanelView,
@@ -29,6 +30,8 @@ export type SettingsSection =
   | "sshHosts"
   | "chats";
 export type { RightPanelView };
+/** The Git panel's tab until the project picks another: its changes. */
+export const DEFAULT_GIT_PANEL_TAB: GitPanelTab = "changes";
 export const PROJECT_TERMINAL_SESSION_PREFIX = "__project_terminal__:";
 export const createProjectTerminalSessionId = (projectId: string): string =>
   `${PROJECT_TERMINAL_SESSION_PREFIX}${projectId}:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

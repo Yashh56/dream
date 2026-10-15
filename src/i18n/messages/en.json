@@ -109,7 +109,9 @@
     "title": "Title",
     "unknown": "Unknown",
     "remove": "Remove",
-    "stop": "Stop"
+    "stop": "Stop",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "branches": {
     "branchAlreadyExists": "A branch with that name already exists.",
@@ -230,9 +232,7 @@
     "clearCache": "Clear cache",
     "clearCookies": "Clear cookies",
     "closeTab": "Close {label}",
-    "collapse": "Collapse browser",
     "enterUrl": "Enter URL...",
-    "expand": "Expand browser",
     "feedbackCancel": "Cancel",
     "feedbackChatBusy": "Chat busy",
     "feedbackNewChat": "New chat",
@@ -258,13 +258,10 @@
     "agentActive": "Agent active"
   },
   "panels": {
-    "addProjectForChanges": "Add a project to inspect its Git changes.",
     "addProjectForFiles": "Add a project to browse its files.",
     "changesActions": "Changes actions",
     "clearSearch": "Clear search",
-    "collapse": "Collapse files",
     "enableWordWrap": "Enable word wrap",
-    "expand": "Expand files",
     "fileActions": "File actions",
     "revertAllChanges": "Revert all changes",
     "searchFiles": "Search files",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "Close {name}",
-    "collapse": "Collapse terminal",
     "commandPrompt": "Command Prompt",
-    "expand": "Expand terminal",
     "openAnotherTerminal": "Open another terminal",
     "systemShell": "system shell",
     "terminalNumber": "Terminal {number}",

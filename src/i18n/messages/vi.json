@@ -109,7 +109,9 @@
     "title": "Tiêu đề",
     "unknown": "Không xác định",
     "remove": "Xóa",
-    "stop": "Dừng lại"
+    "stop": "Dừng lại",
+    "expand": "Mở rộng",
+    "collapse": "Thu gọn"
   },
   "branches": {
     "branchAlreadyExists": "Một nhánh có tên này đã tồn tại.",
@@ -230,9 +232,7 @@
     "clearCache": "Xóa bộ nhớ đệm",
     "clearCookies": "Xóa cookie",
     "closeTab": "Đóng {label}",
-    "collapse": "Thu gọn trình duyệt",
     "enterUrl": "Nhập URL...",
-    "expand": "Mở rộng trình duyệt",
     "feedbackCancel": "Hủy",
     "feedbackChatBusy": "Cuộc trò chuyện đang bận",
     "feedbackNewChat": "Cuộc trò chuyện mới",
@@ -258,7 +258,6 @@
     "agentActive": "Tác nhân đang hoạt động"
   },
   "panels": {
-    "addProjectForChanges": "Thêm dự án để xem các thay đổi Git.",
     "addProjectForFiles": "Thêm dự án để duyệt tệp.",
     "changesActions": "Thao tác thay đổi",
     "clearSearch": "Xóa tìm kiếm",
@@ -271,8 +270,6 @@
     "saveChangesTitle": "Bạn có muốn lưu các thay đổi đã thực hiện với {name} không?",
     "saveChangesDescription": "Các thay đổi sẽ bị mất nếu bạn không lưu.",
     "dontSave": "Không lưu",
-    "collapse": "Thu gọn tệp",
-    "expand": "Mở rộng tệp",
     "unsavedChanges": "Thay đổi chưa lưu",
     "reloadDraftWarning": "Tải lại từ đĩa sẽ thay thế bản nháp cục bộ.",
     "reloadFromDisk": "Tải lại từ đĩa",
@@ -756,9 +753,7 @@
   },
   "terminal": {
     "closeNamedTerminal": "Đóng {name}",
-    "collapse": "Thu gọn terminal",
     "commandPrompt": "Dấu nhắc lệnh",
-    "expand": "Mở rộng terminal",
     "openAnotherTerminal": "Mở một thiết bị đầu cuối khác",
     "systemShell": "shell hệ thống",
     "terminalNumber": "Thiết bị đầu cuối {number}",
