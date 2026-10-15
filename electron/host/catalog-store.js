@@ -228,13 +228,32 @@ export function applyCatalogChanges(database, changes, now) {
   return result;
 }
 
+/** What separates a message's text parts in `chat_message_text`. */
+const TEXT_PART_SEPARATOR = "\u001f";
+
+/**
+ * The prose of a message: its text parts, not reasoning or tool traffic.
+ * What transcript search reads (migration 0003 derives the same from
+ * stored payloads).
+ */
+const messageTexts = (message) =>
+  (Array.isArray(message.parts) ? message.parts : []).flatMap((part) =>
+    isRecord(part) && part.type === "text" && typeof part.text === "string"
+      ? [part.text]
+      : [],
+  );
+
 /**
  * Replaces one chat's transcript from `fromIndex` on (all of it by default):
  * `messages[0]` becomes the message at `fromIndex`, and whatever the chat
  * held past the last of them goes. Messages before `fromIndex` are not
  * read or touched. Only rows that differ from what is stored are written,
- * so saving a transcript again costs what changed in it. False when the
- * chat does not exist.
+ * so saving a transcript again costs what changed in it. Stored payloads
+ * are never read back into JavaScript: a payload of another size has
+ * changed, and one of the same size is compared inside SQLite, so a
+ * message that grows to megabytes over a turn is not copied out again at
+ * every step. Each written message's search text (`chat_message_text`)
+ * is written beside it. False when the chat does not exist.
  * @param {import("node:sqlite").DatabaseSync} database
  * @param {string} chatId
  * @param {unknown[]} messages
@@ -262,14 +281,30 @@ export function saveChatMessages(
   }
 
   const start = Number.isInteger(fromIndex) && fromIndex > 0 ? fromIndex : 0;
-  /** @type {Map<string, string>} stored row id → payload, from `start` on */
+  // octet_length is read from the row's header: no payload is loaded.
+  /** @type {Map<string, number>} stored row id → payload bytes, from `start` on */
   const stored = new Map(
     database
       .prepare(
-        "SELECT id, payload FROM chat_messages WHERE chat_id = ? AND sort_order >= ?",
+        "SELECT id, octet_length(payload) AS bytes FROM chat_messages WHERE chat_id = ? AND sort_order >= ?",
       )
       .all(chatId, start)
-      .map((row) => [row.id, row.payload]),
+      .map((row) => [row.id, row.bytes]),
+  );
+  const storedPayloadIs = database.prepare(
+    "SELECT payload = ? AS same FROM chat_messages WHERE id = ?",
+  );
+  const saveText = database.prepare(
+    `
+      INSERT INTO chat_message_text (message_row, message_id, text)
+      VALUES (?, ?, ?)
+      ON CONFLICT(message_row) DO UPDATE SET
+        message_id = excluded.message_id,
+        text = excluded.text
+    `,
+  );
+  const removeText = database.prepare(
+    "DELETE FROM chat_message_text WHERE message_row = ?",
   );
 
   const upsertMessage = database.prepare(
@@ -297,9 +332,14 @@ export function saveChatMessages(
     // the role, so an equal payload under the same id is the same row.
     const persistedMessageId = `${chatId}:${index}:${messageId}`;
     const payload = toJson(message);
-    const unchanged = stored.get(persistedMessageId) === payload;
+    const storedBytes = stored.get(persistedMessageId);
     stored.delete(persistedMessageId);
-    if (unchanged) return;
+    if (
+      storedBytes === Buffer.byteLength(payload) &&
+      storedPayloadIs.get(payload, persistedMessageId)?.same === 1
+    ) {
+      return;
+    }
     upsertMessage.run(
       persistedMessageId,
       chatId,
@@ -309,10 +349,20 @@ export function saveChatMessages(
       toJson({}),
       now,
     );
+    const texts = messageTexts(message);
+    if (texts.length > 0) {
+      saveText.run(
+        persistedMessageId,
+        typeof message.id === "string" ? message.id : null,
+        texts.join(TEXT_PART_SEPARATOR),
+      );
+    } else if (storedBytes !== undefined) {
+      removeText.run(persistedMessageId);
+    }
   });
 
   // What is left was stored from `start` on and is no longer in the
-  // transcript.
+  // transcript. Its search text goes with it (a trigger).
   if (stored.size > 0) {
     const removeMessage = database.prepare(
       "DELETE FROM chat_messages WHERE id = ?",
@@ -340,6 +390,68 @@ export function loadChatMessages(database, chatId) {
     });
 }
 
+/**
+ * One chat's transcript, in order, as the JSON text of an array: the
+ * stored payloads joined, never re-serialized, so a reader on another
+ * thread can hand it to a response as is. A payload that is not a JSON
+ * object is left out, as `loadChatMessages` leaves it out.
+ * @param {import("node:sqlite").DatabaseSync} database
+ * @param {string} chatId
+ */
+export function loadChatMessagesJson(database, chatId) {
+  if (typeof chatId !== "string" || !chatId.trim()) return "[]";
+  const payloads = database
+    .prepare(
+      "SELECT payload FROM chat_messages WHERE chat_id = ? ORDER BY sort_order, id",
+    )
+    .all(chatId)
+    .flatMap((row) =>
+      isRecord(parseJson(row.payload, null)) ? [row.payload] : [],
+    );
+  return `[${payloads.join(",")}]`;
+}
+
+/**
+ * The directory of a chat's project, or of a project, or null: the chat
+ * wins when both are given and it names one.
+ * @param {import("node:sqlite").DatabaseSync} database
+ * @param {{ chatId?: unknown, projectId?: unknown }} ids
+ */
+export function resolveProjectPath(database, { chatId, projectId } = {}) {
+  const normalizedChatId = typeof chatId === "string" ? chatId.trim() : "";
+  const normalizedProjectId =
+    typeof projectId === "string" ? projectId.trim() : "";
+  const nonEmptyPath = (row) =>
+    typeof row?.path === "string" && row.path.trim() ? row.path : null;
+
+  if (normalizedChatId) {
+    const path = nonEmptyPath(
+      database
+        .prepare(
+          `
+            SELECT projects.path AS path
+            FROM chats
+            INNER JOIN projects ON projects.id = chats.project_id
+            WHERE chats.id = ?
+            LIMIT 1
+          `,
+        )
+        .get(normalizedChatId),
+    );
+    if (path) return path;
+  }
+
+  if (normalizedProjectId) {
+    return nonEmptyPath(
+      database
+        .prepare("SELECT path FROM projects WHERE id = ? LIMIT 1")
+        .get(normalizedProjectId),
+    );
+  }
+
+  return null;
+}
+
 // ── Transcript search ─────────────────────────────────────────────────
 
 const SEARCH_SNIPPET_BEFORE = 48;
@@ -347,19 +459,8 @@ const SEARCH_SNIPPET_AFTER = 160;
 /** Rows read for one search; the newest chats come first. */
 const SEARCH_ROW_LIMIT = 2000;
 
-/** `value` as it appears inside a JSON string, for a LIKE pattern. */
-const likePatternFor = (value) =>
-  `%${JSON.stringify(value)
-    .slice(1, -1)
-    .replace(/[\\%_]/g, "\\$&")}%`;
-
-/** The prose of a message: its text parts, not reasoning or tool traffic. */
-const messageTexts = (message) =>
-  (Array.isArray(message.parts) ? message.parts : []).flatMap((part) =>
-    isRecord(part) && part.type === "text" && typeof part.text === "string"
-      ? [part.text]
-      : [],
-  );
+/** A LIKE pattern matching `value` anywhere, its wildcards taken literally. */
+const likePatternFor = (value) => `%${value.replace(/[\\%_]/g, "\\$&")}%`;
 
 const collapse = (text) => text.replace(/\s+/g, " ");
 
@@ -400,15 +501,22 @@ export function searchChatMessages(database, query, { limit = 50 } = {}) {
   const needle = typeof query === "string" ? query.trim().toLowerCase() : "";
   if (!needle) return { results: [], truncated: false };
 
-  // The payload is JSON, so LIKE only narrows the rows (it also matches tool
-  // output and keys); the text parts decide.
+  // Only the messages' prose is read (chat_message_text), never their
+  // payloads. LIKE narrows the rows (it folds ASCII case only, and may
+  // match across two parts); each text part decides.
   const rows = database
     .prepare(
       `
-        SELECT chat_messages.chat_id AS chat_id, chat_messages.payload AS payload
-        FROM chat_messages
+        SELECT
+          chat_messages.chat_id AS chat_id,
+          chat_messages.role AS role,
+          chat_message_text.message_id AS message_id,
+          chat_message_text.text AS text
+        FROM chat_message_text
+        INNER JOIN chat_messages
+          ON chat_messages.id = chat_message_text.message_row
         INNER JOIN chats ON chats.id = chat_messages.chat_id
-        WHERE chat_messages.payload LIKE ? ESCAPE '\\'
+        WHERE chat_message_text.text LIKE ? ESCAPE '\\'
         ORDER BY chats.updated_at DESC, chats.id, chat_messages.sort_order DESC
         LIMIT ?
       `,
@@ -419,10 +527,8 @@ export function searchChatMessages(database, query, { limit = 50 } = {}) {
   /** @type {Map<string, any>} */
   const byChat = new Map();
   for (const row of rows.slice(0, SEARCH_ROW_LIMIT)) {
-    const message = parseJson(row.payload, null);
-    if (!isRecord(message)) continue;
     let snippet = null;
-    for (const text of messageTexts(message)) {
+    for (const text of row.text.split(TEXT_PART_SEPARATOR)) {
       snippet = snippetOf(text, needle);
       if (snippet) break;
     }
@@ -440,10 +546,27 @@ export function searchChatMessages(database, query, { limit = 50 } = {}) {
     byChat.set(row.chat_id, {
       chatId: row.chat_id,
       matchCount: 1,
-      messageId: typeof message.id === "string" ? message.id : null,
-      role: typeof message.role === "string" ? message.role : "",
+      messageId: typeof row.message_id === "string" ? row.message_id : null,
+      role: typeof row.role === "string" ? row.role : "",
       snippet,
     });
   }
   return { results: [...byChat.values()], truncated };
 }
+
+/**
+ * The catalog's reads by name, each on a given connection: what a reader
+ * thread answers (persisted-state-read-worker.js) and, in route tests, what
+ * the catalog runs in its own thread. Each returns plain data a worker can
+ * post back.
+ * @type {Record<string, (database: import("node:sqlite").DatabaseSync, payload: any) => unknown>}
+ */
+export const catalogReads = {
+  catalog: (database) => loadCatalog(database),
+  chat: (database, { chatId }) => loadChat(database, chatId),
+  "project-path": (database, ids) => resolveProjectPath(database, ids),
+  search: (database, { limit, query }) =>
+    searchChatMessages(database, query, { limit }),
+  "transcript-json": (database, { chatId }) =>
+    loadChatMessagesJson(database, chatId),
+};

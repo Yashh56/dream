@@ -11,9 +11,11 @@ import { parentPort, workerData } from "node:worker_threads";
 import {
   applyPersistedCatalogChanges,
   closePersistedStateDatabase,
+  getPersistedStateDatabase,
   loadPersistedState,
   savePersistedActiveProject,
   savePersistedChatMessages,
+  savePersistedConfigValue,
   savePersistedState,
   savePersistedWorkspaceChanges,
 } from "./persisted-state.js";
@@ -33,6 +35,22 @@ parentPort.on("message", (message) => {
   const { id, type } = message;
 
   try {
+    // Opens (creating and migrating) the database, so readers on other
+    // threads can open it after.
+    if (type === "open") {
+      getPersistedStateDatabase({ databasePath });
+      parentPort.postMessage({ id, ok: true, result: true });
+      return;
+    }
+
+    if (type === "save-config") {
+      const result = savePersistedConfigValue(message.payload, {
+        databasePath,
+      });
+      parentPort.postMessage({ id, ok: true, result });
+      return;
+    }
+
     if (type === "save") {
       const result = savePersistedState(message.state, { databasePath });
       parentPort.postMessage({ id, ok: true, result });

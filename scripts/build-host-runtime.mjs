@@ -7,6 +7,7 @@
 //     node/                     the Node that runs it (this build's own)
 //     lib/dream-host.js         the host, bundled (ESM)
 //     lib/persisted-state-worker.js   its state-writing worker thread
+//     lib/persisted-state-read-worker.js   its state-reading worker threads
 //     lib/drizzle/              the database migrations
 //     node_modules/node-pty/    the one native addon, this platform's build
 //     VERSION
@@ -53,7 +54,7 @@ const lib = path.join(out, "lib");
 rmSync(out, { force: true, recursive: true });
 mkdirSync(lib, { recursive: true });
 
-// 1. The host and its worker, bundled. node-pty stays a real package: its
+// 1. The host and its workers, bundled. node-pty stays a real package: its
 // native build is loaded from disk. An ESM bundle still contains CommonJS
 // dependencies that call require(), so it gets one.
 await build({
@@ -64,6 +65,10 @@ await build({
   define: { __DREAM_HOST_VERSION__: JSON.stringify(version) },
   entryPoints: {
     "dream-host": path.join(root, "electron/host/dream-host.js"),
+    "persisted-state-read-worker": path.join(
+      root,
+      "electron/persisted-state-read-worker.js",
+    ),
     "persisted-state-worker": path.join(
       root,
       "electron/persisted-state-worker.js",

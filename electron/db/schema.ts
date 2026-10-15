@@ -136,3 +136,16 @@ export const workspaceProjects = sqliteTable(
     ),
   ],
 );
+
+/**
+ * The prose of each transcript message (its text parts, joined by U+001F),
+ * which transcript search reads instead of whole payloads. Derived: the
+ * save path writes it beside each message (saveChatMessages), and a trigger
+ * (migration 0003) removes it with its message. A message without text
+ * parts has no row.
+ */
+export const chatMessageText = sqliteTable("chat_message_text", {
+  messageRow: text("message_row").primaryKey(),
+  messageId: text("message_id"),
+  text: text("text").notNull(),
+});

@@ -34,5 +34,7 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   shared recursive traversal for file lists and text search.
 - `tasks/project-search-budget.md` tracks PDRY-03: bounded matching and
   cancellable reads for Project text search.
+- `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
+  search text table, catalog reads on reader threads, and write-sink changes.
 
 Module names and current ownership live in ../../GLOSSARY.md.

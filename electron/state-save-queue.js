@@ -1,7 +1,9 @@
 // Coalescing queue in front of the persisted-state save worker.
 //
-// Workspace saves, transcripts, active-project updates and host catalog
-// changes share one worker so their ordering is deterministic. Adjacent
+// Workspace saves, transcripts, active-project updates, host catalog
+// changes and single config values (theme, install id) share one worker:
+// it holds the only connection that writes the database, so their order is
+// deterministic and no thread that serves the UI waits on a write lock. Adjacent
 // operations of the same kind are coalesced to the latest value, except
 // catalog changes, which are deltas.
 import path from "node:path";
@@ -281,6 +283,20 @@ export function createStateSaveQueue({ databasePath }) {
   // before it (a reloaded window sees what the old one saved).
   const loadWorkspace = () => enqueue("load-workspace", null);
 
+  // One config value ({ key, value }), written in order with the rest.
+  const saveConfigValue = (payload) => enqueue("save-config", payload);
+
+  // Settles once the worker has opened (created and migrated) the database:
+  // what readers on other threads wait for before opening it themselves.
+  let opened = null;
+  const ready = () => {
+    opened ??= enqueue("open", null).catch((error) => {
+      opened = null;
+      throw error;
+    });
+    return opened;
+  };
+
   const flushAndClose = async () => {
     if (closed) {
       return;
@@ -317,6 +333,8 @@ export function createStateSaveQueue({ databasePath }) {
     applyCatalogChanges,
     saveWorkspaceChanges,
     loadWorkspace,
+    ready,
+    saveConfigValue,
     flushAndClose,
   };
 }

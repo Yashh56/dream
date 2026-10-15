@@ -572,6 +572,8 @@ const rewindSavedPromptsMigration = (databasePath, tasksTableSql) => {
   database.exec(`
     DROP TABLE saved_prompts;
     DROP TABLE workspace_projects;
+    DROP TRIGGER chat_messages_text_delete;
+    DROP TABLE chat_message_text;
     ${tasksTableSql}
     DELETE FROM __drizzle_migrations
       WHERE created_at >= ${SAVED_PROMPTS_MIGRATION_MILLIS};

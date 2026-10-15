@@ -62,9 +62,12 @@ export function registerCatalogRoutes(app, catalog) {
     ),
   );
 
+  // The transcript's JSON as stored, sent without parsing it here.
   app.post("/api/catalog/transcript", (c) =>
-    handleJsonRoute(c, catalogTranscriptRequestSchema, ({ chatId }) =>
-      catalog.getTranscript(chatId),
+    handleJsonRoute(c, catalogTranscriptRequestSchema, async ({ chatId }) =>
+      c.body(await catalog.getTranscriptJson(chatId), 200, {
+        "Content-Type": "application/json",
+      }),
     ),
   );
 

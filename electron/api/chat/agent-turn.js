@@ -478,8 +478,8 @@ export const createAgentTurn = ({
 
 /**
  * Who is told about a turn's messages while it runs, whether or not any
- * client is reading it: the host, which saves the transcript at every step
- * and at the end. Set around a provider's `stream` call (chat-routes.js);
+ * client is reading it: the host, which saves the transcript after steps
+ * (as often as it chooses) and at the end. Set around a provider's `stream` call (chat-routes.js);
  * `streamAgentTurn` reads it, so no provider adapter has to know.
  * It is told the assistant message being written (continuing the last one
  * when the turn does).

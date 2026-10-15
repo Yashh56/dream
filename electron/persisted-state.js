@@ -11,8 +11,12 @@
 // state. The host's **catalog** (`projects`, `chats`, `chat_messages`) is
 // written only by the host, a change at a time (host/catalog-store.js). The
 // local host and the client share this file; a daemon's has only a catalog.
-import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+//
+// One connection writes: the save worker's (state-save-queue.js), which is
+// also the first to open the file and so the one that migrates it. Readers
+// on other threads (state-read-pool.js) open it with
+// `openPersistedStateReader` and never write.import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -22,6 +26,7 @@ import {
   loadCatalog,
   loadChat,
   loadChatMessages,
+  resolveProjectPath,
   saveChatMessages,
   searchChatMessages,
 } from "./host/catalog-store.js";
@@ -43,6 +48,10 @@ const RELATIONAL_SCHEMA_VERSION = 2;
 const STATE_DB_FILENAME = "dream.db";
 const STATE_DB_PATH_ENV_VAR = "DREAM_DB_PATH";
 const DRIZZLE_MIGRATIONS_FOLDER = path.join(__dirname, "drizzle");
+const BUSY_TIMEOUT_MS = 5000;
+// The WAL is truncated back to this after a checkpoint; a long turn's
+// transcript saves would otherwise leave it at its high-water mark.
+const JOURNAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 const INSTALL_ID_CONFIG_KEY = "installId";
 const THEME_PREFERENCES_CONFIG_KEY = "themePreferences";
 let stateDatabase = null;
@@ -589,21 +598,24 @@ function runDrizzleMigrations(database) {
     );
   `);
 
-  const lastMigration = database
-    .prepare(
-      `
-        SELECT id, hash, created_at
-        FROM __drizzle_migrations
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-    )
-    .get();
-  const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
-
-  database.exec("BEGIN");
+  // The last migration is read inside the write transaction, so a second
+  // connection opening the file at the same moment waits for this one and
+  // then finds nothing left to apply.
+  database.exec("BEGIN IMMEDIATE");
 
   try {
+    const lastMigration = database
+      .prepare(
+        `
+          SELECT id, hash, created_at
+          FROM __drizzle_migrations
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+      )
+      .get();
+    const lastMigrationTimestamp = Number(lastMigration?.created_at ?? 0);
+
     for (const migration of migrations) {
       if (lastMigrationTimestamp >= migration.folderMillis) {
         continue;
@@ -690,10 +702,14 @@ function getStateDatabase(databasePath = resolveStateDatabasePath()) {
   mkdirSync(path.dirname(resolvedDatabasePath), { recursive: true });
   const database = new DatabaseSync(resolvedDatabasePath);
   const legacyState = loadLegacyAppState(database);
+  // NORMAL is durable in WAL mode except across a power loss, where the
+  // last commits may roll back; the database stays consistent either way.
   database.exec(`
+    PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT_BYTES};
   `);
   const hadRelationalState = hasRelationalState(database);
   runDrizzleMigrations(database);
@@ -718,6 +734,47 @@ function getStateDatabase(databasePath = resolveStateDatabasePath()) {
 
 export function getPersistedStateDatabase({ databasePath } = {}) {
   return getStateDatabase(databasePath);
+}
+
+/**
+ * A connection that only reads, for a reader thread (state-read-pool.js).
+ * It neither migrates nor imports: the writer has opened the file first.
+ * In WAL mode it reads beside the writer without waiting for it, each read
+ * seeing the last commit before it began.
+ * @param {string} databasePath
+ */
+export function openPersistedStateReader(databasePath) {
+  const resolvedDatabasePath = resolveConfiguredStateDatabasePath(databasePath);
+  if (!resolvedDatabasePath) {
+    throw new Error("A state reader needs the database path.");
+  }
+  const database = new DatabaseSync(resolvedDatabasePath);
+  database.exec(`
+    PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};
+    PRAGMA query_only = ON;
+  `);
+  return database;
+}
+
+/**
+ * Writes one config value, as is (JSON), outside any other change: the
+ * theme preference, the install id.
+ */
+export function savePersistedConfigValue(
+  { key, value } = {},
+  { databasePath } = {},
+) {
+  if (typeof key !== "string" || !key.trim()) {
+    return false;
+  }
+
+  writeConfig(
+    getStateDatabase(databasePath),
+    key,
+    value,
+    new Date().toISOString(),
+  );
+  return true;
 }
 
 export function savePersistedState(state, { databasePath } = {}) {
@@ -819,95 +876,80 @@ export function searchPersistedChatMessages(
   return searchChatMessages(getStateDatabase(databasePath), query, { limit });
 }
 
-export function ensurePersistedInstallId({ databasePath } = {}) {
-  const database = getStateDatabase(databasePath);
-  const row = database
-    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
-    .get(INSTALL_ID_CONFIG_KEY);
-  const existingInstallId = parseJson(row?.value, null);
-  if (isUuidV4(existingInstallId)) {
-    return existingInstallId.toLowerCase();
+/**
+ * Config values, read on a connection of their own that never writes or
+ * migrates: Electron main's reads, which must not wait on the writer or
+ * run a migration on the thread that serves the window. Missing keys are
+ * absent; so is everything before the writer has created the database.
+ * @param {string[]} keys
+ * @returns {Record<string, unknown>}
+ */
+function readConfigValues(keys, { databasePath } = {}) {
+  const resolvedDatabasePath =
+    resolveConfiguredStateDatabasePath(databasePath) ??
+    resolveStateDatabasePath();
+  if (!existsSync(resolvedDatabasePath)) {
+    return {};
   }
 
-  const installId = randomUUID();
-  writeConfig(
-    database,
-    INSTALL_ID_CONFIG_KEY,
-    installId,
-    new Date().toISOString(),
-  );
-  return installId;
+  const database = openPersistedStateReader(resolvedDatabasePath);
+  try {
+    if (!tableExists(database, "config")) {
+      return {};
+    }
+    const read = database.prepare(
+      "SELECT value FROM config WHERE key = ? LIMIT 1",
+    );
+    const values = {};
+    for (const key of keys) {
+      const row = read.get(key);
+      if (row) values[key] = parseJson(row.value, null);
+    }
+    return values;
+  } finally {
+    database.close();
+  }
 }
 
+/**
+ * The install id, and whether it was just made. A new one is not saved
+ * here: the caller saves it (`installIdConfigValue`) through the writer.
+ * @returns {{ installId: string, created: boolean }}
+ */
+export function readOrCreatePersistedInstallId({ databasePath } = {}) {
+  const existingInstallId = readConfigValues([INSTALL_ID_CONFIG_KEY], {
+    databasePath,
+  })[INSTALL_ID_CONFIG_KEY];
+  if (isUuidV4(existingInstallId)) {
+    return { created: false, installId: existingInstallId.toLowerCase() };
+  }
+
+  return { created: true, installId: randomUUID() };
+}
+
+/** The config write that saves an install id. */
+export const installIdConfigValue = (installId) => ({
+  key: INSTALL_ID_CONFIG_KEY,
+  value: installId,
+});
+
+/** The saved theme preferences, or null; read as `readConfigValues` reads. */
 export function loadPersistedThemePreference({ databasePath } = {}) {
-  const database = getStateDatabase(databasePath);
-  const row = database
-    .prepare("SELECT value FROM config WHERE key = ? LIMIT 1")
-    .get(THEME_PREFERENCES_CONFIG_KEY);
-  const preferences = parseJson(row?.value, null);
+  const preferences = readConfigValues([THEME_PREFERENCES_CONFIG_KEY], {
+    databasePath,
+  })[THEME_PREFERENCES_CONFIG_KEY];
   return isRecord(preferences) ? preferences : null;
 }
 
-export function savePersistedThemePreference(
-  preferences,
-  { databasePath } = {},
-) {
-  if (!isRecord(preferences)) {
-    return false;
-  }
+/** The config write that saves theme preferences, or null for a non-record. */
+export const themePreferenceConfigValue = (preferences) =>
+  isRecord(preferences)
+    ? { key: THEME_PREFERENCES_CONFIG_KEY, value: preferences }
+    : null;
 
-  const database = getStateDatabase(databasePath);
-  writeConfig(
-    database,
-    THEME_PREFERENCES_CONFIG_KEY,
-    preferences,
-    new Date().toISOString(),
-  );
-  return true;
-}
-
-export function resolvePersistedProjectPath({ chatId, projectId } = {}) {
-  const database = getStateDatabase();
-  const normalizedChatId = typeof chatId === "string" ? chatId.trim() : "";
-  const normalizedProjectId =
-    typeof projectId === "string" ? projectId.trim() : "";
-
-  if (normalizedChatId) {
-    const row = database
-      .prepare(
-        `
-          SELECT projects.path AS path
-          FROM chats
-          INNER JOIN projects ON projects.id = chats.project_id
-          WHERE chats.id = ?
-          LIMIT 1
-        `,
-      )
-      .get(normalizedChatId);
-
-    if (typeof row?.path === "string" && row.path.trim()) {
-      return row.path;
-    }
-  }
-
-  if (normalizedProjectId) {
-    const row = database
-      .prepare(
-        `
-          SELECT path
-          FROM projects
-          WHERE id = ?
-          LIMIT 1
-        `,
-      )
-      .get(normalizedProjectId);
-
-    if (typeof row?.path === "string" && row.path.trim()) {
-      return row.path;
-    }
-  }
-
-  return null;
+/** See resolveProjectPath in host/catalog-store.js. */
+export function resolvePersistedProjectPath(ids = {}, { databasePath } = {}) {
+  return resolveProjectPath(getStateDatabase(databasePath), ids);
 }
 
 export function closePersistedStateDatabase() {

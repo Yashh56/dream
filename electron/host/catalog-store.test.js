@@ -13,7 +13,7 @@ import {
   savePersistedChatMessages,
   searchPersistedChatMessages,
 } from "../persisted-state.js";
-import { saveChatMessages } from "./catalog-store.js";
+import { loadChatMessagesJson, saveChatMessages } from "./catalog-store.js";
 
 let directory = null;
 afterEach(async () => {
@@ -177,7 +177,9 @@ test("saving a transcript again writes only the rows that changed", async () => 
       { id: "m4", parts: [], role: "assistant" },
     ];
     saveChatMessages(counting, "c1", next, new Date().toISOString());
-    assert.deepEqual(writes, ["INSERT", "INSERT"]);
+    // The changed message and its search text; the new one, which has no
+    // text, alone.
+    assert.deepEqual(writes, ["INSERT", "INSERT", "INSERT"]);
 
     writes.length = 0;
     saveChatMessages(counting, "c1", next, new Date().toISOString());
@@ -301,4 +303,119 @@ test("search says when it stopped at the chat limit", async () => {
 
   assert.equal(results.length, 1);
   assert.equal(truncated, true);
+});
+
+const searchTextRows = (databasePath) => {
+  const database = new DatabaseSync(databasePath);
+  try {
+    return database
+      .prepare(
+        "SELECT message_row, message_id, text FROM chat_message_text ORDER BY message_row",
+      )
+      .all()
+      .map((row) => ({ ...row }));
+  } finally {
+    database.close();
+  }
+};
+
+test("search text follows every write: a change, a removed message, a removed chat", async () => {
+  const db = await open();
+  db.apply({
+    chats: [chat("c1", "a"), chat("c2", "a")],
+    projects: [project("a")],
+  });
+  db.saveMessages("c1", [
+    message("m1", "user", "first draft", [
+      { text: "second part", type: "text" },
+      { text: "not prose", type: "reasoning" },
+    ]),
+    { id: "m2", parts: [{ input: {}, type: "tool-bash" }], role: "assistant" },
+  ]);
+  db.saveMessages("c2", [message("m1", "user", "other chat")]);
+
+  // Text parts only, in order; a message without any has no row.
+  assert.deepEqual(searchTextRows(db.databasePath), [
+    {
+      message_id: "m1",
+      message_row: "c1:0:m1",
+      text: "first draft\u001fsecond part",
+    },
+    { message_id: "m1", message_row: "c2:0:m1", text: "other chat" },
+  ]);
+  // Two parts are searched apart.
+  assert.deepEqual(db.search("draft second").results, []);
+
+  db.saveMessages("c1", [message("m1", "user", "final draft")]);
+  assert.deepEqual(db.search("first").results, []);
+  assert.equal(db.search("final").results[0].chatId, "c1");
+
+  db.apply({ removedChatIds: ["c2"] });
+  assert.deepEqual(
+    searchTextRows(db.databasePath).map((row) => row.message_row),
+    ["c1:0:m1"],
+  );
+});
+
+test("an older database gets the same search text on upgrade", async () => {
+  const db = await open();
+  db.apply({ chats: [chat("c1", "a")], projects: [project("a")] });
+  db.saveMessages("c1", [
+    message("m1", "user", "kept from before", [
+      { text: "second", type: "text" },
+      { text: 42, type: "text" },
+      { text: "thinking", type: "reasoning" },
+      ["not", "a", "part"],
+    ]),
+    { parts: [{ text: "", type: "text" }], role: "assistant" },
+    { id: "m3", parts: [{ input: {}, type: "tool-bash" }], role: "user" },
+    { id: "m4", parts: "not a list", role: "user" },
+  ]);
+  closePersistedStateDatabase();
+  const written = searchTextRows(db.databasePath);
+  assert.equal(written.length, 2);
+
+  // As a build before the search text left it.
+  const database = new DatabaseSync(db.databasePath);
+  const searchTextMigrationMillis = database
+    .prepare("SELECT MAX(created_at) AS millis FROM __drizzle_migrations")
+    .get().millis;
+  database.exec(`
+    DROP TRIGGER chat_messages_text_delete;
+    DROP TABLE chat_message_text;
+    DELETE FROM __drizzle_migrations WHERE created_at >= ${searchTextMigrationMillis};
+  `);
+  database.close();
+
+  assert.equal(db.search("from before").results[0].chatId, "c1");
+  // The migration derives from stored payloads what the save path writes.
+  closePersistedStateDatabase();
+  assert.deepEqual(searchTextRows(db.databasePath), written);
+});
+
+test("a transcript reads back as the JSON it was saved as", async () => {
+  const db = await open();
+  db.apply({ chats: [chat("c1", "a")], projects: [project("a")] });
+  const messages = [
+    message("m1", "user", 'say "hi" — \\ok'),
+    message("m2", "assistant", "hi"),
+  ];
+  db.saveMessages("c1", messages);
+  closePersistedStateDatabase();
+
+  // A payload that is not an object (written by hand) is left out.
+  const database = new DatabaseSync(db.databasePath);
+  try {
+    database
+      .prepare(
+        `INSERT INTO chat_messages (id, chat_id, role, sort_order, payload, metadata, created_at)
+         VALUES ('c1:2:x', 'c1', '', 2, '"stray"', '{}', 'now')`,
+      )
+      .run();
+    const json = loadChatMessagesJson(database, "c1");
+    assert.deepEqual(JSON.parse(json), messages);
+    assert.equal(loadChatMessagesJson(database, "nope"), "[]");
+  } finally {
+    database.close();
+  }
 });

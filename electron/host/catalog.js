@@ -1,25 +1,31 @@
 // The host catalog as a service: what clients read and change over the
 // catalog routes, and what tells every client about each change.
 //
-// Reads go straight to the database. Writes go through the state writer
-// (the save queue and its worker thread), in order, so a chat row always
-// lands before its transcript and the host's thread never blocks on a large
-// transcript. Each applied change is published on the host socket's catalog
-// channel, stamped with the `origin` client that made it so that client can
-// skip its own echo.
+// Reads go through the state reader (a pool of reader threads), writes
+// through the state writer (the save queue and its worker thread), in
+// order, so a chat row always lands before its transcript. The host's
+// thread runs neither: a search or a large transcript never blocks it.
+// Each applied change is published on the host socket's catalog channel,
+// stamped with the `origin` client that made it so that client can skip
+// its own echo.
 
-import {
-  loadPersistedCatalog,
-  loadPersistedChat,
-  loadPersistedChatMessages,
-  searchPersistedChatMessages,
-} from "../persisted-state.js";
+import { getPersistedStateDatabase } from "../persisted-state.js";
 import {
   chatFromRow,
   chatToRow,
   projectFromRow,
   projectToCatalogRow,
 } from "../shared/persisted-state-codec.js";
+import { catalogReads } from "./catalog-store.js";
+
+/**
+ * Reads on this thread's own connection: for a catalog given no reader
+ * (route tests), never for a host serving clients.
+ */
+const inThreadReader = {
+  read: async (type, payload = {}) =>
+    catalogReads[type](getPersistedStateDatabase(), payload),
+};
 
 /** A project as the catalog shares it: no workspace fields. */
 const catalogProject = (project) =>
@@ -49,25 +55,39 @@ const catalogChat = (chat) => {
  *     applyCatalogChanges: (changes: object) => Promise<any>,
  *     saveChatMessages: (payload: { chatId: string, fromIndex?: number, messages: unknown[] }) => Promise<unknown>,
  *   },
+ *   getReader?: () => { read: (type: string, payload?: object) => Promise<any> },
  *   getRunningChatIds?: () => string[],
  * }} options
- *   `getRunningChatIds`: the chats with a turn running now, listed with
- *   the catalog so a client knows which to resume.
+ *   `getReader`: where reads run (state-read-pool.js); this thread when
+ *   omitted. `getRunningChatIds`: the chats with a turn running now,
+ *   listed with the catalog so a client knows which to resume.
  */
 export function createHostCatalog({
   events,
   getWriter,
+  getReader = () => inThreadReader,
   getRunningChatIds = () => [],
 }) {
+  const read = (type, payload) => getReader().read(type, payload);
+
   return {
     /** Every project and chat, raw, and the chats with a turn running. */
-    list: () => ({
-      ...loadPersistedCatalog(),
+    list: async () => ({
+      ...(await read("catalog")),
       runningChatIds: getRunningChatIds(),
     }),
 
-    /** @param {string} chatId */
-    getChat: (chatId) => loadPersistedChat(chatId),
+    /**
+     * One chat, raw, or null.
+     * @param {string} chatId
+     */
+    getChat: (chatId) => read("chat", { chatId }),
+
+    /**
+     * The directory of a chat's project (or a project's), or null.
+     * @param {{ chatId?: string | null, projectId?: string | null }} ids
+     */
+    resolveProjectPath: (ids) => read("project-path", ids),
 
     /**
      * Applies a change set and tells every client what was applied.
@@ -102,15 +122,20 @@ export function createHostCatalog({
       return result;
     },
 
-    /** @param {string} chatId */
-    getTranscript: (chatId) => loadPersistedChatMessages(chatId),
+    /**
+     * A chat's transcript as the JSON text of its message array, to send
+     * as is: it is never parsed or re-serialized on this thread.
+     * @param {string} chatId
+     * @returns {Promise<string>}
+     */
+    getTranscriptJson: (chatId) => read("transcript-json", { chatId }),
 
     /**
      * The chats whose transcript says `query`, newest first.
      * @param {string} query
      * @param {{ limit?: number }} [options]
      */
-    search: (query, options) => searchPersistedChatMessages(query, options),
+    search: (query, { limit } = {}) => read("search", { limit, query }),
 
     /**
      * Replaces a chat's transcript, from `fromIndex` on when given (the

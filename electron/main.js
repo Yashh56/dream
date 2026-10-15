@@ -35,10 +35,11 @@ import { getHelloUrl } from "./hello.js";
 import { createHost } from "./host/index.js";
 import {
   closePersistedStateDatabase,
-  ensurePersistedInstallId,
+  installIdConfigValue,
   loadPersistedThemePreference,
+  readOrCreatePersistedInstallId,
   resolveStateDatabasePath,
-  savePersistedThemePreference,
+  themePreferenceConfigValue,
 } from "./persisted-state.js";
 import { createRendererServerManager } from "./renderer-server.js";
 import { DEV_RUNTIME_VERSION } from "./ssh/host-install.js";
@@ -141,6 +142,7 @@ const host = createHost({
   getStateWriter: () => ({
     applyCatalogChanges: (changes) =>
       getStateSaveQueue().applyCatalogChanges(changes),
+    ready: () => getStateSaveQueue().ready(),
     saveChatMessages: (payload) =>
       getStateSaveQueue().saveChatMessages(payload),
   }),
@@ -161,31 +163,41 @@ function normalizeThemePreference(value) {
     : "dark";
 }
 
+// Read from the database once, then kept here: this process is the only
+// one that changes them, and a change is written by the save worker, so
+// the main thread never waits on SQLite for them again.
+let themePreferences = null;
+
 function loadThemePreference() {
+  if (themePreferences) {
+    return themePreferences;
+  }
+
   try {
     const parsed = loadPersistedThemePreference();
-    return {
+    themePreferences = {
       accentColor: parsed?.accentColor ?? DEFAULT_THEME_PREFERENCES.accentColor,
       theme: normalizeThemePreference(parsed?.theme),
       baseColor: parsed?.baseColor ?? DEFAULT_THEME_PREFERENCES.baseColor,
     };
+    return themePreferences;
   } catch {
     return DEFAULT_THEME_PREFERENCES;
   }
 }
 
 function saveThemePreference(theme, baseColor, accentColor) {
-  try {
-    const existing = loadThemePreference();
-    const data = {
-      accentColor: accentColor ?? existing.accentColor,
-      theme: normalizeThemePreference(theme ?? existing.theme),
-      baseColor: baseColor ?? existing.baseColor,
-    };
-    savePersistedThemePreference(data);
-  } catch (error) {
-    console.error("Failed to save theme preference:", error);
-  }
+  const existing = loadThemePreference();
+  themePreferences = {
+    accentColor: accentColor ?? existing.accentColor,
+    theme: normalizeThemePreference(theme ?? existing.theme),
+    baseColor: baseColor ?? existing.baseColor,
+  };
+  getStateSaveQueue()
+    .saveConfigValue(themePreferenceConfigValue(themePreferences))
+    .catch((error) => {
+      console.error("Failed to save theme preference:", error);
+    });
 }
 
 function getResolvedThemePreference(theme) {
@@ -1061,7 +1073,15 @@ app.whenReady().then(async () => {
   }
 
   try {
-    installId = ensurePersistedInstallId();
+    const persisted = readOrCreatePersistedInstallId();
+    installId = persisted.installId;
+    if (persisted.created) {
+      getStateSaveQueue()
+        .saveConfigValue(installIdConfigValue(installId))
+        .catch((error) => {
+          console.error("Failed to save install ID:", error);
+        });
+    }
   } catch (error) {
     console.error("Failed to initialize install ID:", error);
   }

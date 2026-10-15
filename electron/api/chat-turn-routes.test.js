@@ -66,7 +66,9 @@ vi.mock("./providers/registry.js", async () => {
 });
 
 const { createTurnRegistry } = await import("./chat/turn-registry.js");
-const { registerChatRoutes } = await import("./chat-routes.js");
+const { createTurnRecorder, registerChatRoutes } = await import(
+  "./chat-routes.js"
+);
 const { createHostCatalog } = await import("../host/catalog.js");
 const { configureHostDataDirectory } = await import("../host/host-paths.js");
 const persisted = await import("../persisted-state.js");
@@ -146,6 +148,9 @@ const setup = async () => {
   return { app, catalog, events, saves, startTurn, turns };
 };
 
+const transcriptOf = async (catalog, chatId) =>
+  JSON.parse(await catalog.getTranscriptJson(chatId));
+
 const waitFor = async (check) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (await check()) return;
@@ -167,10 +172,10 @@ test("a turn outlives its client and is saved, provider session included", async
 
   // Saved by the host, the client's own request first.
   await waitFor(async () => {
-    const transcript = catalog.getTranscript("c1");
+    const transcript = await transcriptOf(catalog, "c1");
     return transcript.length === 2 && transcript[1].role === "assistant";
   });
-  const [user, assistant] = catalog.getTranscript("c1");
+  const [user, assistant] = await transcriptOf(catalog, "c1");
   assert.equal(user.id, "u1");
   assert.match(
     assistant.parts
@@ -180,7 +185,8 @@ test("a turn outlives its client and is saved, provider session included", async
     /Working done\./,
   );
   await waitFor(
-    () => catalog.getChat("c1")?.remoteConversationId === "session-42",
+    async () =>
+      (await catalog.getChat("c1"))?.remoteConversationId === "session-42",
   );
 });
 
@@ -242,9 +248,8 @@ test("a turn saves the request once, then only the message it is writing", async
   const response = await startTurn(request);
   await response.text();
   await waitFor(() => !turns.isRunning("c1"));
-  await waitFor(() => {
-    const text = catalog
-      .getTranscript("c1")
+  await waitFor(async () => {
+    const text = (await transcriptOf(catalog, "c1"))
       .at(-1)
       ?.parts.filter((part) => part.type === "text")
       .map((part) => part.text)
@@ -267,8 +272,7 @@ test("a turn saves the request once, then only the message it is writing", async
   }
 
   assert.deepEqual(
-    catalog
-      .getTranscript("c1")
+    (await transcriptOf(catalog, "c1"))
       .map((message) => message.id)
       .slice(0, 3),
     ["u1", "a1", "u2"],
@@ -279,4 +283,50 @@ test("a turn saves the request once, then only the message it is writing", async
       .filter((event) => event.kind === "transcript")
       .every((event) => event.messageCount === 4),
   );
+});
+
+test("steps saved closer together than the interval are held; the end is saved at once", async () => {
+  const saves = [];
+  const recorder = createTurnRecorder({
+    catalog: {
+      getChat: async () => null,
+      saveTranscript: async (_chatId, messages, options) => {
+        saves.push({
+          fromIndex: options.fromIndex ?? 0,
+          ids: messages.map((m) => m.id),
+        });
+        return true;
+      },
+    },
+    chatId: "c1",
+    projectPath: "/p",
+    requestMessages: [{ id: "u1", parts: [], role: "user" }],
+    saveIntervalMs: 200,
+  });
+  const step = (id) => ({ id, parts: [], role: "assistant" });
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // The first step is saved at once, with the request.
+  await recorder.onMessage(step("s1"), { final: false });
+  // The next two come too soon: held, and only the later one is saved.
+  await recorder.onMessage(step("s2"), { final: false });
+  await recorder.onMessage(step("s3"), { final: false });
+  assert.equal(saves.length, 1);
+  await waitFor(() => saves.length === 2);
+  assert.deepEqual(saves, [
+    { fromIndex: 0, ids: ["u1", "s1"] },
+    { fromIndex: 1, ids: ["s3"] },
+  ]);
+
+  // Once the interval has passed a step is saved at once again. A held
+  // step is dropped when the end arrives first, and never lands after it.
+  await sleep(250);
+  await recorder.onMessage(step("s4"), { final: false });
+  await recorder.onMessage(step("s5"), { final: false });
+  await recorder.onMessage(step("end"), { final: true });
+  await sleep(250);
+  assert.deepEqual(saves.slice(2), [
+    { fromIndex: 1, ids: ["s4"] },
+    { fromIndex: 1, ids: ["end"] },
+  ]);
 });

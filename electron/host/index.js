@@ -14,6 +14,7 @@ import { createHostSocket } from "../api/host-socket/host-socket.js";
 import { createSocketTickets } from "../api/shared/socket-tickets.js";
 import { resolveStateDatabasePath } from "../persisted-state.js";
 import { createProcessSessionManager } from "../process-sessions.js";
+import { createStateReadPool } from "../state-read-pool.js";
 import { createStateSaveQueue } from "../state-save-queue.js";
 import { detectAvailableTerminalShells } from "../terminal-shells.js";
 import { createHostCatalog } from "./catalog.js";
@@ -36,7 +37,8 @@ import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
  *   `version`: the app version this host was built from, for host-info.
  *   `getStateWriter`: the save queue catalog writes go through. The local
  *   host shares Electron main's (one writer per database file); without it
- *   the host starts its own.
+ *   the host starts its own. Catalog reads go through the host's own read
+ *   pool, which opens the file once the writer is `ready`.
  *   `resolveRemoteHost`: other hosts this one forwards requests to (the
  *   local host, for SSH-host projects); none on a daemon.
  */
@@ -57,6 +59,13 @@ export function createHost({
       (ownWriter ??= createStateSaveQueue({
         databasePath: resolveStateDatabasePath(),
       })));
+
+  let readPool = null;
+  const getReader = () =>
+    (readPool ??= createStateReadPool({
+      databasePath: resolveStateDatabasePath(),
+      whenReady: () => getWriter().ready(),
+    }));
 
   const hostSocket = createHostSocket();
   // Agents here use the browser of a window that has their project open
@@ -80,6 +89,7 @@ export function createHost({
   });
   const catalog = createHostCatalog({
     events: hostSocket.catalog,
+    getReader,
     getRunningChatIds: turns.runningChatIds,
     getWriter,
   });
@@ -154,8 +164,9 @@ export function createHost({
     },
 
     /**
-     * Stops every terminal, closes the API server and flushes the host's
-     * own state writer (a shared one is its owner's to flush).
+     * Stops every terminal, closes the API server and its state readers,
+     * and flushes the host's own state writer (a shared one is its owner's
+     * to flush).
      */
     async close() {
       turns.stopAll();
@@ -166,6 +177,9 @@ export function createHost({
       const closing = server;
       server = null;
       await closing?.close();
+      // Closed for good: a read after this (a stopped turn's last save)
+      // is refused rather than starting new reader threads.
+      await readPool?.close();
       await ownWriter?.flushAndClose();
     },
   };

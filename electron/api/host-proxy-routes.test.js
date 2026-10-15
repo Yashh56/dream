@@ -42,7 +42,7 @@ const setup = async () => {
           removedProjectIds: [],
         };
       },
-      getTranscript: () => [],
+      getTranscriptJson: async () => "[]",
       list: () => ({ chats: [], projects: [{ id: "remote-project" }] }),
       saveTranscript: async () => true,
     },

@@ -131,8 +131,16 @@ or not any client is watching: the request's messages once, then only the
 assistant message being written. A transcript save replaces the chat's
 transcript from an index on and writes only the rows that differ from what
 is stored (`saveChatMessages` in `electron/host/catalog-store.js`), so
-saving a transcript again costs what changed in it. Contrast the workspace,
-which is one client's view of it.
+saving a transcript again costs what changed in it. While a turn runs its
+steps are saved at most once a second; its end at once. Search reads each
+message's prose from `chat_message_text`, written beside the message.
+
+The host reads its catalog through a **read pool** (`electron/state-read-pool.js`):
+a few reader threads, each with a connection that only reads, opened once
+the one writer (the save queue's worker) has created and migrated the
+file. The host's own thread runs no catalog SQL; a transcript crosses as
+its stored JSON text and is sent as is. Contrast the workspace, which is
+one client's view of it.
 
 ## Repository context
 
@@ -168,7 +176,9 @@ prompts and workspace rows that differ, to the main process, and, when
 projects or chats changed, the catalog changes to each host. The main
 process's save worker writes them and also answers the workspace load, in
 order after the writes queued before it, so the main thread never touches
-SQLite for the workspace.
+SQLite for the workspace. The theme and install id are written by the same
+worker; Electron main only reads them, once, at startup, on a connection
+that never migrates.
 
 ## Persisted-state codec
 
