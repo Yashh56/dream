@@ -16,7 +16,7 @@ import {
   markHostLoaded,
 } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
-import { applyWorkspaceRemoval } from "./project-runtime-state";
+import { commitWorkspaceRemoval } from "./project-runtime-state";
 import * as workspace from "./workspace-document";
 
 const isRecordWithId = (
@@ -49,7 +49,7 @@ export const createCatalogActions = (
       hostId,
       changes,
     );
-    set(applyWorkspaceRemoval(state, removal));
+    void commitWorkspaceRemoval(set, get, removal);
 
     // The host has these now; they are not this window's to send back.
     const incomingIds = new Set(
@@ -115,11 +115,11 @@ export const createCatalogActions = (
       for (const { id, existingId } of conflicts) {
         const keptRow = hostProjects.get(existingId);
         if (!keptRow) continue;
-        set((state) =>
-          applyWorkspaceRemoval(
-            state,
-            workspace.adoptProject(state, state.settings, hostId, id, keptRow),
-          ),
+        const state = get();
+        void commitWorkspaceRemoval(
+          set,
+          get,
+          workspace.adoptProject(state, state.settings, hostId, id, keptRow),
         );
       }
       get().persist();
@@ -138,14 +138,14 @@ export const createCatalogActions = (
 
     loadHostCatalog: async (hostId) => {
       const catalog = await loadCatalog(hostId);
-      set((state) =>
-        applyWorkspaceRemoval(
-          state,
-          workspace.loadHostCatalog(state, state.settings, hostId, {
-            catalog,
-            workspaceProjects: getLoadedWorkspace().workspaceProjects,
-          }),
-        ),
+      const state = get();
+      void commitWorkspaceRemoval(
+        set,
+        get,
+        workspace.loadHostCatalog(state, state.settings, hostId, {
+          catalog,
+          workspaceProjects: getLoadedWorkspace().workspaceProjects,
+        }),
       );
 
       const after = get();

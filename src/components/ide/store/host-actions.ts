@@ -25,6 +25,21 @@ const errorMessage = (error: unknown) =>
     "",
   );
 
+/** How long removing a host waits for its terminals to stop. */
+const TERMINAL_STOP_WAIT_MS = 5_000;
+
+/** Waits for `work` to settle, or `ms`, whichever comes first. */
+const settleWithin = async (work: Promise<unknown>, ms: number) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    work,
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
+};
+
 export const createHostActions = (
   set: IdeStoreSet,
   get: IdeStoreGet,
@@ -181,6 +196,25 @@ export const createHostActions = (
     },
 
     removeSshHost: async (hostId) => {
+      // Its shells go with it, stopped while the host can still be reached.
+      // A host that does not answer does not hold the removal up; one that
+      // is not connected cannot be asked.
+      if (get().hosts[hostId]?.state === "connected") {
+        const state = get();
+        const { removedProjectIds } = workspace.removeHostProjects(
+          state,
+          state.settings,
+          hostId,
+        );
+        await settleWithin(
+          Promise.all(
+            removedProjectIds.map((projectId) =>
+              get().stopProjectTerminals(projectId),
+            ),
+          ),
+          TERMINAL_STOP_WAIT_MS,
+        );
+      }
       await getDesktopApi()?.disconnectHost(hostId);
       // Out of this window only: the host's catalog is not told.
       forgetLoadedHost(hostId);

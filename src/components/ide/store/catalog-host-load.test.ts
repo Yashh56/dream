@@ -85,6 +85,7 @@ test("a host's catalog replaces its snapshot projects in place", async () => {
     () =>
       ({
         ...registeredMaps,
+        stopProjectTerminals: async () => {},
         activeProjectId: remote.id,
         chats: [],
         closedProjects: [remoteClosed],
@@ -137,6 +138,7 @@ test("a project the host refused (it has one at that path) becomes the host's pr
     () =>
       ({
         ...registeredMaps,
+        stopProjectTerminals: async () => {},
         activeProjectId: refused.id,
         chats: [refusedChat],
         closedProjects: [],
@@ -185,6 +187,7 @@ test("the local host's reload never removes an SSH host's project", async () => 
     () =>
       ({
         ...registeredMaps,
+        stopProjectTerminals: async () => {},
         activeProjectId: remote.id,
         chats: [remoteChat],
         closedProjects: [],

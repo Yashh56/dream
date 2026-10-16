@@ -7,7 +7,7 @@ import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { deleteTerminalScrollback } from "../terminal-scrollback";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import {
-  applyWorkspaceRemoval,
+  commitWorkspaceRemoval,
   dropProjectRuntimeState,
 } from "./project-runtime-state";
 import * as workspace from "./workspace-document";
@@ -72,18 +72,25 @@ export const createProjectLifecycleActions = (
     );
   },
 
-  stopProjectTerminals: (projectId: string) => {
+  stopProjectTerminals: async (projectId: string) => {
     const terminalSessionIds =
       get().projectTerminalSessionIds?.[projectId] ?? [];
     const desktopApi = getDesktopApi();
-    for (const sessionId of terminalSessionIds) {
-      if (desktopApi) void terminalClient.stop(sessionId);
+    const stops = terminalSessionIds.map(async (sessionId) => {
       deleteTerminalScrollback(sessionId);
-    }
+      if (!desktopApi) return;
+      try {
+        await terminalClient.stop(sessionId);
+      } catch (error) {
+        // The host may be gone; nothing here can stop the shell then.
+        console.warn(`Unable to stop terminal ${sessionId}.`, error);
+      }
+    });
+    await Promise.all(stops);
   },
 
   closeProject: (projectId: string) => {
-    get().stopProjectTerminals(projectId);
+    void get().stopProjectTerminals(projectId);
     set((state) => {
       const runtime = dropProjectRuntimeState(state, projectId);
       return {
@@ -101,11 +108,11 @@ export const createProjectLifecycleActions = (
     if (!get().closedProjects.some((project) => project.id === projectId)) {
       return;
     }
-    set((state) =>
-      applyWorkspaceRemoval(
-        state,
-        workspace.removeProjects(state, state.settings, [projectId]),
-      ),
+    const state = get();
+    void commitWorkspaceRemoval(
+      set,
+      get,
+      workspace.removeProjects(state, state.settings, [projectId]),
     );
     // Its host's catalog hears of the removal with the next save.
     get().persist();

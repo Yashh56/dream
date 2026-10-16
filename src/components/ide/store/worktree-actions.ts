@@ -23,7 +23,7 @@ import type {
   StoreActionDependencies,
   WorktreeProjectCreationResult,
 } from "./ide-store-types";
-import { applyWorkspaceRemoval } from "./project-runtime-state";
+import { commitWorkspaceRemoval } from "./project-runtime-state";
 import * as workspace from "./workspace-document";
 
 /** The one place a `ProjectWorktreeInfo` is built. */
@@ -240,7 +240,7 @@ export const createWorktreeActions = (
       worktreePath,
     );
     if (project && state.projects.includes(project)) {
-      state.stopProjectTerminals(project.id);
+      void state.stopProjectTerminals(project.id);
     }
 
     const knownBranch = branch ?? project?.worktree?.branch ?? null;
@@ -286,20 +286,20 @@ export const createWorktreeActions = (
     }
 
     // The worktree's chats go with it.
-    set((current) =>
-      applyWorkspaceRemoval(
+    const current = get();
+    void commitWorkspaceRemoval(
+      set,
+      get,
+      workspace.removeProjects(
         current,
-        workspace.removeProjects(
-          current,
-          current.settings,
-          [...current.projects, ...current.closedProjects]
-            .filter(
-              (item) =>
-                normalizeProjectPathKey(item.path) === worktreePathKey &&
-                getProjectHostId(item) === host,
-            )
-            .map((item) => item.id),
-        ),
+        current.settings,
+        [...current.projects, ...current.closedProjects]
+          .filter(
+            (item) =>
+              normalizeProjectPathKey(item.path) === worktreePathKey &&
+              getProjectHostId(item) === host,
+          )
+          .map((item) => item.id),
       ),
     );
 

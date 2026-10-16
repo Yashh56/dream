@@ -176,7 +176,8 @@ test("editing a host keeps it, and a live connection reconnects when how it is r
   expect(hostIds()).toEqual(["a", "b", "c", "d"]);
 });
 
-test("removing an SSH host takes its projects out with their runtime state, and keeps local ones", async () => {
+/** A store with one local and one host-"a" project, each with a chat. */
+const createStoreWithHostProject = (hostState: HostConnectionState) => {
   const local = createProjectConfig("/local/app", DEFAULT_SETTINGS);
   const remote = {
     ...createProjectConfig("/srv/app", DEFAULT_SETTINGS),
@@ -193,13 +194,18 @@ test("removing an SSH host takes its projects out with their runtime state, and 
       ...TERMINAL_SESSION_KEYED_STATE,
     ].map((key) => [key, {}]),
   );
+  const events: string[] = [];
+  desktop.disconnectHost.mockImplementationOnce(async () => {
+    events.push("disconnect");
+    return true;
+  });
   const { store } = createTestStore();
   store.setState({
     ...registeredMaps,
     activeProjectId: remote.id,
     chats: [localChat, remoteChat],
     closedProjects: [],
-    hosts: { a: { error: null, loaded: true, state: "connected" } },
+    hosts: { a: { error: null, loaded: true, state: hostState } },
     persist: () => {},
     projectGitRefreshKeys: { [local.id]: 1, [remote.id]: 2 },
     projectTerminalSessionIds: { [remote.id]: ["remote-session"] },
@@ -207,11 +213,23 @@ test("removing an SSH host takes its projects out with their runtime state, and 
       { ...local, ui: { ...local.ui, activeChatId: localChat.id } },
       { ...remote, ui: { ...remote.ui, activeChatId: remoteChat.id } },
     ],
+    stopProjectTerminals: async (projectId: string) => {
+      const sessions =
+        store.getState().projectTerminalSessionIds[projectId] ?? [];
+      events.push(...sessions.map((sessionId) => `stop ${sessionId}`));
+    },
     terminalStatus: { "remote-session": "running" },
   } as unknown as Partial<IdeState>);
+  return { events, local, localChat, store };
+};
+
+test("removing an SSH host stops its terminals before disconnecting, and takes its projects out with their runtime state", async () => {
+  const { events, local, localChat, store } =
+    createStoreWithHostProject("connected");
 
   await store.getState().removeSshHost("a");
 
+  expect(events).toEqual(["stop remote-session", "disconnect"]);
   const state = store.getState();
   expect(state.projects.map((project) => project.id)).toEqual([local.id]);
   expect(state.chats.map((chat) => chat.id)).toEqual([localChat.id]);
@@ -221,4 +239,16 @@ test("removing an SSH host takes its projects out with their runtime state, and 
   expect(state.terminalStatus).toEqual({});
   expect(state.hosts).toEqual({});
   expect(state.settings.sshHosts.map((item) => item.id)).not.toContain("a");
+});
+
+test("removing an SSH host that is not connected does not ask it to stop anything", async () => {
+  const { events, local, store } = createStoreWithHostProject("disconnected");
+
+  await store.getState().removeSshHost("a");
+
+  expect(events).toEqual(["disconnect"]);
+  expect(store.getState().projects.map((project) => project.id)).toEqual([
+    local.id,
+  ]);
+  expect(store.getState().projectTerminalSessionIds).toEqual({});
 });

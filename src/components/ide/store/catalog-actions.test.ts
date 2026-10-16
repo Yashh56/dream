@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 import { createProjectConfig, DEFAULT_SETTINGS } from "@/lib/ide-defaults";
 import type { ChatConfig, ProjectConfig } from "@/types/ide";
@@ -40,10 +40,16 @@ const createTestStore = () => {
   const closed = project("/work/closed");
   const openChat = chat(open, "Open chat");
   const closedChat = chat(closed, "Closed chat");
+  const stoppedSessions: string[] = [];
   const store = createStore<IdeState>(
     () =>
       ({
         ...registeredMaps,
+        stopProjectTerminals: vi.fn(async (projectId: string) => {
+          stoppedSessions.push(
+            ...(store.getState().projectTerminalSessionIds[projectId] ?? []),
+          );
+        }),
         activeProjectId: open.id,
         chats: [openChat, closedChat],
         closedProjects: [closed],
@@ -56,7 +62,7 @@ const createTestStore = () => {
       }) as unknown as IdeState,
   );
   store.setState(createCatalogActions(store.setState, store.getState));
-  return { closed, closedChat, open, openChat, store };
+  return { closed, closedChat, open, openChat, stoppedSessions, store };
 };
 
 test("catalog fields change; this window's workspace fields stay", () => {
@@ -114,8 +120,8 @@ test("a removed project takes its chats with it", () => {
   );
 });
 
-test("a project its host removed leaves no runtime state behind", () => {
-  const { open, openChat, store } = createTestStore();
+test("a project its host removed has its terminals stopped and leaves no runtime state behind", () => {
+  const { open, openChat, stoppedSessions, store } = createTestStore();
   store.setState({
     completedChatIds: { [openChat.id]: true },
     projectGitRefreshKeys: { [open.id]: 3 },
@@ -125,6 +131,8 @@ test("a project its host removed leaves no runtime state behind", () => {
 
   store.getState().applyCatalogChanges({ removedProjectIds: [open.id] });
 
+  // Stopped while its session ids were still in the store.
+  expect(stoppedSessions).toEqual(["session-1"]);
   const state = store.getState();
   expect(state.projects).toEqual([]);
   expect(state.projectGitRefreshKeys).toEqual({});

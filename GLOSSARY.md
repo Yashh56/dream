@@ -51,8 +51,9 @@ keys, terminal sessions and their status, browser tab loading, the draft
 chat. They are registered in `store/project-runtime-state.ts`, which is
 what closing or purging a project drops; a new per-project map is added
 there, once. Every workspace removal reaches the store through
-`applyWorkspaceRemoval`, so no path that removes a project or chat leaves
-its runtime state behind.
+`commitWorkspaceRemoval`, which stops the removed projects' terminals and
+then drops their runtime state, so no path that removes a project or chat
+leaves a shell or a map behind.
 
 ## Chat
 

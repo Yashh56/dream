@@ -263,7 +263,12 @@ export interface IdeState {
    * from its host's catalog. Its folder is not touched.
    */
   forgetClosedProject: (projectId: string) => void;
-  stopProjectTerminals: (projectId: string) => void;
+  /**
+   * Stops the project's terminal sessions and deletes their scrollback.
+   * Settles once every stop has been answered; a stop that fails (its host
+   * is gone) is logged, never thrown.
+   */
+  stopProjectTerminals: (projectId: string) => Promise<void>;
   updateProject: (
     projectId: string,
     updater: (project: ProjectConfig) => ProjectConfig,
