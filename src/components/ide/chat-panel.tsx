@@ -655,7 +655,7 @@ export const ChatPanel = ({
           />
         )}
 
-        <ProjectBranchFooter project={project} />
+        <ProjectBranchFooter active={isProjectActive} project={project} />
       </div>
 
       <EditChatDialog

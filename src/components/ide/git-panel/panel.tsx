@@ -14,7 +14,6 @@ import { SourceControlIcon } from "../source-control-icon";
 import { GitChanges } from "./changes";
 import { GitPanelHeaderSlotContext } from "./header-actions";
 import { GitLog } from "./log";
-import { GitOverview } from "./overview";
 
 // The pull request view brings Markdown and diff rendering; it loads the
 // first time its tab is shown.
@@ -26,7 +25,6 @@ const PullRequestView = lazy(() =>
 
 const GIT_PANEL_TABS: readonly GitPanelTab[] = [
   "changes",
-  "overview",
   "log",
   "pull-request",
 ];
@@ -41,8 +39,8 @@ const TabLoadingFallback = () => (
 );
 
 /**
- * The Git right-panel view: the working tree's changes, the current branch's
- * overview, its log and its pull request, as tabs under one header. A tab
+ * The Git right-panel view: the working tree's changes with the commit
+ * composer, the branch's log and its pull request, as tabs under one header. A tab
  * mounts the first time it is shown and stays mounted, so the log keeps its
  * loaded pages and search.
  */
@@ -97,11 +95,6 @@ export const GitPanel = ({
     [projectId, setProjectGitPanelTab],
   );
 
-  const handleShowTab = useCallback(
-    (value: GitPanelTab) => setProjectGitPanelTab(projectId, value),
-    [projectId, setProjectGitPanelTab],
-  );
-
   const handleRefresh = useCallback(() => {
     bumpProjectGitRefreshKey(projectId);
   }, [bumpProjectGitRefreshKey, projectId]);
@@ -110,15 +103,6 @@ export const GitPanel = ({
     const tabActive = active && tab === value;
     if (value === "changes") {
       return <GitChanges active={tabActive} projectId={projectId} />;
-    }
-    if (value === "overview") {
-      return (
-        <GitOverview
-          active={tabActive}
-          onShowTab={handleShowTab}
-          project={project}
-        />
-      );
     }
     if (value === "log") {
       return <GitLog active={tabActive} projectPath={project.path} />;
@@ -142,9 +126,11 @@ export const GitPanel = ({
             icon={SourceControlIcon}
             onClose={onClosePanel}
           />
+          <span className="shrink-0 whitespace-nowrap font-medium text-sm">
+            {gitT("title")}
+          </span>
           <TabsList aria-label={gitT("views")} className="min-w-0">
             <TabsTrigger value="changes">{commonT("changes")}</TabsTrigger>
-            <TabsTrigger value="overview">{gitT("overview")}</TabsTrigger>
             <TabsTrigger value="log">{gitT("log")}</TabsTrigger>
             <TabsTrigger value="pull-request">
               {gitT("pullRequest")}

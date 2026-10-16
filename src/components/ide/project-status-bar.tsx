@@ -15,6 +15,7 @@ import { useProjectGitStatus } from "@/hooks/use-project-git-status";
 import { cn } from "@/lib/utils";
 import type { ProjectConfig } from "@/types/ide";
 import { BranchSwitcher } from "./branch-switcher";
+import { GitFooterActions } from "./git-panel/footer-actions";
 import { useIdeStore } from "./ide-store";
 import { ProjectHostLabel } from "./ssh/project-host-label";
 import { slugifyWorktreeBranchName, WorktreeFields } from "./worktree-fields";
@@ -120,9 +121,12 @@ const CreateWorktreeDialog = ({
 };
 
 export const ProjectBranchFooter = ({
+  active,
   className,
   project,
 }: {
+  /** Whether the project's workspace is on screen. */
+  active: boolean;
   className?: string;
   project: ProjectConfig;
 }) => {
@@ -133,8 +137,8 @@ export const ProjectBranchFooter = ({
   });
   const [createWorktreeOpen, setCreateWorktreeOpen] = useState(false);
 
-  // Where the project runs sits on the left, always; the branch on the
-  // right, for a repository.
+  // Where the project runs sits on the left, always; the branch and its git
+  // actions on the right, for a repository.
   const showBranch = Boolean(project.worktree) || isRepo || loading;
 
   return (
@@ -144,25 +148,30 @@ export const ProjectBranchFooter = ({
             shift when switching to a project without a branch. */}
         <div className="mx-auto flex h-8 w-full max-w-[700px] items-center justify-between gap-2">
           <ProjectHostLabel className="-ml-2" project={project} />
-          {!showBranch ? null : project.worktree ? (
-            <div
-              className="flex h-7 max-w-[280px] items-center gap-1.5 px-2 text-xs text-muted-foreground"
-              title={project.worktree.branch}
-            >
-              <FolderTree className="size-3.5 shrink-0" />
-              <span className="shrink-0">{worktreeT("worktree")}</span>
-              <span className="truncate text-foreground">
-                {project.worktree.branch}
-              </span>
+          {!showBranch ? null : (
+            <div className="flex min-w-0 items-center gap-2">
+              {project.worktree ? (
+                <div
+                  className="flex h-7 min-w-0 max-w-[280px] items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                  title={project.worktree.branch}
+                >
+                  <FolderTree className="size-3.5 shrink-0" />
+                  <span className="shrink-0">{worktreeT("worktree")}</span>
+                  <span className="truncate text-foreground">
+                    {project.worktree.branch}
+                  </span>
+                </div>
+              ) : (
+                <BranchSwitcher
+                  onCreateWorktree={
+                    isRepo ? () => setCreateWorktreeOpen(true) : undefined
+                  }
+                  projectId={project.id}
+                  projectPath={project.path}
+                />
+              )}
+              <GitFooterActions active={active} project={project} />
             </div>
-          ) : (
-            <BranchSwitcher
-              onCreateWorktree={
-                isRepo ? () => setCreateWorktreeOpen(true) : undefined
-              }
-              projectId={project.id}
-              projectPath={project.path}
-            />
           )}
         </div>
       </div>

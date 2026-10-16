@@ -31,6 +31,7 @@ import { ChangesRow, type DiffViewMode } from "../changes";
 import { toggleExpandedPathForProject } from "../changes/expansion-state";
 import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
+import { GitCommitBox } from "./commit-box";
 import { GitPanelHeaderActions } from "./header-actions";
 
 type DiffLoadRequest = {
@@ -56,8 +57,8 @@ const getExpandedPaths = (
 };
 
 /**
- * The Git panel's changes tab: the working tree's changed files, each with
- * its diff, and the actions to revert them.
+ * The Git panel's changes tab: the commit composer over the working tree's
+ * changed files, each with its diff, and the actions to revert them.
  */
 const GitChangesImpl = ({
   active,
@@ -818,6 +819,15 @@ const GitChangesImpl = ({
           </DropdownMenuContent>
         </DropdownMenu>
       </GitPanelHeaderActions>
+
+      {!statusError && isRepo && visibleChanges.length > 0 ? (
+        <GitCommitBox
+          active={active}
+          projectId={activeProject.id}
+          projectPath={activeProject.path}
+          status={gitStatus}
+        />
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
         {statusError ? (

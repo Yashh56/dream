@@ -1,8 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useProjectGitStatus } from "@/hooks/use-project-git-status";
 import type { BrowserTabState, GitPanelTab, ProjectConfig } from "@/types/ide";
-import { getStatusFileCount } from "../git-actions/utils";
 import { areProjectsEqualExceptLastUsedAt } from "../ide-state";
 import { useIdeStore } from "../ide-store";
 import { DEFAULT_GIT_PANEL_TAB, type RightPanelView } from "../ide-types";
@@ -87,11 +85,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   );
   const updateProject = useIdeStore((s) => s.updateProject);
   const openProjectTerminal = useIdeStore((s) => s.openProjectTerminal);
-  const { status: projectGitStatus } = useProjectGitStatus(project.path, {
-    active,
-    detail: "summary",
-    hostId: project.hostId,
-  });
 
   // ── Local workspace state ───────────────────────────────────────────
   const [historyPanelWidth, setHistoryPanelWidth] = useState(() =>
@@ -126,7 +119,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     rightVisible && rightPanelView === "terminal" && hasProjectTerminalSessions;
   const terminalHiddenWithActiveSession =
     hasProjectTerminalSessions && !terminalPanelVisible;
-  const changesAvailable = getStatusFileCount(projectGitStatus) > 0;
   const stashAvailable = (projectUi.stashItems?.length ?? 0) > 0;
   const activeBrowserTab =
     browserTabs.find((tab) => tab.id === activeBrowserTabId) ??
@@ -557,15 +549,11 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     [handleShowGitPanelTab],
   );
 
-  // Changes has its own rail button, so Git leaves the changes tab for the
-  // overview; on any other tab it shows or closes the panel as it is.
-  const handleShowGit = useCallback(() => {
-    if (gitPanelTab === "changes") {
-      handleShowGitPanelTab("overview");
-      return;
-    }
-    handleSelectRightPanelView("git");
-  }, [gitPanelTab, handleSelectRightPanelView, handleShowGitPanelTab]);
+  // The Git panel on the tab it last showed, or closed when it is shown.
+  const handleShowGit = useCallback(
+    () => handleSelectRightPanelView("git"),
+    [handleSelectRightPanelView],
+  );
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────
   // Every project's workspace stays mounted; only the visible one answers.
@@ -790,12 +778,8 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       <WorkspaceRightRail
         active={active}
         browserHiddenWithActiveTab={browserHiddenWithActiveTab}
-        changesAvailable={changesAvailable}
-        gitPanelTab={gitPanelTab}
         onOpenTerminal={handleOpenTerminal}
         onSelectRightPanelView={handleSelectRightPanelView}
-        onShowChanges={handleShowChanges}
-        onShowGit={handleShowGit}
         projectId={projectId}
         projectPath={project.path}
         rightPanelView={rightPanelView}
