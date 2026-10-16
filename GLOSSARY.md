@@ -20,6 +20,18 @@ The directory browser has a different purpose: it shows immediate entries,
 including ignored files and symlinks. Text search further filters the selected
 files by content, size and the user's query options.
 
+## Project file tree
+
+The Files panel's tree of a Project's files
+(`src/components/ide/project-file-tree.ts`): one `@pierre/trees` model, its
+directories listed as they are expanded and never while the tree's filter
+is open. Typing a filter injects matching paths from a cached flat index
+instead of walking folders. Revealing a file loads and expands its
+ancestors; a file absent once the root has loaded is **missing** (its tab
+closes), one overtaken by a refresh is **superseded**. The directory
+loader and path index are its internals. Not the directory browser, and
+not Project file traversal (which is the host's side of the file list).
+
 ## Project search work budget
 
 The maximum number of individual matches a Project text search retains across

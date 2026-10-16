@@ -70,12 +70,7 @@ import {
 import { AppShellPlaceholder, PanelResizeHandle } from "./ide-helpers";
 import { fileEditorSessions, useIdeStore } from "./ide-store";
 import { useMaterialFileTreeIcons } from "./material-file-icon";
-import {
-  ProjectDirectoryLoader,
-  resolveSelectedProjectFile,
-  toProjectTreePath,
-} from "./project-directory-loader";
-import { ProjectFileSearchIndex } from "./project-file-search-index";
+import { ProjectFileTree as ProjectFileTreeModule } from "./project-file-tree";
 import { projectResourceKey, readProjectResource } from "./project-resources";
 import { ProjectSearchView } from "./project-search-view";
 import { RightPanelExpandButton } from "./right-panel-expand-button";
@@ -90,9 +85,6 @@ const FILE_TREE_ITEM_HEIGHT_PX = 24;
 // Flat path index used to back tree search. Paths only, gitignore-aware, and
 // fetched at most once per project until the panel is refreshed.
 const PROJECT_SEARCH_INDEX_LIMIT = 50_000;
-// Upper bound on how many matching paths get injected into the tree per query.
-const PROJECT_SEARCH_INJECT_LIMIT = 200;
-const PROJECT_SEARCH_DEBOUNCE_MS = 120;
 
 const FileCodeEditor = lazy(() => import("./file-code-editor"));
 
@@ -232,51 +224,30 @@ const ProjectFileTree = ({
   toolbarSlot,
 }: ProjectFileTreeProps) => {
   const panelsT = useTranslations("panels");
-  const knownFilesRef = useRef<ReadonlySet<string>>(new Set());
-  const onSelectFileRef = useRef(onSelectFile);
-  const onPinFileRef = useRef(onPinFile);
-  const onSelectedFileMissingRef = useRef(onSelectedFileMissing);
-  const selectedFilePathRef = useRef(selectedFilePath);
   const materialFileTreeIcons = useMaterialFileTreeIcons();
-  const [rootStatus, setRootStatus] = useState<
-    "idle" | "loading" | "ready" | "empty" | "error"
-  >("idle");
-  const [directoryErrors, setDirectoryErrors] = useState<
-    Record<string, string>
-  >({});
+  // The latest props, for the tree model's listeners, which are bound once.
+  const latest = useRef({
+    onPinFile,
+    onSelectedFileMissing,
+    onSelectFile,
+    selectedFilePath,
+  });
+  latest.current = {
+    onPinFile,
+    onSelectedFileMissing,
+    onSelectFile,
+    selectedFilePath,
+  };
+  const treeRef = useRef<ProjectFileTreeModule | null>(null);
 
-  useEffect(() => {
-    selectedFilePathRef.current = selectedFilePath;
-  }, [selectedFilePath]);
-
-  useEffect(() => {
-    onSelectFileRef.current = onSelectFile;
-  }, [onSelectFile]);
-
-  useEffect(() => {
-    onPinFileRef.current = onPinFile;
-  }, [onPinFile]);
-
-  useEffect(() => {
-    onSelectedFileMissingRef.current = onSelectedFileMissing;
-  }, [onSelectedFileMissing]);
-
-  const handleSelectionChange = useCallback(
-    (selectedPaths: readonly string[]) => {
-      const selectedPath = selectedPaths[0] ?? null;
-      const nextFile = resolveSelectedProjectFile(
-        selectedFilePathRef.current,
-        selectedPath,
-        knownFilesRef.current,
-      );
-      if (nextFile !== selectedFilePathRef.current) {
-        onSelectFileRef.current(nextFile);
-      }
-    },
-    [],
-  );
-
-  const searchChangeRef = useRef<(value: string | null) => void>(() => {});
+  /** Tells the panel when the tree's selection names another file. */
+  const followSelection = useCallback((selectedTreePath?: string | null) => {
+    const { onSelectFile: select, selectedFilePath: current } = latest.current;
+    const next = treeRef.current?.selectedFile(current, selectedTreePath);
+    if (next !== undefined && next !== current) {
+      select(next);
+    }
+  }, []);
 
   const { model } = useFileTree({
     density: "compact",
@@ -285,14 +256,10 @@ const ProjectFileTree = ({
     icons: materialFileTreeIcons,
     initialExpansion: "closed",
     itemHeight: FILE_TREE_ITEM_HEIGHT_PX,
-    onSearchChange: (value) => searchChangeRef.current(value),
-    onSelectionChange: handleSelectionChange,
+    onSearchChange: (value) => treeRef.current?.searchChanged(value),
+    onSelectionChange: (selectedPaths) =>
+      followSelection(selectedPaths[0] ?? null),
     paths: [],
-    // The tree's search filters the paths present in the model. The model is
-    // populated lazily, so typing consults a flat, cached path index (see the
-    // injection effect below) and injects only matching paths. Search never
-    // triggers per-directory filesystem traversal.
-    //
     // The built-in search input (`search: true`) is intentionally disabled:
     // it closes the search on blur regardless of `searchBlurBehavior`. We
     // render our own input bound to the model via useFileTreeSearch instead,
@@ -304,9 +271,13 @@ const ProjectFileTree = ({
 
   const treeSearch = useFileTreeSearch(model);
 
-  const searchIndex = useMemo(
+  // Loading, expansion, the filter's path injection and reveals
+  // (project-file-tree.ts).
+  const tree = useMemo(
     () =>
-      new ProjectFileSearchIndex({
+      new ProjectFileTreeModule({
+        fetchDirectory: (directory) =>
+          apiClient.projectDirectory({ directory, projectPath }),
         // The project's file list from the project resources, shared with
         // the composer's `@` menu (which takes a prefix of it).
         fetchFiles: async () => {
@@ -317,60 +288,14 @@ const ProjectFileTree = ({
           );
           return payload.files ?? [];
         },
-      }),
-    [projectPath],
-  );
-
-  const loader = useMemo(
-    () =>
-      new ProjectDirectoryLoader({
-        fetchDirectory: (directory) =>
-          apiClient.projectDirectory({ directory, projectPath }),
-        onDirectoryError: (directory, error) => {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Failed to load project files.";
-          setDirectoryErrors((current) => ({
-            ...current,
-            [directory]: message,
-          }));
-          if (directory === ".") {
-            setRootStatus("error");
-          }
-        },
-        onDirectoryLoaded: (response) => {
-          // Skip paths already present in the model (e.g. injected by search,
-          // or ancestors implicitly created by them): adding an existing path
-          // throws "Path already exists".
-          const operations = response.entries
-            .map((entry) => toProjectTreePath(entry))
-            .filter((path) => !model.getItem(path))
-            .map((path) => ({ path, type: "add" as const }));
-          if (operations.length > 0) {
-            model.batch(operations);
-          }
-          const nextKnownFiles = new Set(knownFilesRef.current);
-          for (const entry of response.entries) {
-            if (entry.kind !== "directory") {
-              nextKnownFiles.add(entry.path);
-            }
-          }
-          knownFilesRef.current = nextKnownFiles;
-          setDirectoryErrors((current) => {
-            if (!current[response.directory]) {
-              return current;
-            }
-            const next = { ...current };
-            delete next[response.directory];
-            return next;
-          });
-          if (response.directory === ".") {
-            setRootStatus(response.entries.length === 0 ? "empty" : "ready");
-          }
-        },
+        model,
       }),
     [model, projectPath],
+  );
+  treeRef.current = tree;
+  const { directoryErrors, rootStatus } = useSyncExternalStore(
+    tree.subscribe,
+    tree.getSnapshot,
   );
 
   useEffect(() => {
@@ -378,187 +303,48 @@ const ProjectFileTree = ({
   }, [materialFileTreeIcons, model]);
 
   useEffect(() => {
-    const syncExpandedDirectories = () => {
-      // Search maintains its own projected expansion state. Never interpret
-      // those changes as user requests to traverse the filesystem.
-      if (model.isSearchOpen()) {
-        return;
-      }
-      const expandedDirectories: string[] = [];
-      for (const directory of loader.knownDirectories) {
-        if (directory === ".") {
-          continue;
-        }
-        const item = model.getItem(`${directory}/`);
-        if (item?.isDirectory() && "isExpanded" in item && item.isExpanded()) {
-          expandedDirectories.push(directory);
-        }
-      }
-      void loader.syncExpandedDirectories(expandedDirectories);
-    };
-
-    syncExpandedDirectories();
-    return model.subscribe(syncExpandedDirectories);
-  }, [loader, model]);
+    tree.attach();
+    return () => tree.detach();
+  }, [tree]);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let disposed = false;
-
-    const injectSearchMatches = async (query: string) => {
-      const generation = searchIndex.generation;
-      const loaded = await searchIndex.ensureLoaded();
-      if (
-        !loaded ||
-        disposed ||
-        generation !== searchIndex.generation ||
-        model.getSearchValue() !== query
-      ) {
-        return;
-      }
-
-      const matches = searchIndex.search(query, PROJECT_SEARCH_INJECT_LIMIT);
-      const pathsToAdd = matches.filter((path) => !model.getItem(path));
-      if (pathsToAdd.length === 0) {
-        return;
-      }
-
-      loader.registerPaths(pathsToAdd);
-      const nextKnownFiles = new Set(knownFilesRef.current);
-      for (const path of pathsToAdd) {
-        nextKnownFiles.add(path);
-      }
-      knownFilesRef.current = nextKnownFiles;
-      model.batch(pathsToAdd.map((path) => ({ path, type: "add" as const })));
-    };
-
-    searchChangeRef.current = (value) => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      if (!value) {
-        return;
-      }
-      timer = setTimeout(() => {
-        timer = null;
-        void injectSearchMatches(value);
-      }, PROJECT_SEARCH_DEBOUNCE_MS);
-    };
-
-    return () => {
-      disposed = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
-      searchChangeRef.current = () => {};
-    };
-  }, [loader, model, searchIndex]);
-
-  const loadedDirectoryVersionRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!active) {
-      return;
+    if (active) {
+      tree.load(refreshVersion);
     }
-    const directoryVersion = `${projectPath}\0${refreshVersion}`;
-    // Key on the loader's own state rather than only on the version ref:
-    // StrictMode's simulated unmount (and @pierre/trees swapping its model on
-    // remount) invalidates the loader after the first request fires, which
-    // would otherwise leave the tree stuck on the loading spinner.
-    if (
-      loadedDirectoryVersionRef.current === directoryVersion &&
-      (loader.isLoaded(".") || loader.isLoading("."))
-    ) {
-      return;
-    }
-    loadedDirectoryVersionRef.current = directoryVersion;
-    loader.invalidate();
-    searchIndex.invalidate();
-    knownFilesRef.current = new Set();
-    model.resetPaths([]);
-    setDirectoryErrors({});
-    setRootStatus("loading");
-    void loader.load(".").catch(() => undefined);
-  }, [active, loader, model, projectPath, refreshVersion, searchIndex]);
-
-  useEffect(
-    () => () => {
-      loader.invalidate();
-      searchIndex.invalidate();
-    },
-    [loader, searchIndex],
-  );
+  }, [active, refreshVersion, tree]);
 
   useEffect(() => {
     void refreshVersion;
-    for (const path of model.getSelectedPaths()) {
-      if (path !== selectedFilePath) {
-        model.getItem(path)?.deselect();
-      }
-    }
-
+    tree.deselectOthers(selectedFilePath);
     if (!active || !selectedFilePath) {
       return;
     }
 
-    const generation = loader.generation;
     let cancelled = false;
-    void loader
-      .revealFile(selectedFilePath, {
-        expandDirectory: (directory) => {
-          const item = model.getItem(`${directory}/`);
-          if (item?.isDirectory() && "expand" in item) {
-            item.expand();
-          }
-        },
-        revealFile: (filePath) => {
-          for (const selectedPath of model.getSelectedPaths()) {
-            if (selectedPath !== filePath) {
-              model.getItem(selectedPath)?.deselect();
-            }
-          }
-          model.getItem(filePath)?.select();
-          model.focusPath(filePath);
-        },
-      })
-      .then((revealed) => {
-        if (
-          !revealed &&
-          !cancelled &&
-          generation === loader.generation &&
-          loader.isLoaded(".")
-        ) {
-          onSelectedFileMissingRef.current(selectedFilePath);
-        }
-      })
-      .catch(() => undefined);
-
+    void tree.reveal(selectedFilePath).then((outcome) => {
+      if (outcome === "missing" && !cancelled) {
+        latest.current.onSelectedFileMissing(selectedFilePath);
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, [active, loader, model, refreshVersion, selectedFilePath]);
+  }, [active, refreshVersion, selectedFilePath, tree]);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const selectionSyncFrameRef = useRef<number | null>(null);
 
-  const syncSelectionFromModel = useCallback(() => {
-    const selectedPath = model.getSelectedPaths()[0] ?? null;
-    const nextFile = resolveSelectedProjectFile(
-      selectedFilePathRef.current,
-      selectedPath,
-      knownFilesRef.current,
-    );
-    if (nextFile !== selectedFilePathRef.current) {
-      onSelectFileRef.current(nextFile);
-    }
-  }, [model]);
+  const syncSelectionFromModel = useCallback(
+    () => followSelection(),
+    [followSelection],
+  );
 
   const pinSelectedFile = useCallback(() => {
-    const selectedPath = model.getSelectedPaths()[0] ?? null;
-    if (selectedPath && knownFilesRef.current.has(selectedPath)) {
-      onPinFileRef.current(selectedPath);
+    const selected = tree.selectedFile(null);
+    if (selected) {
+      latest.current.onPinFile(selected);
     }
-  }, [model]);
+  }, [tree]);
 
   const scheduleSelectionSync = useCallback(() => {
     if (selectionSyncFrameRef.current !== null) {
@@ -676,9 +462,7 @@ const ProjectFileTree = ({
               <button
                 aria-label={panelsT("retryDirectory", { directory })}
                 className="shrink-0 rounded p-0.5 hover:bg-destructive/10"
-                onClick={() =>
-                  void loader.load(directory).catch(() => undefined)
-                }
+                onClick={() => tree.retry(directory)}
                 type="button"
               >
                 <RotateCw className="size-3" />
