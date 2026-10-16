@@ -122,7 +122,7 @@ export const GitLogRow = ({
           <p className="min-w-0 flex-1 truncate text-sm leading-5">
             {commit.subject || gitT("noSubject")}
           </p>
-          <span className="shrink-0 whitespace-nowrap text-muted-foreground text-xs leading-5 group-hover:opacity-0 group-focus-within:opacity-0">
+          <span className="shrink-0 whitespace-nowrap text-muted-foreground text-xs leading-5 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0">
             {formatLastActiveTime(commit.authorDate, relativeTimeFormatter)}
           </span>
         </div>
@@ -139,7 +139,7 @@ export const GitLogRow = ({
           <span className="min-w-0 truncate">{commit.authorName}</span>
         </div>
       </div>
-      <div className="-translate-y-1/2 absolute top-1/2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="-translate-y-1/2 absolute top-1/2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
         <Button
           aria-label={gitT("copyCommitHash")}
           className="size-7 rounded-md p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
