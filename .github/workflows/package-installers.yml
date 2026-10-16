@@ -475,10 +475,16 @@ jobs:
         include:
           - target: linux-x64
             runner: blacksmith-4vcpu-ubuntu-2404
-            container: ubuntu:20.04
+            container:
+              image: ubuntu:20.04
+              # Reap detached host processes so the shutdown smoke test can
+              # observe their exit instead of an orphaned zombie process.
+              options: --init
           - target: linux-arm64
             runner: blacksmith-4vcpu-ubuntu-2404-arm
-            container: ubuntu:20.04
+            container:
+              image: ubuntu:20.04
+              options: --init
           - target: darwin-arm64
             runner: blacksmith-6vcpu-macos-15
     steps:
