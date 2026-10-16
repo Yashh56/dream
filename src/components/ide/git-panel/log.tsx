@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import type { ProjectGitLogCommit, ProjectGitLogResponse } from "@/types/ide";
 import { formatLastActiveTime } from "../activity-time";
 import { projectResourceKey, useProjectResource } from "../project-resources";
+import { buildGitGraph, type GitGraphRow } from "./log-graph";
+import { GitLogGraphCell, getGitGraphWidth } from "./log-graph-cell";
 
 const GIT_LOG_PAGE_SIZE = 100;
 const COPIED_FEEDBACK_MS = 1500;
@@ -60,9 +62,12 @@ const matchesCommit = (commit: ProjectGitLogCommit, query: string) =>
 
 export const GitLogRow = ({
   commit,
+  graph,
   relativeTimeFormatter,
 }: {
   commit: ProjectGitLogCommit;
+  /** The commit's row of the graph, and the graph's width in pixels. */
+  graph?: { row: GitGraphRow; width: number };
   relativeTimeFormatter: Intl.RelativeTimeFormat;
 }) => {
   const gitT = useTranslations("git");
@@ -107,8 +112,12 @@ export const GitLogRow = ({
     .join("\n");
 
   return (
-    <div className="group relative min-w-0 rounded-md border border-transparent hover:bg-surface-50 dark:hover:bg-surface-900">
-      <div className="min-w-0 px-3 py-2" title={tooltip}>
+    <div className="group relative flex min-w-0 rounded-md hover:bg-surface-50 dark:hover:bg-surface-900">
+      {graph ? <GitLogGraphCell row={graph.row} width={graph.width} /> : null}
+      <div
+        className={cn("min-w-0 flex-1 py-2 pr-3", graph ? "pl-1" : "pl-3")}
+        title={tooltip}
+      >
         <div className="flex min-w-0 items-baseline gap-3">
           <p className="min-w-0 flex-1 truncate text-sm leading-5">
             {commit.subject || gitT("noSubject")}
@@ -252,6 +261,13 @@ export const GitLog = ({
     [commits, normalizedQuery],
   );
 
+  // The graph needs every commit in order; a search shows matches alone.
+  const graph = useMemo(
+    () => (normalizedQuery ? null : buildGitGraph(commits)),
+    [commits, normalizedQuery],
+  );
+  const graphWidth = graph ? getGitGraphWidth(graph.laneCount) : 0;
+
   const errorMessage = error === null ? null : error || gitT("unableToLoadLog");
   let emptyMessage: string | null = null;
   if (!loading && filteredCommits.length === 0) {
@@ -272,7 +288,8 @@ export const GitLog = ({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 px-2 pb-3">
+        {/* With the graph, rows touch so its lines run on unbroken. */}
+        <div className={cn("px-2 pb-3", !graph && "space-y-1")}>
           {loading && commits.length === 0 ? (
             <div className="flex min-h-32 items-center justify-center p-4">
               <Spinner className="size-4 text-muted-foreground" />
@@ -287,13 +304,19 @@ export const GitLog = ({
               <p className="min-w-0 break-words">{emptyMessage}</p>
             </div>
           ) : (
-            filteredCommits.map((commit) => (
-              <GitLogRow
-                commit={commit}
-                key={commit.hash}
-                relativeTimeFormatter={relativeTimeFormatter}
-              />
-            ))
+            filteredCommits.map((commit, index) => {
+              const graphRow = graph?.rows[index];
+              return (
+                <GitLogRow
+                  commit={commit}
+                  graph={
+                    graphRow ? { row: graphRow, width: graphWidth } : undefined
+                  }
+                  key={commit.hash}
+                  relativeTimeFormatter={relativeTimeFormatter}
+                />
+              );
+            })
           )}
           {hasMore && !loading && !normalizedQuery ? (
             <div className="flex justify-center pt-1">

@@ -512,6 +512,7 @@ const parseGitLogRecord = (record) => {
     authorEmail = "",
     authorDate = "",
     refs = "",
+    parents = "",
   ] = record.split(GIT_LOG_FIELD_SEPARATOR);
 
   return {
@@ -519,6 +520,7 @@ const parseGitLogRecord = (record) => {
     authorEmail,
     authorName,
     hash,
+    parents: parents.split(" ").filter(Boolean),
     refs: parseGitLogRefs(refs),
     shortHash,
     subject,
@@ -537,8 +539,11 @@ export const getProjectGitLog = async (
       "log",
       `--max-count=${limit + 1}`,
       `--skip=${skip}`,
+      // Newest first, but never a parent before its children: the graph
+      // draws each commit's lines down to parents still to come.
+      "--date-order",
       "--decorate=short",
-      `--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%aI%x1f%D%x1e`,
+      `--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%P%x1e`,
       "HEAD",
     ],
     { allowFailure: true },

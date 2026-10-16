@@ -75,3 +75,33 @@ test("lists commits newest first with refs and paging", async () => {
     ["First commit"],
   );
 });
+
+test("names each commit's parents, a merge's first parent first", async () => {
+  const root = createRepo();
+  commit(root, "a.txt", "Base");
+  git(root, "checkout", "-b", "feature");
+  commit(root, "f.txt", "Feature work");
+  git(root, "checkout", "main");
+  commit(root, "m.txt", "Main work");
+  git(root, "merge", "--no-ff", "-m", "Merge feature", "feature");
+
+  const { commits } = await getProjectGitLog(root);
+  const bySubject = Object.fromEntries(
+    commits.map((item) => [item.subject, item]),
+  );
+
+  assert.equal(commits[0].subject, "Merge feature");
+  assert.deepEqual(bySubject["Merge feature"].parents, [
+    bySubject["Main work"].hash,
+    bySubject["Feature work"].hash,
+  ]);
+  assert.deepEqual(bySubject["Feature work"].parents, [bySubject.Base.hash]);
+  assert.deepEqual(bySubject.Base.parents, []);
+  // Every commit comes before its parents.
+  const position = new Map(commits.map((item, index) => [item.hash, index]));
+  for (const item of commits) {
+    for (const parent of item.parents) {
+      assert.ok(position.get(parent) > position.get(item.hash));
+    }
+  }
+});

@@ -742,6 +742,8 @@ export interface ProjectGitLogCommit {
   authorEmail: string;
   authorName: string;
   hash: string;
+  /** Parent hashes, first parent first; two or more for a merge. */
+  parents: string[];
   refs: string[];
   shortHash: string;
   subject: string;

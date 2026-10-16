@@ -126,7 +126,7 @@ export const GitPanel = ({
             icon={SourceControlIcon}
             onClose={onClosePanel}
           />
-          <span className="shrink-0 whitespace-nowrap font-medium text-sm">
+          <span className="mr-2 shrink-0 whitespace-nowrap font-medium text-sm">
             {gitT("title")}
           </span>
           <TabsList aria-label={gitT("views")} className="min-w-0">
