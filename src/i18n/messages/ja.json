@@ -726,7 +726,17 @@
     "pushedTo": "{target} にプッシュしました",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git の操作",
-    "viewHistory": "履歴を表示"
+    "viewHistory": "履歴を表示",
+    "fetch": "フェッチ",
+    "fetchedFrom": "{target} からフェッチしました",
+    "pull": "プル",
+    "pullMenu": "プル…",
+    "pullDescription": "{target} からフェッチし、現在のブランチを fast-forward で更新します。分岐している場合はマージまたはリベースが必要です。",
+    "pulledFrom": "{target} からプルしました",
+    "unableToFetch": "変更をフェッチできませんでした。",
+    "unableToPull": "変更をプルできませんでした。",
+    "openRepository": "リポジトリを開く",
+    "unableToOpenRepository": "リポジトリを開けませんでした。"
   },
   "navigation": {
     "breadcrumb": "ブレッドクラム",

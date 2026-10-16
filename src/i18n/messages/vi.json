@@ -726,7 +726,17 @@
     "pushedTo": "Đã đẩy lên {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Thao tác Git",
-    "viewHistory": "Xem lịch sử"
+    "viewHistory": "Xem lịch sử",
+    "fetch": "Fetch",
+    "fetchedFrom": "Đã lấy từ {target}",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Lấy thay đổi từ {target} và cập nhật nhánh hiện tại bằng fast-forward. Các nhánh đã phân kỳ cần merge hoặc rebase.",
+    "pulledFrom": "Đã cập nhật từ {target}",
+    "unableToFetch": "Không thể lấy thay đổi.",
+    "unableToPull": "Không thể kéo thay đổi.",
+    "openRepository": "Mở kho mã",
+    "unableToOpenRepository": "Không thể mở kho mã."
   },
   "navigation": {
     "breadcrumb": "Đường dẫn",

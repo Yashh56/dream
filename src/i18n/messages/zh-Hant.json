@@ -726,7 +726,17 @@
     "pushedTo": "已推送到 {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git 動作",
-    "viewHistory": "檢視歷史"
+    "viewHistory": "檢視歷史",
+    "fetch": "擷取",
+    "fetchedFrom": "已從 {target} 擷取",
+    "pull": "拉取",
+    "pullMenu": "拉取…",
+    "pullDescription": "從 {target} 擷取變更並快轉目前分支。已分岔的分支需要合併或重定基底。",
+    "pulledFrom": "已從 {target} 拉取",
+    "unableToFetch": "無法擷取變更。",
+    "unableToPull": "無法拉取變更。",
+    "openRepository": "開啟儲存庫",
+    "unableToOpenRepository": "無法開啟儲存庫。"
   },
   "navigation": {
     "breadcrumb": "麵包屑",

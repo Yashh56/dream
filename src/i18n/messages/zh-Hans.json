@@ -726,7 +726,17 @@
     "pushedTo": "已推送到 {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git 操作",
-    "viewHistory": "查看历史"
+    "viewHistory": "查看历史",
+    "fetch": "获取",
+    "fetchedFrom": "已从 {target} 获取",
+    "pull": "拉取",
+    "pullMenu": "拉取…",
+    "pullDescription": "从 {target} 获取更改并快进当前分支。已分叉的分支需要合并或变基。",
+    "pulledFrom": "已从 {target} 拉取",
+    "unableToFetch": "无法获取更改。",
+    "unableToPull": "无法拉取更改。",
+    "openRepository": "打开仓库",
+    "unableToOpenRepository": "无法打开仓库。"
   },
   "navigation": {
     "breadcrumb": "面包屑",

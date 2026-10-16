@@ -726,7 +726,17 @@
     "pushedTo": "Poussé vers {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Actions Git",
-    "viewHistory": "Voir l'historique"
+    "viewHistory": "Voir l'historique",
+    "fetch": "Fetch",
+    "fetchedFrom": "Récupéré depuis {target}",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Récupérer les changements de {target} et avancer la branche actuelle par fast-forward. Les branches divergentes nécessitent un merge ou un rebase.",
+    "pulledFrom": "Mis à jour depuis {target}",
+    "unableToFetch": "Impossible de récupérer les changements.",
+    "unableToPull": "Impossible d’intégrer les changements.",
+    "openRepository": "Ouvrir le dépôt",
+    "unableToOpenRepository": "Impossible d’ouvrir le dépôt."
   },
   "navigation": {
     "breadcrumb": "Fil d'Ariane",

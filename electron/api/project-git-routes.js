@@ -3,10 +3,13 @@ import { TextDecoder } from "node:util";
 import {
   commitProjectGitChanges,
   createProjectPullRequest,
+  fetchProjectGitChanges,
   generateProjectGitCommitMessage,
   generateProjectPullRequestDetails,
   getProjectGitLog,
   getProjectGitPushPreview,
+  getProjectGitRemoteUrl,
+  pullProjectGitChanges,
   pushProjectGitChanges,
 } from "./project-git/actions.js";
 import {
@@ -39,10 +42,13 @@ import {
   projectGitCreatePullRequestSchema,
   projectGitCreateWorktreeRequestSchema,
   projectGitDiffRequestSchema,
+  projectGitFetchRequestSchema,
   projectGitLogRequestSchema,
   projectGitPullRequestDetailsRequestSchema,
+  projectGitPullRequestSchema,
   projectGitPushPreviewRequestSchema,
   projectGitPushRequestSchema,
+  projectGitRemoteUrlRequestSchema,
   projectGitRevertAllRequestSchema,
   projectGitRevertFileRequestSchema,
   projectGitStatusRequestSchema,
@@ -354,6 +360,30 @@ export const registerProjectGitRoutes = (app) => {
     ({ projectPath, ...options }) =>
       pushProjectGitChanges(projectPath, options),
     { errorMessage: "Unable to push changes." },
+  );
+
+  postProjectRoute(
+    app,
+    "/api/project-git-fetch",
+    projectGitFetchRequestSchema,
+    ({ projectPath }) => fetchProjectGitChanges(projectPath),
+    { errorMessage: "Unable to fetch changes." },
+  );
+
+  postProjectRoute(
+    app,
+    "/api/project-git-pull",
+    projectGitPullRequestSchema,
+    ({ projectPath }) => pullProjectGitChanges(projectPath),
+    { errorMessage: "Unable to pull changes." },
+  );
+
+  postProjectRoute(
+    app,
+    "/api/project-git-remote-url",
+    projectGitRemoteUrlRequestSchema,
+    ({ projectPath }) => getProjectGitRemoteUrl(projectPath),
+    { errorMessage: "Unable to open repository." },
   );
 
   postProjectRoute(

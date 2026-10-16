@@ -726,7 +726,17 @@
     "pushedTo": "Nach {target} gepusht",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git-Aktionen",
-    "viewHistory": "Verlauf anzeigen"
+    "viewHistory": "Verlauf anzeigen",
+    "fetch": "Fetch",
+    "fetchedFrom": "Von {target} abgerufen",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Änderungen von {target} abrufen und den aktuellen Branch per Fast-Forward aktualisieren. Bei abweichenden Branches ist ein Merge oder Rebase erforderlich.",
+    "pulledFrom": "Von {target} aktualisiert",
+    "unableToFetch": "Änderungen konnten nicht abgerufen werden.",
+    "unableToPull": "Änderungen konnten nicht übernommen werden.",
+    "openRepository": "Repository öffnen",
+    "unableToOpenRepository": "Repository konnte nicht geöffnet werden."
   },
   "navigation": {
     "breadcrumb": "Breadcrumb",

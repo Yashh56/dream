@@ -726,7 +726,17 @@
     "pushedTo": "Enviado a {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Acciones de Git",
-    "viewHistory": "Ver historial"
+    "viewHistory": "Ver historial",
+    "fetch": "Fetch",
+    "fetchedFrom": "Obtenido de {target}",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Obtener cambios de {target} y avanzar la rama actual mediante fast-forward. Las ramas divergentes requieren un merge o rebase.",
+    "pulledFrom": "Actualizado desde {target}",
+    "unableToFetch": "No se pudieron obtener los cambios.",
+    "unableToPull": "No se pudieron incorporar los cambios.",
+    "openRepository": "Abrir repositorio",
+    "unableToOpenRepository": "No se pudo abrir el repositorio."
   },
   "navigation": {
     "breadcrumb": "Ruta de navegación",

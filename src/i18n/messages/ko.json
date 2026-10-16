@@ -726,7 +726,17 @@
     "pushedTo": "{target}에 푸시함",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git 작업",
-    "viewHistory": "기록 보기"
+    "viewHistory": "기록 보기",
+    "fetch": "페치",
+    "fetchedFrom": "{target}에서 페치함",
+    "pull": "풀",
+    "pullMenu": "풀…",
+    "pullDescription": "{target}에서 페치하고 현재 브랜치를 fast-forward로 업데이트합니다. 분기된 브랜치는 병합 또는 리베이스가 필요합니다.",
+    "pulledFrom": "{target}에서 풀함",
+    "unableToFetch": "변경 사항을 페치할 수 없습니다.",
+    "unableToPull": "변경 사항을 풀할 수 없습니다.",
+    "openRepository": "저장소 열기",
+    "unableToOpenRepository": "저장소를 열 수 없습니다."
   },
   "navigation": {
     "breadcrumb": "탐색경로",

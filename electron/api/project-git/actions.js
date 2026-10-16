@@ -1,6 +1,7 @@
 import path from "node:path";
 import { getProvider } from "../providers/registry.js";
 import {
+  getGitAheadBehindCounts,
   getGitCommandErrorMessage,
   getGitRepositoryInfo,
   getProjectGitBulkCachedDiff,
@@ -47,6 +48,107 @@ const ensureProjectGitRepository = async (projectPath) => {
   }
 
   return repoInfo;
+};
+
+const getProjectGitRemote = async (repoInfo) => {
+  const branch = getGitActionBranchName(repoInfo.branch);
+  const upstream = branch
+    ? await resolveGitBranchUpstream(repoInfo.repoRoot, branch)
+    : null;
+  const metadata = await getProjectGitMetadata(repoInfo.repoRoot, branch);
+  const remote = upstream?.remote ?? metadata.remoteName;
+  if (!remote) {
+    throw new Error("No Git remote is configured for this repository.");
+  }
+  return { remote, upstream };
+};
+
+export const fetchProjectGitChanges = async (projectPath) => {
+  const repoInfo = await ensureProjectGitRepository(projectPath);
+  const { remote } = await getProjectGitRemote(repoInfo);
+  await runGitCommand(repoInfo.repoRoot, ["fetch", "--", remote]);
+  return { remote };
+};
+
+export const pullProjectGitChanges = async (projectPath) => {
+  const repoInfo = await ensureProjectGitRepository(projectPath);
+  const branch = getGitActionBranchName(repoInfo.branch);
+  if (!branch) {
+    throw new Error("Cannot pull from a detached HEAD.");
+  }
+  const { remote, upstream } = await getProjectGitRemote(repoInfo);
+  if (!upstream) {
+    throw new Error(
+      "This branch has no remote upstream. Set an upstream before pulling.",
+    );
+  }
+  await runGitCommand(repoInfo.repoRoot, ["fetch", "--", remote]);
+  const currentBranch = await runGitCommand(
+    repoInfo.repoRoot,
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    { allowFailure: true },
+  );
+  if (!currentBranch.ok || currentBranch.stdout.trim() !== branch) {
+    throw new Error(
+      "The current branch changed while fetching. Try pulling again.",
+    );
+  }
+  const { aheadCount, behindCount } = await getGitAheadBehindCounts(
+    repoInfo.repoRoot,
+    upstream.ref,
+  );
+  if (aheadCount > 0 && behindCount > 0) {
+    throw new Error(
+      "The local and remote branches have diverged. Merge or rebase them before pulling.",
+    );
+  }
+  // Fetch followed by a fast-forward merge is a pull without implicit rebasing,
+  // merge commits or auto-stashing from the user's Git configuration.
+  await runGitCommand(repoInfo.repoRoot, [
+    "merge",
+    "--ff-only",
+    "--no-autostash",
+    "--no-squash",
+    upstream.ref,
+  ]);
+  return { upstreamBranch: upstream.upstream };
+};
+
+export const getProjectGitRemoteUrl = async (projectPath) => {
+  const repoInfo = await ensureProjectGitRepository(projectPath);
+  const { remote } = await getProjectGitRemote(repoInfo);
+  const result = await runGitCommand(repoInfo.repoRoot, [
+    "remote",
+    "get-url",
+    "--",
+    remote,
+  ]);
+  const remoteUrl = result.stdout.trim();
+  const scp = /^(?:[^/@:]+@)?([^/:]+):(.+)$/.exec(remoteUrl);
+  let url;
+  try {
+    url = new URL(
+      remoteUrl.includes("://")
+        ? remoteUrl
+        : scp && !remoteUrl.includes("\\")
+          ? `ssh://${scp[1]}/${scp[2]}`
+          : "",
+    );
+  } catch {
+    throw new Error("This remote has no repository web URL.");
+  }
+  if (!["https:", "http:", "ssh:", "git:"].includes(url.protocol)) {
+    throw new Error("This remote has no repository web URL.");
+  }
+  if (url.protocol === "ssh:" || url.protocol === "git:") {
+    url = new URL(`https://${url.hostname}${url.pathname}`);
+  }
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\/$/, "").replace(/\.git$/, "");
+  return { url: url.href };
 };
 
 const getProjectGitPathspec = (projectPath, repoRoot) => {

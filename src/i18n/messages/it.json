@@ -726,7 +726,17 @@
     "pushedTo": "Push eseguito su {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Azioni Git",
-    "viewHistory": "Visualizza cronologia"
+    "viewHistory": "Visualizza cronologia",
+    "fetch": "Fetch",
+    "fetchedFrom": "Recuperato da {target}",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Recupera le modifiche da {target} e aggiorna il branch corrente con fast-forward. I branch divergenti richiedono un merge o un rebase.",
+    "pulledFrom": "Aggiornato da {target}",
+    "unableToFetch": "Impossibile recuperare le modifiche.",
+    "unableToPull": "Impossibile integrare le modifiche.",
+    "openRepository": "Apri repository",
+    "unableToOpenRepository": "Impossibile aprire il repository."
   },
   "navigation": {
     "breadcrumb": "Percorso di navigazione",

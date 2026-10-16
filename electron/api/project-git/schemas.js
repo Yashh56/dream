@@ -64,6 +64,10 @@ export const projectGitBranchesRequestSchema = z.object({
   projectPath: z.string().min(1),
 });
 
+export const projectGitFetchRequestSchema = projectGitBranchesRequestSchema;
+export const projectGitPullRequestSchema = projectGitBranchesRequestSchema;
+export const projectGitRemoteUrlRequestSchema = projectGitBranchesRequestSchema;
+
 export const projectGitCheckoutRequestSchema = z.object({
   branchName: z.string().min(1),
   create: z.boolean().default(false),

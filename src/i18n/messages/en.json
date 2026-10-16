@@ -726,7 +726,17 @@
     "pushedTo": "Pushed to {target}",
     "viewPullRequest": "PR #{number}",
     "gitActions": "Git actions",
-    "viewHistory": "View history"
+    "viewHistory": "View history",
+    "fetch": "Fetch",
+    "fetchedFrom": "Fetched from {target}",
+    "pull": "Pull",
+    "pullMenu": "Pull…",
+    "pullDescription": "Fetch and fast-forward the current branch from {target}. Diverged branches require a merge or rebase.",
+    "pulledFrom": "Pulled from {target}",
+    "unableToFetch": "Unable to fetch changes.",
+    "unableToPull": "Unable to pull changes.",
+    "openRepository": "Open repository",
+    "unableToOpenRepository": "Unable to open repository."
   },
   "navigation": {
     "breadcrumb": "Breadcrumb",

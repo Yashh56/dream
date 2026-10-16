@@ -80,10 +80,13 @@ import type {
   projectGitCreatePullRequestSchema,
   projectGitCreateWorktreeRequestSchema,
   projectGitDiffRequestSchema,
+  projectGitFetchRequestSchema,
   projectGitLogRequestSchema,
   projectGitPullRequestDetailsRequestSchema,
+  projectGitPullRequestSchema,
   projectGitPushPreviewRequestSchema,
   projectGitPushRequestSchema,
+  projectGitRemoteUrlRequestSchema,
   projectGitRevertAllRequestSchema,
   projectGitRevertFileRequestSchema,
   projectGitStatusRequestSchema,
@@ -426,6 +429,18 @@ export const API_ROUTES = {
     Input<typeof projectGitPushPreviewRequestSchema>,
     ProjectGitPushPreviewResponse
   >("/api/project-git-push-preview"),
+  gitFetch: post<
+    Input<typeof projectGitFetchRequestSchema>,
+    { remote: string }
+  >("/api/project-git-fetch"),
+  gitPull: post<
+    Input<typeof projectGitPullRequestSchema>,
+    { upstreamBranch: string }
+  >("/api/project-git-pull"),
+  gitRemoteUrl: post<
+    Input<typeof projectGitRemoteUrlRequestSchema>,
+    { url: string }
+  >("/api/project-git-remote-url"),
   gitLog: post<Input<typeof projectGitLogRequestSchema>, ProjectGitLogResponse>(
     "/api/project-git-log",
   ),
