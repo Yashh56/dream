@@ -719,7 +719,7 @@
     "unableToLoadLog": "Không thể tải lịch sử Git.",
     "title": "Git",
     "views": "Chế độ xem Git",
-    "log": "Nhật ký",
+    "log": "Lịch sử",
     "pullRequest": "Pull request",
     "commitFiles": "{count, plural, other {Commit # tệp}}",
     "publishBranch": "Xuất bản nhánh",

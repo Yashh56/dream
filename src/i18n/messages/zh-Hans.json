@@ -719,7 +719,7 @@
     "unableToLoadLog": "无法加载 Git 历史。",
     "title": "Git",
     "views": "Git 视图",
-    "log": "日志",
+    "log": "历史",
     "pullRequest": "拉取请求",
     "commitFiles": "{count, plural, other {提交 # 个文件}}",
     "publishBranch": "发布分支",

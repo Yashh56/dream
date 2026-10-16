@@ -719,7 +719,7 @@
     "unableToLoadLog": "Unable to load Git history.",
     "title": "Git",
     "views": "Git views",
-    "log": "Log",
+    "log": "History",
     "pullRequest": "Pull request",
     "commitFiles": "Commit {count, plural, one {# file} other {# files}}",
     "publishBranch": "Publish branch",

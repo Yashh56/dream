@@ -719,7 +719,7 @@
     "unableToLoadLog": "Impossibile caricare la cronologia Git.",
     "title": "Git",
     "views": "Viste Git",
-    "log": "Log",
+    "log": "Cronologia",
     "pullRequest": "Pull request",
     "commitFiles": "Esegui commit di {count, plural, one {# file} other {# file}}",
     "publishBranch": "Pubblica branch",

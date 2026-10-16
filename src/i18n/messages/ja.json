@@ -719,7 +719,7 @@
     "unableToLoadLog": "Git 履歴を読み込めません。",
     "title": "Git",
     "views": "Git ビュー",
-    "log": "ログ",
+    "log": "履歴",
     "pullRequest": "プルリクエスト",
     "commitFiles": "{count, plural, other {# 件のファイルをコミット}}",
     "publishBranch": "ブランチを公開",

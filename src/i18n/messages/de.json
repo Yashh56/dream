@@ -719,7 +719,7 @@
     "unableToLoadLog": "Git-Verlauf konnte nicht geladen werden.",
     "title": "Git",
     "views": "Git-Ansichten",
-    "log": "Log",
+    "log": "Verlauf",
     "pullRequest": "Pull Request",
     "commitFiles": "{count, plural, one {# Datei festschreiben} other {# Dateien festschreiben}}",
     "publishBranch": "Branch veröffentlichen",

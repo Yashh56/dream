@@ -719,7 +719,7 @@
     "unableToLoadLog": "Git 기록을 불러올 수 없습니다.",
     "title": "Git",
     "views": "Git 보기",
-    "log": "로그",
+    "log": "기록",
     "pullRequest": "풀 리퀘스트",
     "commitFiles": "{count, plural, other {파일 #개 커밋}}",
     "publishBranch": "브랜치 게시",

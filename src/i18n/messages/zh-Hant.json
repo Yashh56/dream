@@ -719,7 +719,7 @@
     "unableToLoadLog": "無法載入 Git 歷史。",
     "title": "Git",
     "views": "Git 檢視",
-    "log": "日誌",
+    "log": "歷史",
     "pullRequest": "拉取請求",
     "commitFiles": "{count, plural, other {提交 # 個檔案}}",
     "publishBranch": "發佈分支",

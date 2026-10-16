@@ -719,7 +719,7 @@
     "unableToLoadLog": "Impossible de charger l'historique Git.",
     "title": "Git",
     "views": "Vues Git",
-    "log": "Journal",
+    "log": "Historique",
     "pullRequest": "Pull request",
     "commitFiles": "Valider {count, plural, one {# fichier} other {# fichiers}}",
     "publishBranch": "Publier la branche",

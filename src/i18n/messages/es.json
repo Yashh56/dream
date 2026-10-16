@@ -719,7 +719,7 @@
     "unableToLoadLog": "No se pudo cargar el historial de Git.",
     "title": "Git",
     "views": "Vistas de Git",
-    "log": "Registro",
+    "log": "Historial",
     "pullRequest": "Solicitud de extracción",
     "commitFiles": "Confirmar {count, plural, one {# archivo} other {# archivos}}",
     "publishBranch": "Publicar rama",
