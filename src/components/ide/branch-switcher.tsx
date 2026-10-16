@@ -1,4 +1,4 @@
-import { Check, ChevronDown, FolderTree, GitBranch, Plus } from "lucide-react";
+import { Check, FolderTree, GitBranch, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -197,7 +197,6 @@ const BranchSwitcherImpl = ({
           <span className="truncate">
             {currentBranch ?? branchT("branches")}
           </span>
-          <ChevronDown className="size-3.5 shrink-0 opacity-70" />
         </PopoverTrigger>
         <PopoverContent
           align="end"
