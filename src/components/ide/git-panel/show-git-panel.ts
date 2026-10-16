@@ -50,20 +50,9 @@ export const useCommitMessageFocusRequest = (
 export const useShowGitPanel = (projectId: string) =>
   useCallback(
     (tab?: GitPanelTab, options: { focusCommitMessage?: boolean } = {}) => {
-      const state = useIdeStore.getState();
-      const project = state.projects.find((item) => item.id === projectId);
-      if (!project) {
-        return;
-      }
-
-      if (project.ui.rightPanelView === "terminal") {
-        state.setProjectTerminalPanelOpen(projectId, false);
-      }
-      if (tab) {
-        state.setProjectGitPanelTab(projectId, tab);
-      }
-      state.setProjectRightPanelView(projectId, "git");
-      state.setProjectRightPanelOpen(projectId, true);
+      useIdeStore
+        .getState()
+        .showRightPanelView(projectId, "git", { gitTab: tab });
       if (options.focusCommitMessage && tab === "changes") {
         requestCommitMessageFocus(projectId);
       }

@@ -137,8 +137,8 @@ Behaviour changes, all deliberate:
 
 Not inspected in the running app; covered by the store tests above.
 
-Remaining/deferred: the exclusions above. Candidate 3 of the same review
-(right-panel navigation) moves chat column close/reorder into this document
-next.
+Remaining/deferred: the exclusions above. Chat column close, reorder and
+widths moved into this document under RPN-01
+(`right-panel-navigation.md`).
 
 Recovery: docs/architecture/tasks/workspace-document-removals.md#WSDOC-01.

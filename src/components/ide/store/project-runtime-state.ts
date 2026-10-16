@@ -19,7 +19,6 @@ export const PROJECT_KEYED_RUNTIME_STATE = [
   "projectFilesRefreshKeys",
   "projectGitPanelTabByProject",
   "projectGitRefreshKeys",
-  "projectTerminalPanelOpenByProject",
   "projectTerminalSessionIds",
 ] as const satisfies readonly RecordKeyOf<IdeState>[];
 

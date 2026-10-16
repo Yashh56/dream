@@ -717,3 +717,80 @@ test("restore registers each project's empty active chat as its draft", () => {
   assert.equal(doc.activeProjectId, fresh.id);
   assert.deepEqual(doc.draftChatIdByProject, { [fresh.id]: freshChat.id });
 });
+
+// ---------------------------------------------------------------------------
+// Chat columns
+// ---------------------------------------------------------------------------
+
+/** One project showing three chats side by side, the middle one active. */
+const columnsDoc = () => {
+  const { doc: seeded, project } = seededDoc();
+  let doc = workspace.toggleMultiChat(seeded, SETTINGS, project.id);
+  const second = workspace.addChatBeside(doc, SETTINGS, project.id);
+  const third = workspace.addChatBeside(second.doc, SETTINGS, project.id);
+  doc = workspace.focusChat(
+    third.doc,
+    SETTINGS,
+    project.id,
+    second.chatId as string,
+  );
+  const ids = projectIn(doc, project.id).ui.openChatIds;
+  assert.equal(ids.length, 3);
+  assertInvariant(doc);
+  return { doc, ids, projectId: project.id };
+};
+
+test("closing the active column hands focus to the one that took its place", () => {
+  const { doc, ids, projectId } = columnsDoc();
+
+  const closed = workspace.closeChatColumn(
+    doc,
+    SETTINGS,
+    projectId,
+    ids[1] as string,
+  );
+
+  assertInvariant(closed);
+  const ui = projectIn(closed, projectId).ui;
+  assert.deepEqual(ui.openChatIds, [ids[0], ids[2]]);
+  assert.equal(ui.activeChatId, ids[2]);
+  // The chat itself stays; only its column closed.
+  assert.ok(closed.chats.some((chat) => chat.id === ids[1]));
+});
+
+test("the last open column cannot be closed", () => {
+  const { chat, doc, project } = seededDoc();
+  assert.equal(
+    workspace.closeChatColumn(doc, SETTINGS, project.id, chat.id),
+    doc,
+  );
+});
+
+test("reordering columns moves one and keeps the active chat", () => {
+  const { doc, ids, projectId } = columnsDoc();
+
+  const moved = workspace.reorderChatColumns(doc, SETTINGS, projectId, 0, 2);
+
+  assertInvariant(moved);
+  const ui = projectIn(moved, projectId).ui;
+  assert.deepEqual(ui.openChatIds, [ids[1], ids[2], ids[0]]);
+  assert.equal(ui.activeChatId, ids[1]);
+  assert.equal(
+    workspace.reorderChatColumns(doc, SETTINGS, projectId, 0, 9),
+    doc,
+  );
+});
+
+test("column widths are kept only for open chats", () => {
+  const { doc, ids, projectId } = columnsDoc();
+
+  const sized = workspace.setChatColumnWidths(doc, SETTINGS, projectId, {
+    [ids[0] as string]: 320,
+    gone: 400,
+  });
+
+  assertInvariant(sized);
+  assert.deepEqual(projectIn(sized, projectId).ui.chatColumnWidths, {
+    [ids[0] as string]: 320,
+  });
+});

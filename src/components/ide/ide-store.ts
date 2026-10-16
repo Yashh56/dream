@@ -90,7 +90,6 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   nextTerminalOrdinalByProject: {},
   projectTerminalSessionIds: {},
   activeTerminalSessionIdByProject: {},
-  projectTerminalPanelOpenByProject: {},
   projectGitPanelTabByProject: {},
   outputPanelOpen: false,
   browserError: null,

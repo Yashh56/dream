@@ -29,7 +29,7 @@ export const createTerminalActions = (
   | "startRunner"
   | "stopRunner"
   | "openProjectTerminal"
-  | "setProjectTerminalPanelOpen"
+  | "discardUntouchedTerminals"
   | "addProjectTerminal"
   | "setActiveProjectTerminalId"
   | "reorderProjectTerminals"
@@ -89,10 +89,6 @@ export const createTerminalActions = (
           ...state.activeTerminalSessionIdByProject,
           [projectId]: activeSessionId,
         },
-        projectTerminalPanelOpenByProject: {
-          ...state.projectTerminalPanelOpenByProject,
-          [projectId]: true,
-        },
       }));
       return;
     }
@@ -100,20 +96,9 @@ export const createTerminalActions = (
     await get().addProjectTerminal(projectId, { closeIfUntouched: true });
   },
 
-  setProjectTerminalPanelOpen: (projectId, open) => {
-    set((state) => ({
-      projectTerminalPanelOpenByProject: {
-        ...state.projectTerminalPanelOpenByProject,
-        [projectId]: open,
-      },
-    }));
-
-    if (open) {
-      return;
-    }
-
-    // Terminals started just by opening the panel are discarded when the
-    // panel closes, unless the user typed something into them.
+  discardUntouchedTerminals: (projectId) => {
+    // Terminals started just by showing the terminal view are discarded when
+    // it stops showing, unless the user typed something into them.
     const untouchedSessionIds = (
       get().projectTerminalSessionIds[projectId] ?? []
     ).filter(isTerminalSessionUntouched);
@@ -167,10 +152,6 @@ export const createTerminalActions = (
         activeTerminalSessionIdByProject: {
           ...state.activeTerminalSessionIdByProject,
           [projectId]: sessionId,
-        },
-        projectTerminalPanelOpenByProject: {
-          ...state.projectTerminalPanelOpenByProject,
-          [projectId]: true,
         },
         terminalSessionNames: {
           ...state.terminalSessionNames,
@@ -267,9 +248,6 @@ export const createTerminalActions = (
       const nextTerminalTransport = { ...state.terminalTransport };
       const nextTerminalShell = { ...state.terminalShell };
       const nextTerminalSessionNames = { ...state.terminalSessionNames };
-      const nextProjectTerminalPanelOpenByProject = {
-        ...state.projectTerminalPanelOpenByProject,
-      };
 
       delete nextTerminalStatus[sessionId];
       delete nextTerminalTransport[sessionId];
@@ -290,9 +268,6 @@ export const createTerminalActions = (
         },
       };
 
-      if (nextSessionIds.length === 0) {
-        nextProjectTerminalPanelOpenByProject[projectId] = false;
-      }
       if (nextSessionIds.length === 0 && !options.keepRightPanelOpen) {
         nextState.projects = updateProjectUiInList(
           state.projects,
@@ -317,8 +292,6 @@ export const createTerminalActions = (
           }),
         );
       }
-      nextState.projectTerminalPanelOpenByProject =
-        nextProjectTerminalPanelOpenByProject;
 
       return nextState;
     });

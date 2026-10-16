@@ -12,7 +12,6 @@ import type {
   HostConnectionState,
   HostStatusEvent,
   PanelSizes,
-  PanelVisibility,
   PendingChatSubmit,
   ProjectConfig,
   ProjectGitWorktreeCleanupResponse,
@@ -132,7 +131,6 @@ export interface IdeState {
   nextTerminalOrdinalByProject: Record<string, number>;
   projectTerminalSessionIds: Record<string, string[]>;
   activeTerminalSessionIdByProject: Record<string, string | null>;
-  projectTerminalPanelOpenByProject: Record<string, boolean>;
   /** The Git panel tab each project last showed (absent: overview). */
   projectGitPanelTabByProject: Record<string, GitPanelTab>;
   outputPanelOpen: boolean;
@@ -286,6 +284,17 @@ export interface IdeState {
     messageId: string;
   }) => Promise<{ chatId: string; projectId: string }>;
   toggleProjectMultiChatMode: (projectId: string) => void;
+  /** Closes a side-by-side chat column; the chat stays. */
+  closeChatColumn: (projectId: string, chatId: string) => void;
+  reorderChatColumns: (
+    projectId: string,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+  setChatColumnWidths: (
+    projectId: string,
+    widths: Record<string, number>,
+  ) => void;
   setActiveChatId: (projectId: string, chatId: string | null) => void;
   updateChat: (
     chatId: string,
@@ -342,7 +351,6 @@ export interface IdeState {
   ) => boolean;
 
   // Actions - panels
-  togglePanel: (panel: keyof PanelVisibility) => void;
   setPanelSizes: (
     updater: PanelSizes | ((prev: PanelSizes) => PanelSizes),
   ) => void;
@@ -352,8 +360,21 @@ export interface IdeState {
   ) => void;
   setProjectChatHistoryPanelOpen: (projectId: string, open: boolean) => void;
   setProjectGitPanelTab: (projectId: string, tab: GitPanelTab) => void;
-  setProjectRightPanelOpen: (projectId: string, open: boolean) => void;
-  setProjectRightPanelView: (projectId: string, view: RightPanelView) => void;
+  /**
+   * Shows `view` in the project's right panel, opening it. With `toggle`, a
+   * view (and Git tab) already showing closes the panel instead. `gitTab`
+   * picks the Git panel's tab. Leaving the terminal view discards terminals
+   * nobody typed into; showing it starts one when there is none.
+   */
+  showRightPanelView: (
+    projectId: string,
+    view: RightPanelView,
+    options?: { gitTab?: GitPanelTab; toggle?: boolean },
+  ) => void;
+  /** Closes the project's right panel (see `showRightPanelView`). */
+  closeRightPanel: (projectId: string) => void;
+  /** Opens the right panel on the view it last showed, or closes it. */
+  toggleRightPanel: (projectId: string) => void;
   setAppView: (view: AppView) => void;
   /**
    * Shows a file in the project's Files panel, optionally at a position.
@@ -436,7 +457,8 @@ export interface IdeState {
 
   // Actions - terminal
   openProjectTerminal: (projectId: string) => Promise<void>;
-  setProjectTerminalPanelOpen: (projectId: string, open: boolean) => void;
+  /** Stops the project's terminals nobody has typed into. */
+  discardUntouchedTerminals: (projectId: string) => void;
   addProjectTerminal: (
     projectId: string,
     options?: AddProjectTerminalOptions,

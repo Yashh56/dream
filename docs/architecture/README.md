@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/right-panel-navigation.md` tracks RPN-01 from the October 16
+  review: right-panel views change only through store operations, and
+  chat columns settle through the workspace document.
 - `tasks/file-editor-session.md` tracks FES-01 from the October 16 review:
   the Files panel's tabs and drafts in a session outside React, and one
   way to open a project file.

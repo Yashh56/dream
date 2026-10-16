@@ -89,7 +89,7 @@ carries them):
 activate and remove projects; remove a host's projects; apply a host's
 catalog changes, load a host's catalog, adopt a project the host refused;
 restore at startup; add, add beside, branch, focus, delete, remove, restore
-chats; toggle multi-chat) is a pure function ending in `settle`, which
+chats; close, reorder and size chat columns; toggle multi-chat) is a pure function ending in `settle`, which
 enforces the one invariant the app relies on: every open project has a
 live chat, its active chat is one of them, its open chats are live chats of
 that project with the active one among them, and the active project is
@@ -266,6 +266,17 @@ a lookup under way is shared, and `force` looks again. A CLI's upgrade, or
 a failure to start it because it is gone, makes the host forget it.
 Provider readiness checks and turn launches read it rather than looking
 the CLI up, which on Windows is a PowerShell process each time.
+
+## Right-panel navigation
+
+What a project's right panel shows (`ui.rightPanelOpen`,
+`ui.rightPanelView`): Git, Files, Browser, Terminal or Stash. It changes
+only through the store's `showRightPanelView`, `closeRightPanel` and
+`toggleRightPanel` (`store/panel-actions.ts`), whoever asks: the rail, a
+shortcut, a chat chip, the browser agent. With `toggle`, a view already
+showing (on the same Git tab) closes the panel. Leaving the terminal view
+discards terminals nobody typed into; showing it starts one. Whether the
+panel is **expanded** over the chats is the workspace's own view state.
 
 ## File editor session
 

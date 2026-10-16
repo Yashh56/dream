@@ -46,8 +46,7 @@ const revealBrowserPanel = (projectId: string) => {
   if (state.activeProjectId !== projectId) {
     state.setActiveProjectId(projectId);
   }
-  state.setProjectRightPanelView(projectId, "browser");
-  state.setProjectRightPanelOpen(projectId, true);
+  state.showRightPanelView(projectId, "browser");
 };
 
 const setTabUrl = (projectId: string, tabId: string, url: string) => {

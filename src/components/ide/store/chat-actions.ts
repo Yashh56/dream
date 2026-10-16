@@ -43,6 +43,9 @@ export const createChatActions = (
   | "branchChatInWorkspace"
   | "branchChatInNewWorktree"
   | "toggleProjectMultiChatMode"
+  | "closeChatColumn"
+  | "reorderChatColumns"
+  | "setChatColumnWidths"
   | "setActiveChatId"
   | "updateChat"
   | "archiveInactiveChats"
@@ -165,6 +168,30 @@ export const createChatActions = (
 
   toggleProjectMultiChatMode: (projectId: string) => {
     set((state) => workspace.toggleMultiChat(state, state.settings, projectId));
+  },
+
+  closeChatColumn: (projectId, chatId) => {
+    set((state) =>
+      workspace.closeChatColumn(state, state.settings, projectId, chatId),
+    );
+  },
+
+  reorderChatColumns: (projectId, fromIndex, toIndex) => {
+    set((state) =>
+      workspace.reorderChatColumns(
+        state,
+        state.settings,
+        projectId,
+        fromIndex,
+        toIndex,
+      ),
+    );
+  },
+
+  setChatColumnWidths: (projectId, widths) => {
+    set((state) =>
+      workspace.setChatColumnWidths(state, state.settings, projectId, widths),
+    );
   },
 
   setActiveChatId: (projectId: string, chatId: string | null) => {

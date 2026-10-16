@@ -202,6 +202,26 @@ const isRecordWithId = (
 const withHost = (project: Record<string, unknown>, hostId: string) =>
   hostId === LOCAL_HOST_ID ? project : { ...project, hostId };
 
+/**
+ * Takes a chat out of a project's open chats. When it was the active one,
+ * the open chat that took its place (else the one before it) becomes active.
+ */
+const withoutOpenChat = (
+  ui: ProjectUiState,
+  chatId: string,
+): ProjectUiState => {
+  const index = ui.openChatIds.indexOf(chatId);
+  const openChatIds = ui.openChatIds.filter((openId) => openId !== chatId);
+  return {
+    ...ui,
+    activeChatId:
+      ui.activeChatId === chatId
+        ? (openChatIds[index] ?? openChatIds[index - 1] ?? null)
+        : ui.activeChatId,
+    openChatIds,
+  };
+};
+
 /** Shows one chat alone: the single-column focus. */
 const showOnly = (ui: ProjectUiState, chatId: string): ProjectUiState => ({
   ...ui,
@@ -953,18 +973,7 @@ export const deleteChat = (
   }
 
   const deletedAt = new Date().toISOString();
-  const withoutChat = (ui: ProjectUiState): ProjectUiState => {
-    const deletedIndex = ui.openChatIds.indexOf(chatId);
-    const openChatIds = ui.openChatIds.filter((openId) => openId !== chatId);
-    return {
-      ...ui,
-      activeChatId:
-        ui.activeChatId === chatId
-          ? (openChatIds[deletedIndex] ?? openChatIds[deletedIndex - 1] ?? null)
-          : ui.activeChatId,
-      openChatIds,
-    };
-  };
+  const withoutChat = (ui: ProjectUiState) => withoutOpenChat(ui, chatId);
   const draftChatIdByProject =
     doc.draftChatIdByProject[chat.projectId] === chatId
       ? { ...doc.draftChatIdByProject, [chat.projectId]: null }
@@ -983,6 +992,87 @@ export const deleteChat = (
     settings,
   );
 };
+
+/**
+ * Closes a chat's column in side-by-side chats; the chat itself stays. The
+ * last open column cannot be closed.
+ */
+export const closeChatColumn = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  projectId: string,
+  chatId: string,
+): WorkspaceDocument => {
+  const project = doc.projects.find((item) => item.id === projectId);
+  if (
+    !project ||
+    project.ui.openChatIds.length <= 1 ||
+    !project.ui.openChatIds.includes(chatId)
+  ) {
+    return doc;
+  }
+  return settle(
+    {
+      ...doc,
+      projects: updateUi(doc.projects, projectId, (ui) =>
+        withoutOpenChat(ui, chatId),
+      ),
+    },
+    settings,
+  );
+};
+
+/** Moves an open chat's column from one position to another. */
+export const reorderChatColumns = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  projectId: string,
+  fromIndex: number,
+  toIndex: number,
+): WorkspaceDocument => {
+  const project = doc.projects.find((item) => item.id === projectId);
+  const count = project?.ui.openChatIds.length ?? 0;
+  if (
+    !project ||
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= count ||
+    toIndex >= count
+  ) {
+    return doc;
+  }
+  return settle(
+    {
+      ...doc,
+      projects: updateUi(doc.projects, projectId, (ui) => {
+        const openChatIds = [...ui.openChatIds];
+        const [moved] = openChatIds.splice(fromIndex, 1);
+        if (moved !== undefined) openChatIds.splice(toIndex, 0, moved);
+        return { ...ui, openChatIds };
+      }),
+    },
+    settings,
+  );
+};
+
+/** Sets the widths of a project's chat columns; only open chats keep one. */
+export const setChatColumnWidths = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  projectId: string,
+  widths: Record<string, number>,
+): WorkspaceDocument =>
+  settle(
+    {
+      ...doc,
+      projects: updateUi(doc.projects, projectId, (ui) => ({
+        ...ui,
+        chatColumnWidths: widths,
+      })),
+    },
+    settings,
+  );
 
 /** Removes chats and their transcripts for good. */
 export const removeChats = (

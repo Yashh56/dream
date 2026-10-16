@@ -338,9 +338,7 @@ export const TerminalPanel = ({
         ...project,
         browserUrl: uri,
       }));
-      state.setProjectTerminalPanelOpen(projectId, false);
-      state.setProjectRightPanelView(projectId, "browser");
-      state.setProjectRightPanelOpen(projectId, true);
+      state.showRightPanelView(projectId, "browser");
     });
 
     terminal.loadAddon(fitAddon);

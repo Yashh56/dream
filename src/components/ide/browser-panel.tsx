@@ -370,9 +370,7 @@ const BrowserPanelImpl = ({
   const closeBrowserTab = useIdeStore((state) => state.closeBrowserTab);
   const reorderBrowserTabs = useIdeStore((state) => state.reorderBrowserTabs);
   const setActiveBrowserTab = useIdeStore((state) => state.setActiveBrowserTab);
-  const setProjectRightPanelOpen = useIdeStore(
-    (state) => state.setProjectRightPanelOpen,
-  );
+  const closeRightPanel = useIdeStore((state) => state.closeRightPanel);
 
   const projectId = project.id;
   const resolvedActiveTabId = activeTabId ?? tabs[0]?.id ?? null;
@@ -562,7 +560,7 @@ const BrowserPanelImpl = ({
       if (tabs.length === 1) {
         webviewRefs.current.delete(tabId);
         closeBrowserTab(projectId, tabId);
-        setProjectRightPanelOpen(projectId, false);
+        closeRightPanel(projectId);
         setBrowserError(null);
         setBrowserUrlDraft("");
         updateProject(projectId, (project) => ({
@@ -596,7 +594,7 @@ const BrowserPanelImpl = ({
       closeBrowserTab,
       projectId,
       setBrowserError,
-      setProjectRightPanelOpen,
+      closeRightPanel,
       tabs,
       updateProject,
     ],

@@ -3,9 +3,8 @@ import { useShallow } from "zustand/react/shallow";
 import type { BrowserTabState, GitPanelTab, ProjectConfig } from "@/types/ide";
 import { areProjectsEqualExceptLastUsedAt } from "../ide-state";
 import { useIdeStore } from "../ide-store";
-import { DEFAULT_GIT_PANEL_TAB, type RightPanelView } from "../ide-types";
+import type { RightPanelView } from "../ide-types";
 import { useShortcut } from "../shortcuts/shortcuts";
-import { moveTabItem } from "../standard-tabs";
 import {
   BROWSER_PANEL_DEFAULT_WIDTH_PX,
   BROWSER_PANEL_MIN_WIDTH_PX,
@@ -59,31 +58,23 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     (s) => s.activeBrowserTabIdByProject[projectId] ?? null,
   );
   const historyOpen = projectUi.chatHistoryPanelOpen;
-  const gitPanelTab = useIdeStore(
-    (s) => s.projectGitPanelTabByProject[projectId] ?? DEFAULT_GIT_PANEL_TAB,
-  );
-  const setProjectGitPanelTab = useIdeStore((s) => s.setProjectGitPanelTab);
   const setProjectPanelSizes = useIdeStore((s) => s.setProjectPanelSizes);
   const setProjectChatHistoryPanelOpen = useIdeStore(
     (s) => s.setProjectChatHistoryPanelOpen,
   );
-  const setProjectRightPanelOpen = useIdeStore(
-    (s) => s.setProjectRightPanelOpen,
-  );
-  const persistedRightPanelView = projectUi.rightPanelView;
-  const setProjectRightPanelView = useIdeStore(
-    (s) => s.setProjectRightPanelView,
-  );
-  const setProjectTerminalPanelOpen = useIdeStore(
-    (s) => s.setProjectTerminalPanelOpen,
-  );
+  const rightPanelView = projectUi.rightPanelView;
+  const showRightPanelView = useIdeStore((s) => s.showRightPanelView);
+  const closeRightPanel = useIdeStore((s) => s.closeRightPanel);
+  const toggleRightPanel = useIdeStore((s) => s.toggleRightPanel);
   const addChat = useIdeStore((s) => s.addChat);
   const addChatBeside = useIdeStore((s) => s.addChatBeside);
   const setActiveChatId = useIdeStore((s) => s.setActiveChatId);
   const toggleProjectMultiChatMode = useIdeStore(
     (s) => s.toggleProjectMultiChatMode,
   );
-  const updateProject = useIdeStore((s) => s.updateProject);
+  const closeChatColumn = useIdeStore((s) => s.closeChatColumn);
+  const reorderChatColumns = useIdeStore((s) => s.reorderChatColumns);
+  const setChatColumnWidths = useIdeStore((s) => s.setChatColumnWidths);
   const openProjectTerminal = useIdeStore((s) => s.openProjectTerminal);
 
   // ── Local workspace state ───────────────────────────────────────────
@@ -92,9 +83,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       projectPanelSizes.chatHistoryPanelWidth ??
         CHAT_HISTORY_PANEL_DEFAULT_WIDTH_PX,
     ),
-  );
-  const [rightPanelView, setRightPanelView] = useState<RightPanelView>(
-    () => persistedRightPanelView,
   );
   const [rightPanelExpandedRequested, setRightPanelExpandedRequested] =
     useState(false);
@@ -173,9 +161,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const historyPanelRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
-  const rightPanelViewPersistTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
 
   if (!isDraggingRef.current) {
     desiredRightWidthRef.current = projectPanelSizes.rightPanelWidth;
@@ -339,204 +324,62 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
 
   const handleChatColumnWidthsChange = useCallback(
     (widths: Record<string, number>) => {
-      updateProject(projectId, (current) => ({
-        ...current,
-        ui: {
-          ...current.ui,
-          chatColumnWidths: Object.fromEntries(
-            Object.entries(widths).filter(([chatId]) =>
-              current.ui.openChatIds.includes(chatId),
-            ),
-          ),
-        },
-      }));
+      setChatColumnWidths(projectId, widths);
     },
-    [projectId, updateProject],
+    [projectId, setChatColumnWidths],
   );
 
   const handleChatReorder = useCallback(
     (fromIndex: number, toIndex: number) => {
-      if (!active || fromIndex === toIndex) {
-        return;
+      if (active) {
+        reorderChatColumns(projectId, fromIndex, toIndex);
       }
-
-      updateProject(projectId, (current) => ({
-        ...current,
-        ui: {
-          ...current.ui,
-          openChatIds: moveTabItem(current.ui.openChatIds, fromIndex, toIndex),
-        },
-      }));
     },
-    [active, projectId, updateProject],
+    [active, projectId, reorderChatColumns],
   );
 
   const handleCloseChat = useCallback(
     (chatId: string) => {
-      updateProject(projectId, (current) => {
-        const closedIndex = current.ui.openChatIds.indexOf(chatId);
-        if (closedIndex === -1 || current.ui.openChatIds.length <= 1) {
-          return current;
-        }
-
-        const openChatIds = current.ui.openChatIds.filter(
-          (openChatId) => openChatId !== chatId,
-        );
-        const activeChatId =
-          current.ui.activeChatId === chatId
-            ? (openChatIds[closedIndex] ?? openChatIds[closedIndex - 1] ?? null)
-            : current.ui.activeChatId;
-        const chatColumnWidths = Object.fromEntries(
-          Object.entries(current.ui.chatColumnWidths).filter(([openChatId]) =>
-            openChatIds.includes(openChatId),
-          ),
-        );
-
-        return {
-          ...current,
-          ui: {
-            ...current.ui,
-            activeChatId,
-            openChatIds,
-            chatColumnWidths,
-          },
-        };
-      });
+      closeChatColumn(projectId, chatId);
     },
-    [projectId, updateProject],
+    [closeChatColumn, projectId],
   );
 
   const handleToggleHistory = useCallback(() => {
     setProjectChatHistoryPanelOpen(projectId, !historyOpen);
   }, [historyOpen, projectId, setProjectChatHistoryPanelOpen]);
 
+  // What the right panel shows is the store's (showRightPanelView): the
+  // rail, the shortcuts and the Git tabs toggle a view that is already
+  // showing closed. Whether it is expanded is this workspace's.
   const handleToggleRightPanel = useCallback(() => {
-    const nextOpen = !rightVisible;
-    setProjectRightPanelOpen(projectId, nextOpen);
-
-    if (!nextOpen) {
-      setRightPanelExpandedRequested(false);
-    }
-
-    if (!nextOpen && rightPanelView === "terminal") {
-      setProjectTerminalPanelOpen(projectId, false);
-    }
-  }, [
-    projectId,
-    rightPanelView,
-    rightVisible,
-    setProjectRightPanelOpen,
-    setProjectTerminalPanelOpen,
-  ]);
+    toggleRightPanel(projectId);
+  }, [projectId, toggleRightPanel]);
 
   const handleCloseRightPanel = useCallback(() => {
     setRightPanelExpandedRequested(false);
-    setProjectRightPanelOpen(projectId, false);
-
-    if (rightPanelView === "terminal") {
-      setProjectTerminalPanelOpen(projectId, false);
-    }
-  }, [
-    projectId,
-    rightPanelView,
-    setProjectRightPanelOpen,
-    setProjectTerminalPanelOpen,
-  ]);
-
-  const schedulePersistRightPanelView = useCallback(
-    (view: RightPanelView) => {
-      if (rightPanelViewPersistTimerRef.current !== null) {
-        clearTimeout(rightPanelViewPersistTimerRef.current);
-      }
-
-      rightPanelViewPersistTimerRef.current = setTimeout(() => {
-        rightPanelViewPersistTimerRef.current = null;
-        setProjectRightPanelView(projectId, view);
-      }, 250);
-    },
-    [projectId, setProjectRightPanelView],
-  );
-
-  const handleOpenTerminal = useCallback(() => {
-    if (rightVisible && rightPanelView === "terminal") {
-      setProjectRightPanelOpen(projectId, false);
-      setProjectTerminalPanelOpen(projectId, false);
-      return;
-    }
-
-    setRightPanelView("terminal");
-    schedulePersistRightPanelView("terminal");
-    setProjectTerminalPanelOpen(projectId, true);
-
-    if (!rightVisible) {
-      setProjectRightPanelOpen(projectId, true);
-    }
-
-    void openProjectTerminal(projectId);
-  }, [
-    openProjectTerminal,
-    projectId,
-    rightPanelView,
-    rightVisible,
-    schedulePersistRightPanelView,
-    setProjectRightPanelOpen,
-    setProjectTerminalPanelOpen,
-  ]);
+    closeRightPanel(projectId);
+  }, [closeRightPanel, projectId]);
 
   const handleSelectRightPanelView = useCallback(
     (view: RightPanelView) => {
-      if (rightVisible && rightPanelView === view) {
-        setProjectRightPanelOpen(projectId, false);
-        setRightPanelExpandedRequested(false);
-        if (view === "terminal") {
-          setProjectTerminalPanelOpen(projectId, false);
-        }
-        return;
-      }
-
-      if (rightPanelView === "terminal" && view !== "terminal") {
-        setProjectTerminalPanelOpen(projectId, false);
-      }
-      setRightPanelView(view);
-      schedulePersistRightPanelView(view);
-
-      if (!rightVisible) {
-        setProjectRightPanelOpen(projectId, true);
-      }
+      showRightPanelView(projectId, view, { toggle: true });
     },
-    [
-      projectId,
-      rightPanelView,
-      rightVisible,
-      schedulePersistRightPanelView,
-      setProjectRightPanelOpen,
-      setProjectTerminalPanelOpen,
-    ],
+    [projectId, showRightPanelView],
+  );
+
+  const handleOpenTerminal = useCallback(
+    () => handleSelectRightPanelView("terminal"),
+    [handleSelectRightPanelView],
   );
 
   // Changes and the pull request are tabs of the Git panel: show the tab
   // there, or close the panel when it is what the panel already shows.
   const handleShowGitPanelTab = useCallback(
-    (tab: GitPanelTab) => {
-      const gitPanelVisible = rightVisible && rightPanelView === "git";
-      if (gitPanelVisible && gitPanelTab === tab) {
-        handleSelectRightPanelView("git");
-        return;
-      }
-
-      setProjectGitPanelTab(projectId, tab);
-      if (!gitPanelVisible) {
-        handleSelectRightPanelView("git");
-      }
+    (gitTab: GitPanelTab) => {
+      showRightPanelView(projectId, "git", { gitTab, toggle: true });
     },
-    [
-      gitPanelTab,
-      handleSelectRightPanelView,
-      projectId,
-      rightPanelView,
-      rightVisible,
-      setProjectGitPanelTab,
-    ],
+    [projectId, showRightPanelView],
   );
 
   const handleShowChanges = useCallback(
@@ -609,10 +452,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   });
 
   useEffect(() => {
-    setRightPanelView(persistedRightPanelView);
-  }, [persistedRightPanelView]);
-
-  useEffect(() => {
     if (!rightVisible && rightPanelExpandedRequested) {
       setRightPanelExpandedRequested(false);
     }
@@ -652,15 +491,6 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
     rightPanelView,
     rightVisible,
   ]);
-
-  useEffect(
-    () => () => {
-      if (rightPanelViewPersistTimerRef.current !== null) {
-        clearTimeout(rightPanelViewPersistTimerRef.current);
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     let rafId: number | null = null;
