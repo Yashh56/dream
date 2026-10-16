@@ -151,7 +151,9 @@ const GitCommitBoxImpl = ({
     if (!textarea) {
       return;
     }
-    textarea.focus();
+    // Without scrolling: the panel may still be sliding in from offscreen,
+    // and scrolling it into view would shift the whole workspace sideways.
+    textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }, []);
   useCommitMessageFocusRequest(projectId, active, focusMessage);

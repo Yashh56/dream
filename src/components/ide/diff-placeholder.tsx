@@ -53,7 +53,8 @@ const PlaceholderCell = ({
 };
 
 /**
- * The diff as plain, muted text, shown until its highlighted version is ready.
+ * The diff as plain text, barely visible (25% opacity), until its
+ * highlighted version is ready.
  * Keeps the finished diff's rows, gutter and add/delete tints so the swap only
  * changes the colour of the code, not the layout.
  */
@@ -98,7 +99,7 @@ export const DiffPlaceholder = ({
     <div
       aria-busy="true"
       className={cn(
-        "dream-diff-viewer dream-diff-placeholder w-full min-w-0 py-2 text-muted-foreground",
+        "dream-diff-viewer dream-diff-placeholder w-full min-w-0 py-2 text-foreground/25",
         // Pierre reserves the bottom 8px for scrolling. A native placeholder
         // scrollbar adds another row of pixels; hide it during this brief state
         // while preserving wheel/trackpad scrolling and the final row geometry.

@@ -1055,6 +1055,11 @@
   line-height: 1.5;
 }
 
+/*
+ * Line and gutter tints: the diff library mixes these back into the
+ * background (88% and 91% background in light, 80% and 85% in dark), so they
+ * are set strong here to land at a visible tint, about 6% in either theme.
+ */
 .dream-diff-surface .dream-diff-viewer {
   --diffs-light-bg: var(--color-background);
   --diffs-dark-bg: var(--color-background);
@@ -1068,17 +1073,17 @@
   --diffs-deletion-color-override: var(--color-red-600);
   --diffs-bg-addition-override: color-mix(
     in oklab,
-    var(--color-green-500) 14%,
+    var(--color-green-500) 50%,
     var(--color-background)
   );
   --diffs-bg-addition-number-override: color-mix(
     in oklab,
-    var(--color-green-500) 22%,
+    var(--color-green-500) 80%,
     var(--color-background)
   );
   --diffs-bg-addition-hover-override: color-mix(
     in oklab,
-    var(--color-green-500) 18%,
+    var(--color-green-500) 60%,
     var(--color-background)
   );
   --diffs-bg-addition-emphasis-override: color-mix(
@@ -1088,17 +1093,17 @@
   );
   --diffs-bg-deletion-override: color-mix(
     in oklab,
-    var(--color-red-500) 14%,
+    var(--color-red-500) 50%,
     var(--color-background)
   );
   --diffs-bg-deletion-number-override: color-mix(
     in oklab,
-    var(--color-red-500) 22%,
+    var(--color-red-500) 80%,
     var(--color-background)
   );
   --diffs-bg-deletion-hover-override: color-mix(
     in oklab,
-    var(--color-red-500) 18%,
+    var(--color-red-500) 60%,
     var(--color-background)
   );
   --diffs-bg-deletion-emphasis-override: color-mix(
@@ -1157,7 +1162,8 @@
  * Plain stand-in shown while a diff is highlighting (diff-placeholder.tsx).
  * Mirrors how Pierre paints the variables above: line and gutter tints are
  * mixed back into the background (its --mix-light/--mix-dark), change bars
- * are 4px, and separators are 32px. Only the code text differs (muted).
+ * are 4px, and separators are 32px. Only the code text differs (the text
+ * colour at 25% opacity, barely visible).
  */
 .dream-diff-placeholder {
   --placeholder-line-mix: 88%;
