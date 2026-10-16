@@ -5,6 +5,24 @@ import type { ChatConfig, ProjectConfig } from "@/types/ide";
 import { createChatConfig } from "../../../../electron/shared/persisted-state-codec.js";
 import { createCatalogActions } from "./catalog-actions";
 import type { IdeState } from "./ide-store-types";
+import {
+  BROWSER_TAB_KEYED_STATE,
+  CHAT_KEYED_STATE,
+  PROJECT_KEYED_PERSISTED_STATE,
+  PROJECT_KEYED_RUNTIME_STATE,
+  TERMINAL_SESSION_KEYED_STATE,
+} from "./project-runtime-state";
+
+/** Every map the store registers per project, chat, terminal or tab. */
+const registeredMaps = Object.fromEntries(
+  [
+    ...BROWSER_TAB_KEYED_STATE,
+    ...CHAT_KEYED_STATE,
+    ...PROJECT_KEYED_PERSISTED_STATE,
+    ...PROJECT_KEYED_RUNTIME_STATE,
+    ...TERMINAL_SESSION_KEYED_STATE,
+  ].map((key) => [key, {}]),
+);
 
 const project = (path: string): ProjectConfig => ({
   ...createProjectConfig(path, DEFAULT_SETTINGS),
@@ -25,6 +43,7 @@ const createTestStore = () => {
   const store = createStore<IdeState>(
     () =>
       ({
+        ...registeredMaps,
         activeProjectId: open.id,
         chats: [openChat, closedChat],
         closedProjects: [closed],
@@ -93,4 +112,23 @@ test("a removed project takes its chats with it", () => {
   expect(store.getState().chats.some((item) => item.id === closedChat.id)).toBe(
     false,
   );
+});
+
+test("a project its host removed leaves no runtime state behind", () => {
+  const { open, openChat, store } = createTestStore();
+  store.setState({
+    completedChatIds: { [openChat.id]: true },
+    projectGitRefreshKeys: { [open.id]: 3 },
+    projectTerminalSessionIds: { [open.id]: ["session-1"] },
+    terminalStatus: { "session-1": "running" },
+  } as Partial<IdeState>);
+
+  store.getState().applyCatalogChanges({ removedProjectIds: [open.id] });
+
+  const state = store.getState();
+  expect(state.projects).toEqual([]);
+  expect(state.projectGitRefreshKeys).toEqual({});
+  expect(state.projectTerminalSessionIds).toEqual({});
+  expect(state.terminalStatus).toEqual({});
+  expect(state.completedChatIds).toEqual({});
 });

@@ -4,6 +4,7 @@
 // project id, terminal session id, browser tab id or chat id is added here,
 // once, and every exit path picks it up.
 import type { IdeState } from "./ide-store-types";
+import type { WorkspaceRemoval } from "./workspace-document";
 
 type RecordKeyOf<T> = {
   [Key in keyof T]: T[Key] extends Record<string, unknown> ? Key : never;
@@ -122,5 +123,28 @@ export const dropPurgedProjectState = (
     ...next,
     ...dropKeysFrom(withProjects, PROJECT_KEYED_PERSISTED_STATE, projectIds),
     ...dropKeysFrom(withProjects, CHAT_KEYED_STATE, chatIds),
+  };
+};
+
+/**
+ * Sets the document a workspace operation produced and drops everything the
+ * store keeps for the projects and chats that left it. Every path that
+ * removes a project or chat goes through here, so none leaves its runtime
+ * state behind.
+ */
+export const applyWorkspaceRemoval = (
+  state: IdeState,
+  { doc, removedChatIds, removedProjectIds }: WorkspaceRemoval,
+): Partial<IdeState> => {
+  if (removedProjectIds.length === 0 && removedChatIds.length === 0) {
+    return doc;
+  }
+  return {
+    ...doc,
+    ...dropPurgedProjectState(
+      { ...state, ...doc },
+      removedProjectIds,
+      removedChatIds,
+    ),
   };
 };

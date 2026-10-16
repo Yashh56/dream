@@ -1120,6 +1120,46 @@ const decodeProjects = (rawOpen, rawClosed, settings) => {
 };
 
 /**
+ * Validates raw projects and chats: invalid entries dropped, projects
+ * deduplicated by id and by directory per host, chats deduplicated by id and
+ * dropped when their project is not among the decoded ones. Enforces no
+ * invariant: an open project may come back without a chat. The renderer's
+ * workspace document settles the result; `decodePersistedState` repairs it.
+ * @param {{ projects?: unknown, closedProjects?: unknown, chats?: unknown }} raw
+ * @param {AppSettings} settings
+ * @param {ChatPermissionMode} [legacyPermissionMode]
+ * @returns {{ projects: ProjectConfig[], closedProjects: ProjectConfig[], chats: ChatConfig[] }}
+ */
+export const decodeCatalogEntries = (
+  raw,
+  settings,
+  legacyPermissionMode = "ask",
+) => {
+  const { projects, closedProjects } = decodeProjects(
+    raw.projects,
+    raw.closedProjects,
+    settings,
+  );
+  const projectsById = new Map(
+    [...projects, ...closedProjects].map((project) => [project.id, project]),
+  );
+
+  /** @type {ChatConfig[]} */
+  const chats = [];
+  const seenChatIds = new Set();
+  for (const rawChat of Array.isArray(raw.chats) ? raw.chats : []) {
+    const chat = normalizeChat(rawChat, projectsById, legacyPermissionMode);
+    if (!chat || seenChatIds.has(chat.id)) {
+      continue;
+    }
+    seenChatIds.add(chat.id);
+    chats.push(chat);
+  }
+
+  return { projects, closedProjects, chats };
+};
+
+/**
  * Repairs anything shaped like persisted state into a valid
  * `PersistedIdeState`: defaults for every missing field, retired field names
  * understood, invalid entries dropped, and the project/chat invariants
@@ -1141,27 +1181,12 @@ export const decodePersistedState = (raw) => {
   const legacyPermissionMode =
     rawSettings.autoAcceptPermissions === true ? "full-access" : "ask";
 
-  const { projects, closedProjects } = decodeProjects(
-    raw.projects,
-    raw.closedProjects,
+  const { projects, closedProjects, chats } = decodeCatalogEntries(
+    raw,
     settings,
+    legacyPermissionMode,
   );
   const allProjects = [...projects, ...closedProjects];
-  const projectsById = new Map(
-    allProjects.map((project) => [project.id, project]),
-  );
-
-  /** @type {ChatConfig[]} */
-  const chats = [];
-  const seenChatIds = new Set();
-  for (const rawChat of Array.isArray(raw.chats) ? raw.chats : []) {
-    const chat = normalizeChat(rawChat, projectsById, legacyPermissionMode);
-    if (!chat || seenChatIds.has(chat.id)) {
-      continue;
-    }
-    seenChatIds.add(chat.id);
-    chats.push(chat);
-  }
 
   // Every open project has at least one chat to show.
   const projectIdsWithChats = new Set(chats.map((chat) => chat.projectId));

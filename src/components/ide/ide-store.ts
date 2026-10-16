@@ -3,7 +3,6 @@ import { LOCAL_HOST_ID, setHostResolver } from "@/lib/host-routing";
 import { DEFAULT_SETTINGS } from "@/lib/ide-defaults";
 import {
   encodePersistedState,
-  ensureActiveProject,
   getProjectHostId,
   normalizeProjectPathKey,
 } from "../../../electron/shared/persisted-state-codec.js";
@@ -40,6 +39,7 @@ import { createSettingsActions } from "./store/settings-actions";
 import { createStashActions } from "./store/stash-actions";
 import { createTerminalActions } from "./store/terminal-actions";
 import { createTranscriptCache } from "./store/transcript-cache";
+import * as workspace from "./store/workspace-document";
 import { createWorktreeActions } from "./store/worktree-actions";
 
 const transcriptCache = createTranscriptCache(
@@ -174,39 +174,23 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   // ── Actions: hydration & persistence ────────────────────────────────
   hydrate: async () => {
     const loaded = await loadPersistedIdeState();
-    const nextActiveProjectId = ensureActiveProject(
-      loaded.projects,
-      loaded.activeProjectId,
+    const restored = workspace.restore(
+      {
+        activeProjectId: loaded.activeProjectId,
+        chats: loaded.chats,
+        closedProjects: loaded.closedProjects,
+        messagesByChatId: loaded.messagesByChatId,
+        projects: loaded.projects,
+      },
+      loaded.settings,
     );
 
-    // Re-register each project's active empty chat as its draft so a
-    // restored fresh chat is reused instead of a new one being created.
-    const draftChatIdByProject: Record<string, string | null> = {};
-    for (const project of [...loaded.projects, ...loaded.closedProjects]) {
-      const activeChatId = project.ui.activeChatId;
-      if (
-        activeChatId &&
-        (loaded.chats.find((chat) => chat.id === activeChatId)?.messageCount ??
-          0) === 0 &&
-        loaded.chats.some(
-          (chat) => chat.id === activeChatId && chat.deletedAt === null,
-        )
-      ) {
-        draftChatIdByProject[project.id] = activeChatId;
-      }
-    }
-
     set({
-      projects: loaded.projects,
-      closedProjects: loaded.closedProjects,
-      activeProjectId: nextActiveProjectId,
+      ...restored,
       appView: loaded.appView,
       savedPrompts: loaded.savedPrompts,
       activeBrowserTabIdByProject: loaded.activeBrowserTabIdByProject,
       browserTabsByProject: loaded.browserTabsByProject,
-      chats: loaded.chats,
-      messagesByChatId: loaded.messagesByChatId,
-      draftChatIdByProject,
       settings: loaded.settings,
       chatSort: loaded.chatSort,
       hostRunningChatIds: Object.fromEntries(
@@ -215,7 +199,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
       stateHydrated: true,
       persistenceBlocked: !isWorkspaceLoaded(),
     });
-    transcriptCache.markHydrated(loaded.messagesByChatId);
+    transcriptCache.markHydrated(restored.messagesByChatId);
 
     void get().resumeHosts(
       getLoadedWorkspace()

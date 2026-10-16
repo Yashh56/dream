@@ -11,6 +11,24 @@ import {
 } from "../../../../electron/shared/persisted-state-codec.js";
 import { createCatalogActions } from "./catalog-actions";
 import type { IdeState } from "./ide-store-types";
+import {
+  BROWSER_TAB_KEYED_STATE,
+  CHAT_KEYED_STATE,
+  PROJECT_KEYED_PERSISTED_STATE,
+  PROJECT_KEYED_RUNTIME_STATE,
+  TERMINAL_SESSION_KEYED_STATE,
+} from "./project-runtime-state";
+
+/** Every map the store registers per project, chat, terminal or tab. */
+const registeredMaps = Object.fromEntries(
+  [
+    ...BROWSER_TAB_KEYED_STATE,
+    ...CHAT_KEYED_STATE,
+    ...PROJECT_KEYED_PERSISTED_STATE,
+    ...PROJECT_KEYED_RUNTIME_STATE,
+    ...TERMINAL_SESSION_KEYED_STATE,
+  ].map((key) => [key, {}]),
+);
 
 const hostState = vi.hoisted(() => ({
   catalog: { chats: [] as unknown[], projects: [] as unknown[] },
@@ -66,6 +84,7 @@ test("a host's catalog replaces its snapshot projects in place", async () => {
   const store = createStore<IdeState>(
     () =>
       ({
+        ...registeredMaps,
         activeProjectId: remote.id,
         chats: [],
         closedProjects: [remoteClosed],
@@ -117,6 +136,7 @@ test("a project the host refused (it has one at that path) becomes the host's pr
   const store = createStore<IdeState>(
     () =>
       ({
+        ...registeredMaps,
         activeProjectId: refused.id,
         chats: [refusedChat],
         closedProjects: [],
@@ -164,6 +184,7 @@ test("the local host's reload never removes an SSH host's project", async () => 
   const store = createStore<IdeState>(
     () =>
       ({
+        ...registeredMaps,
         activeProjectId: remote.id,
         chats: [remoteChat],
         closedProjects: [],

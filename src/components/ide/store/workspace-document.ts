@@ -19,15 +19,18 @@ import {
 import type {
   AppSettings,
   ChatConfig,
+  PersistedWorkspaceProject,
   ProjectConfig,
   ProjectUiState,
   ProjectWorktreeInfo,
 } from "@/types/ide";
 import {
+  decodeCatalogEntries,
   ensureActiveChatForProject,
   ensureActiveProject,
   getProjectHostId,
   LOCAL_HOST_ID,
+  mergeWorkspaceAndCatalog,
   normalizeProjectPathKey,
   sanitizeProjectUiForChats,
 } from "../../../../electron/shared/persisted-state-codec.js";
@@ -50,6 +53,31 @@ export interface WorkspaceDocument {
 export interface SeededChat {
   chat: ChatConfig;
   messages: UIMessage[];
+}
+
+/**
+ * The result of an operation that can take projects or chats out of the
+ * document: the next document, and every project and chat that left it, so
+ * the store drops what it keeps for them outside the document.
+ */
+export interface WorkspaceRemoval {
+  doc: WorkspaceDocument;
+  removedChatIds: string[];
+  removedProjectIds: string[];
+}
+
+/** Host catalog changes made elsewhere, as raw rows. */
+export interface CatalogChanges {
+  chats?: unknown[];
+  projects?: unknown[];
+  removedChatIds?: string[];
+  removedProjectIds?: string[];
+}
+
+/** A host's catalog as read from it, as raw rows. */
+export interface HostCatalog {
+  chats: unknown[];
+  projects: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +133,74 @@ const sameUi = (left: ProjectUiState, right: ProjectUiState) =>
     (chatId, index) => right.openChatIds[index] === chatId,
   ) &&
   sameRecord(left.chatColumnWidths, right.chatColumnWidths);
+
+const allProjectsOf = (doc: WorkspaceDocument) => [
+  ...doc.projects,
+  ...doc.closedProjects,
+];
+
+/** Everything that was in `before` and is not in `after`. */
+const removalBetween = (
+  before: WorkspaceDocument,
+  after: WorkspaceDocument,
+): WorkspaceRemoval => {
+  const projectIds = new Set(allProjectsOf(after).map((project) => project.id));
+  const chatIds = new Set(after.chats.map((chat) => chat.id));
+  return {
+    doc: after,
+    removedChatIds: before.chats
+      .map((chat) => chat.id)
+      .filter((id) => !chatIds.has(id)),
+    removedProjectIds: allProjectsOf(before)
+      .map((project) => project.id)
+      .filter((id) => !projectIds.has(id)),
+  };
+};
+
+/** Drops drafts and transcripts of projects and chats no longer present. */
+const pruneOrphans = (doc: WorkspaceDocument): WorkspaceDocument => {
+  const projectIds = new Set(allProjectsOf(doc).map((project) => project.id));
+  const chatIds = new Set(doc.chats.map((chat) => chat.id));
+  return {
+    ...doc,
+    draftChatIdByProject: Object.fromEntries(
+      Object.entries(doc.draftChatIdByProject).filter(
+        ([projectId, chatId]) =>
+          projectIds.has(projectId) && (chatId === null || chatIds.has(chatId)),
+      ),
+    ),
+    messagesByChatId: Object.fromEntries(
+      Object.entries(doc.messagesByChatId).filter(([chatId]) =>
+        chatIds.has(chatId),
+      ),
+    ),
+  };
+};
+
+/**
+ * Repairs raw project and chat lists with the codec (invalid rows dropped,
+ * one project per path on each host) and settles the document around them.
+ */
+const settleRaw = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  raw: { chats: unknown[]; closedProjects: unknown[]; projects: unknown[] },
+): WorkspaceDocument =>
+  settle(
+    pruneOrphans({ ...doc, ...decodeCatalogEntries(raw, settings) }),
+    settings,
+  );
+
+const isRecordWithId = (
+  value: unknown,
+): value is Record<string, unknown> & { id: string } =>
+  value !== null &&
+  typeof value === "object" &&
+  typeof (value as Record<string, unknown>).id === "string";
+
+/** Stamps a host's row with its host, which its own catalog does not say. */
+const withHost = (project: Record<string, unknown>, hostId: string) =>
+  hostId === LOCAL_HOST_ID ? project : { ...project, hostId };
 
 /** Shows one chat alone: the single-column focus. */
 const showOnly = (ui: ProjectUiState, chatId: string): ProjectUiState => ({
@@ -347,6 +443,316 @@ export const activateProject = (
       project.id === activeProjectId ? { ...project, lastUsedAt } : project,
     ),
   };
+};
+
+/**
+ * Takes projects out of the document for good, open or closed, with their
+ * chats. A removed active project hands over to the first open one.
+ */
+export const removeProjects = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  projectIds: Iterable<string>,
+): WorkspaceRemoval => {
+  const removed = new Set(projectIds);
+  if (!allProjectsOf(doc).some((project) => removed.has(project.id))) {
+    return removalBetween(doc, doc);
+  }
+  const keep = (project: ProjectConfig) => !removed.has(project.id);
+  const projects = doc.projects.filter(keep);
+  return removalBetween(
+    doc,
+    settle(
+      pruneOrphans({
+        ...doc,
+        activeProjectId:
+          doc.activeProjectId !== null && removed.has(doc.activeProjectId)
+            ? (projects[0]?.id ?? null)
+            : doc.activeProjectId,
+        chats: doc.chats.filter((chat) => !removed.has(chat.projectId)),
+        closedProjects: doc.closedProjects.filter(keep),
+        projects,
+      }),
+      settings,
+    ),
+  );
+};
+
+/** Removes every project on `hostId`, with their chats. */
+export const removeHostProjects = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  hostId: string,
+): WorkspaceRemoval =>
+  removeProjects(
+    doc,
+    settings,
+    allProjectsOf(doc)
+      .filter((project) => getProjectHostId(project) === hostId)
+      .map((project) => project.id),
+  );
+
+/**
+ * The document as loaded at startup. Each project's active chat that is
+ * still empty is registered as its draft, so "new chat" shows it again
+ * instead of creating another.
+ */
+export const restore = (
+  loaded: Omit<WorkspaceDocument, "draftChatIdByProject">,
+  settings: AppSettings,
+): WorkspaceDocument => {
+  const draftChatIdByProject: Record<string, string | null> = {};
+  for (const project of [...loaded.projects, ...loaded.closedProjects]) {
+    const activeChat = loaded.chats.find(
+      (chat) => chat.id === project.ui.activeChatId,
+    );
+    if (
+      activeChat &&
+      activeChat.deletedAt === null &&
+      activeChat.messageCount === 0
+    ) {
+      draftChatIdByProject[project.id] = activeChat.id;
+    }
+  }
+  return settle(
+    {
+      ...loaded,
+      activeProjectId: ensureActiveProject(
+        loaded.projects,
+        loaded.activeProjectId,
+      ),
+      draftChatIdByProject,
+    },
+    settings,
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Hosts' catalogs
+//
+// What exists (projects, chats, their catalog fields) is the host's; whether
+// a project is open, where it sits and what it shows are this window's.
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies catalog changes another client (or the host itself) made on
+ * `hostId`. Catalog fields come from the host and this window's workspace
+ * fields stay; a project this window did not know arrives closed. A host's
+ * changes only ever remove that host's projects and their chats: another
+ * host's project with an id it does not know is not gone.
+ */
+export const applyCatalogChanges = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  hostId: string,
+  changes: CatalogChanges,
+): WorkspaceRemoval => {
+  const hostProjectIds = new Set(
+    allProjectsOf(doc)
+      .filter((project) => getProjectHostId(project) === hostId)
+      .map((project) => project.id),
+  );
+  const removedProjectIds = new Set(
+    (changes.removedProjectIds ?? []).filter((id) => hostProjectIds.has(id)),
+  );
+  const chatsById = new Map(doc.chats.map((chat) => [chat.id, chat]));
+  const removedChatIds = new Set(
+    (changes.removedChatIds ?? []).filter((id) => {
+      const chat = chatsById.get(id);
+      return !chat || hostProjectIds.has(chat.projectId);
+    }),
+  );
+  const incomingProjects = new Map(
+    (changes.projects ?? [])
+      .filter(isRecordWithId)
+      .map((project) => [project.id, withHost(project, hostId)]),
+  );
+  const incomingChats = new Map(
+    (changes.chats ?? []).filter(isRecordWithId).map((chat) => [chat.id, chat]),
+  );
+
+  const mergeProject = (project: ProjectConfig): unknown => {
+    const incoming = incomingProjects.get(project.id);
+    return incoming
+      ? {
+          ...incoming,
+          id: project.id,
+          lastUsedAt: project.lastUsedAt,
+          ui: project.ui,
+        }
+      : project;
+  };
+  const keepProject = (project: ProjectConfig) =>
+    !removedProjectIds.has(project.id);
+  const knownProjectIds = new Set(
+    allProjectsOf(doc).map((project) => project.id),
+  );
+
+  return removalBetween(
+    doc,
+    settleRaw(doc, settings, {
+      chats: [
+        ...doc.chats
+          .filter(
+            (chat) =>
+              !removedChatIds.has(chat.id) &&
+              !removedProjectIds.has(chat.projectId),
+          )
+          .map((chat): unknown => {
+            const incoming = incomingChats.get(chat.id);
+            return incoming
+              ? { ...incoming, messageCount: chat.messageCount }
+              : chat;
+          }),
+        ...[...incomingChats.values()].filter(
+          (chat) => !chatsById.has(chat.id),
+        ),
+      ],
+      closedProjects: [
+        ...doc.closedProjects.filter(keepProject).map(mergeProject),
+        ...[...incomingProjects.values()].filter(
+          (project) => !knownProjectIds.has(project.id as string),
+        ),
+      ],
+      projects: doc.projects.filter(keepProject).map(mergeProject),
+    }),
+  );
+};
+
+/**
+ * Loads a just-connected host's whole catalog. The host decides which of
+ * its projects exist; this window's last saved workspace rows decide which
+ * are open. Projects already showing (from the startup snapshot) keep where
+ * they are, open or closed: the tabs may have moved while the host was
+ * away. New ones go after them. Other hosts' projects are untouched.
+ */
+export const loadHostCatalog = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  hostId: string,
+  {
+    catalog,
+    workspaceProjects,
+  }: { catalog: HostCatalog; workspaceProjects: PersistedWorkspaceProject[] },
+): WorkspaceRemoval => {
+  const merged = mergeWorkspaceAndCatalog({
+    catalog,
+    hostId,
+    workspace: { workspaceProjects },
+  }) as { chats: unknown[]; closedProjects: unknown[]; projects: unknown[] };
+
+  const onOtherHosts = (project: ProjectConfig) =>
+    getProjectHostId(project) !== hostId;
+  const otherProjectIds = new Set(
+    allProjectsOf(doc)
+      .filter(onOtherHosts)
+      .map((project) => project.id),
+  );
+
+  const idOf = (project: unknown) => (project as { id: string }).id;
+  const openIds = new Set(doc.projects.map((project) => project.id));
+  const closedIds = new Set(doc.closedProjects.map((project) => project.id));
+  const hostProjects = [...merged.projects, ...merged.closedProjects];
+  const mergedOpenIds = new Set(merged.projects.map(idOf));
+  const isOpen = (project: unknown) =>
+    openIds.has(idOf(project)) ||
+    (!closedIds.has(idOf(project)) && mergedOpenIds.has(idOf(project)));
+  const inPlace = (list: unknown[], previous: ProjectConfig[]) => {
+    const index = new Map(
+      previous.map((project, position) => [project.id, position]),
+    );
+    const at = (project: unknown) =>
+      index.get(idOf(project)) ?? Number.POSITIVE_INFINITY;
+    return list
+      .map((project, position) => ({ position, project }))
+      .sort((a, b) => at(a.project) - at(b.project) || a.position - b.position)
+      .map((item) => item.project);
+  };
+
+  return removalBetween(
+    doc,
+    settleRaw(doc, settings, {
+      chats: [
+        ...doc.chats.filter((chat) => otherProjectIds.has(chat.projectId)),
+        ...merged.chats,
+      ],
+      closedProjects: inPlace(
+        [
+          ...doc.closedProjects.filter(onOtherHosts),
+          ...hostProjects.filter((project) => !isOpen(project)),
+        ],
+        doc.closedProjects,
+      ),
+      projects: inPlace(
+        [...doc.projects.filter(onOtherHosts), ...hostProjects.filter(isOpen)],
+        doc.projects,
+      ),
+    }),
+  );
+};
+
+/**
+ * A project the host refused because it already has one at that path: the
+ * host's project (`keptRow`, as the host has it) takes the refused one's
+ * place, open or closed, with what this window showed in it, its chats and
+ * its draft. Any other copy of the kept project in the document goes.
+ */
+export const adoptProject = (
+  doc: WorkspaceDocument,
+  settings: AppSettings,
+  hostId: string,
+  refusedId: string,
+  keptRow: Record<string, unknown> & { id: string },
+): WorkspaceRemoval => {
+  const keptId = keptRow.id;
+  const refused = allProjectsOf(doc).find(
+    (project) => project.id === refusedId,
+  );
+  if (!refused || keptId === refusedId) {
+    return removalBetween(doc, doc);
+  }
+
+  const adopted: unknown = {
+    ...refused,
+    ...withHost(keptRow, hostId),
+    id: keptId,
+    lastUsedAt: refused.lastUsedAt,
+    ui: refused.ui,
+  };
+  const swap = (projects: ProjectConfig[]): unknown[] =>
+    projects.flatMap((project) =>
+      project.id === refusedId
+        ? [adopted]
+        : project.id === keptId
+          ? []
+          : [project],
+    );
+
+  const { [refusedId]: draftChatId = null, ...draftChatIdByProject } =
+    doc.draftChatIdByProject;
+  return removalBetween(
+    doc,
+    settleRaw(
+      {
+        ...doc,
+        activeProjectId:
+          doc.activeProjectId === refusedId ? keptId : doc.activeProjectId,
+        draftChatIdByProject: {
+          ...draftChatIdByProject,
+          ...(draftChatId ? { [keptId]: draftChatId } : {}),
+        },
+      },
+      settings,
+      {
+        // Its chats go with it: the host refused them along with it.
+        chats: doc.chats.map((chat) =>
+          chat.projectId === refusedId ? { ...chat, projectId: keptId } : chat,
+        ),
+        closedProjects: swap(doc.closedProjects),
+        projects: swap(doc.projects),
+      },
+    ),
+  );
 };
 
 // ---------------------------------------------------------------------------

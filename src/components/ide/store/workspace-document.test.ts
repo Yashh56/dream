@@ -505,3 +505,215 @@ test("removing every chat of an open project leaves it with a fresh one", () => 
   assert.notEqual(doc.chats[0]?.id, chat.id);
   assert.equal(projectIn(doc, project.id).ui.activeChatId, doc.chats[0]?.id);
 });
+
+// ---------------------------------------------------------------------------
+// Removals and hosts' catalogs
+// ---------------------------------------------------------------------------
+
+const LOCAL = "local";
+
+/** Two open projects, the second active, each showing one chat. */
+const twoProjectDoc = () => {
+  const { chat: firstChat, doc: seeded, project: first } = seededDoc();
+  const opened = workspace.openProject(seeded, SETTINGS, "/workspace/other");
+  assertInvariant(opened.doc);
+  return {
+    doc: opened.doc,
+    first,
+    firstChat,
+    secondChatId: opened.chatId as string,
+    secondId: opened.projectId,
+  };
+};
+
+test("removeProjects takes projects and their chats out, reports both, and hands the active project over", () => {
+  const { doc, first, secondChatId, secondId } = twoProjectDoc();
+  assert.equal(doc.activeProjectId, secondId);
+  assert.equal(doc.draftChatIdByProject[secondId], secondChatId);
+
+  const removal = workspace.removeProjects(doc, SETTINGS, [secondId]);
+
+  assertInvariant(removal.doc);
+  assert.deepEqual(removal.removedProjectIds, [secondId]);
+  assert.deepEqual(removal.removedChatIds, [secondChatId]);
+  assert.deepEqual(
+    removal.doc.projects.map((project) => project.id),
+    [first.id],
+  );
+  assert.equal(removal.doc.activeProjectId, first.id);
+  assert.equal(
+    Object.hasOwn(removal.doc.draftChatIdByProject, secondId),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(removal.doc.messagesByChatId, secondChatId),
+    false,
+  );
+});
+
+test("removeProjects with no known id changes nothing", () => {
+  const { doc } = seededDoc();
+  const removal = workspace.removeProjects(doc, SETTINGS, ["nope"]);
+  assert.equal(removal.doc, doc);
+  assert.deepEqual(removal.removedProjectIds, []);
+  assert.deepEqual(removal.removedChatIds, []);
+});
+
+test("removeHostProjects removes only that host's projects, open or closed", () => {
+  const { doc: local, project } = seededDoc();
+  const remote = workspace.openProject(local, SETTINGS, "/srv/app", {
+    hostId: "devbox",
+  });
+  const withOld = workspace.openProject(remote.doc, SETTINGS, "/srv/old", {
+    hostId: "devbox",
+  });
+  const remoteClosed = workspace.closeProject(
+    withOld.doc,
+    SETTINGS,
+    withOld.projectId,
+  );
+  assert.equal(remoteClosed.closedProjects.length, 1);
+
+  const removal = workspace.removeHostProjects(
+    remoteClosed,
+    SETTINGS,
+    "devbox",
+  );
+
+  assertInvariant(removal.doc);
+  assert.deepEqual(
+    [...removal.doc.projects, ...removal.doc.closedProjects].map(
+      (item) => item.id,
+    ),
+    [project.id],
+  );
+  assert.equal(removal.removedProjectIds.length, 2);
+  assert.equal(removal.doc.activeProjectId, project.id);
+});
+
+test("a host removing an open project's last chat leaves the project a fresh draft", () => {
+  const { chat, doc, project } = seededDoc();
+
+  const removal = workspace.applyCatalogChanges(doc, SETTINGS, LOCAL, {
+    removedChatIds: [chat.id],
+  });
+
+  assertInvariant(removal.doc);
+  assert.deepEqual(removal.removedChatIds, [chat.id]);
+  const fresh = liveChatsOf(removal.doc, project.id);
+  assert.equal(fresh.length, 1);
+  assert.notEqual(fresh[0]?.id, chat.id);
+  assert.equal(removal.doc.draftChatIdByProject[project.id], fresh[0]?.id);
+  assert.equal(Object.hasOwn(removal.doc.messagesByChatId, chat.id), false);
+});
+
+test("catalog changes keep this window's workspace fields and its new-tab view", () => {
+  const { doc: seeded, project } = seededDoc();
+  const doc = workspace.activateProject(seeded, null);
+  const shownUi = projectIn(doc, project.id).ui;
+
+  const removal = workspace.applyCatalogChanges(doc, SETTINGS, LOCAL, {
+    projects: [{ ...project, runCommand: "pnpm start", ui: {} }],
+  });
+
+  assertInvariant(removal.doc);
+  assert.equal(removal.doc.activeProjectId, null);
+  const updated = removal.doc.projects[0];
+  assert.equal(updated?.runCommand, "pnpm start");
+  assert.deepEqual(updated?.ui, shownUi);
+  assert.deepEqual(removal.removedProjectIds, []);
+});
+
+test("another host's catalog never removes a local project", () => {
+  const { chat, doc, project } = seededDoc();
+
+  const removal = workspace.applyCatalogChanges(doc, SETTINGS, "devbox", {
+    removedChatIds: [chat.id],
+    removedProjectIds: [project.id],
+  });
+
+  assert.deepEqual(removal.removedProjectIds, []);
+  assert.deepEqual(removal.removedChatIds, []);
+});
+
+test("loading a host's catalog reports that host's projects it no longer has", () => {
+  const { doc: local, project } = seededDoc();
+  const remote = workspace.openProject(local, SETTINGS, "/srv/gone", {
+    hostId: "devbox",
+  });
+  const remoteChatId = remote.chatId as string;
+
+  const removal = workspace.loadHostCatalog(remote.doc, SETTINGS, "devbox", {
+    catalog: { chats: [], projects: [] },
+    workspaceProjects: [],
+  });
+
+  assertInvariant(removal.doc);
+  assert.deepEqual(removal.removedProjectIds, [remote.projectId]);
+  assert.deepEqual(removal.removedChatIds, [remoteChatId]);
+  assert.deepEqual(
+    removal.doc.projects.map((item) => item.id),
+    [project.id],
+  );
+});
+
+test("adoptProject puts the host's project in the refused one's place with its chats and draft", () => {
+  const { doc: local, project: localProject } = seededDoc();
+  const refused = workspace.openProject(local, SETTINGS, "/srv/app", {
+    hostId: "devbox",
+  });
+  const draftId = refused.chatId as string;
+  const kept = { ...createProjectConfig("/srv/app", SETTINGS), name: "App" };
+
+  const removal = workspace.adoptProject(
+    refused.doc,
+    SETTINGS,
+    "devbox",
+    refused.projectId,
+    kept as unknown as Record<string, unknown> & { id: string },
+  );
+
+  assertInvariant(removal.doc);
+  assert.deepEqual(
+    removal.doc.projects.map((item) => item.id),
+    [localProject.id, kept.id],
+  );
+  assert.equal(removal.doc.projects[1]?.hostId, "devbox");
+  assert.equal(removal.doc.projects[1]?.name, "App");
+  assert.equal(removal.doc.activeProjectId, kept.id);
+  assert.equal(
+    removal.doc.chats.find((chat) => chat.id === draftId)?.projectId,
+    kept.id,
+  );
+  assert.equal(removal.doc.draftChatIdByProject[kept.id], draftId);
+  assert.deepEqual(removal.removedProjectIds, [refused.projectId]);
+  assert.deepEqual(removal.removedChatIds, []);
+});
+
+test("restore registers each project's empty active chat as its draft", () => {
+  const fresh = createProjectConfig("/workspace/fresh", SETTINGS);
+  const used = createProjectConfig("/workspace/used", SETTINGS);
+  const freshChat = createChatConfig(fresh, { title: "Fresh" });
+  const usedChat = {
+    ...createChatConfig(used, { title: "Used" }),
+    messageCount: 3,
+  };
+
+  const doc = workspace.restore(
+    {
+      activeProjectId: null,
+      chats: [freshChat, usedChat],
+      closedProjects: [],
+      messagesByChatId: {},
+      projects: [
+        { ...fresh, ui: { ...fresh.ui, activeChatId: freshChat.id } },
+        { ...used, ui: { ...used.ui, activeChatId: usedChat.id } },
+      ],
+    },
+    SETTINGS,
+  );
+
+  assertInvariant(doc);
+  assert.equal(doc.activeProjectId, fresh.id);
+  assert.deepEqual(doc.draftChatIdByProject, { [fresh.id]: freshChat.id });
+});

@@ -23,7 +23,7 @@ import type {
   StoreActionDependencies,
   WorktreeProjectCreationResult,
 } from "./ide-store-types";
-import { dropPurgedProjectState } from "./project-runtime-state";
+import { applyWorkspaceRemoval } from "./project-runtime-state";
 import * as workspace from "./workspace-document";
 
 /** The one place a `ProjectWorktreeInfo` is built. */
@@ -285,36 +285,23 @@ export const createWorktreeActions = (
       get().closeProject(openProject.id);
     }
 
-    set((current) => {
-      const removedProjectIds = [...current.projects, ...current.closedProjects]
-        .filter(
-          (item) =>
-            normalizeProjectPathKey(item.path) === worktreePathKey &&
-            getProjectHostId(item) === host,
-        )
-        .map((item) => item.id);
-      if (removedProjectIds.length === 0) {
-        return current;
-      }
-
-      // The worktree's chats go with it.
-      const removedChatIds = current.chats
-        .filter((chat) => removedProjectIds.includes(chat.projectId))
-        .map((chat) => chat.id);
-
-      return {
-        ...dropPurgedProjectState(current, removedProjectIds, removedChatIds),
-        chats: current.chats.filter(
-          (chat) => !removedChatIds.includes(chat.id),
+    // The worktree's chats go with it.
+    set((current) =>
+      applyWorkspaceRemoval(
+        current,
+        workspace.removeProjects(
+          current,
+          current.settings,
+          [...current.projects, ...current.closedProjects]
+            .filter(
+              (item) =>
+                normalizeProjectPathKey(item.path) === worktreePathKey &&
+                getProjectHostId(item) === host,
+            )
+            .map((item) => item.id),
         ),
-        closedProjects: current.closedProjects.filter(
-          (item) => !removedProjectIds.includes(item.id),
-        ),
-        projects: current.projects.filter(
-          (item) => !removedProjectIds.includes(item.id),
-        ),
-      };
-    });
+      ),
+    );
 
     if (
       activateProjectId &&

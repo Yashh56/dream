@@ -50,7 +50,9 @@ The maps the store keeps per project outside the project record: refresh
 keys, terminal sessions and their status, browser tab loading, the draft
 chat. They are registered in `store/project-runtime-state.ts`, which is
 what closing or purging a project drops; a new per-project map is added
-there, once.
+there, once. Every workspace removal reaches the store through
+`applyWorkspaceRemoval`, so no path that removes a project or chat leaves
+its runtime state behind.
 
 ## Chat
 
@@ -82,14 +84,20 @@ closed, which chats are open, the draft per project and which project is
 active. Moving toward holding only that view; projects, chats and
 transcripts themselves belong to the host catalog (today the document still
 carries them):
-`store/workspace-document.ts`. Every operation on it (open, close, set and
-activate projects; add, add beside, branch, focus, delete, remove, restore
+`store/workspace-document.ts`. Every operation on it (open, close, set,
+activate and remove projects; remove a host's projects; apply a host's
+catalog changes, load a host's catalog, adopt a project the host refused;
+restore at startup; add, add beside, branch, focus, delete, remove, restore
 chats; toggle multi-chat) is a pure function ending in `settle`, which
 enforces the one invariant the app relies on: every open project has a
 live chat, its active chat is one of them, its open chats are live chats of
 that project with the active one among them, and the active project is
-open. The zustand actions are thin wrappers around these operations; the
-main process settles persisted state with the same codec primitives.
+open. An operation that can take projects or chats out returns a
+**workspace removal**: the next document and the ids of everything that
+left it. The zustand actions are thin wrappers around these operations; the
+main process settles persisted state with the same codec primitives, and
+raw rows from a host are validated by the codec's `decodeCatalogEntries`
+before the document settles them.
 
 ## Provider session
 

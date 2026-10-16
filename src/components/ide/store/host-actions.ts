@@ -8,12 +8,11 @@
 import { getDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type { HostConnectionState } from "@/types/ide";
-import {
-  ensureActiveProject,
-  getProjectHostId,
-} from "../../../../electron/shared/persisted-state-codec.js";
+import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
 import { forgetLoadedHost, isHostLoaded } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
+import { applyWorkspaceRemoval } from "./project-runtime-state";
+import * as workspace from "./workspace-document";
 
 // Electron prefixes errors thrown across ipcRenderer.invoke with where they
 // came from; the user wants only what went wrong.
@@ -186,23 +185,13 @@ export const createHostActions = (
       // Out of this window only: the host's catalog is not told.
       forgetLoadedHost(hostId);
       set((state) => {
-        const onHost = new Set(
-          [...state.projects, ...state.closedProjects]
-            .filter((project) => getProjectHostId(project) === hostId)
-            .map((project) => project.id),
-        );
         const { [hostId]: _removed, ...hosts } = state.hosts;
-        const projects = state.projects.filter(
-          (project) => !onHost.has(project.id),
-        );
         return {
-          activeProjectId: ensureActiveProject(projects, state.activeProjectId),
-          chats: state.chats.filter((chat) => !onHost.has(chat.projectId)),
-          closedProjects: state.closedProjects.filter(
-            (project) => !onHost.has(project.id),
+          ...applyWorkspaceRemoval(
+            state,
+            workspace.removeHostProjects(state, state.settings, hostId),
           ),
           hosts,
-          projects,
           settings: {
             ...state.settings,
             sshHosts: state.settings.sshHosts.filter(

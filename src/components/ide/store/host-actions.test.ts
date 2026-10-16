@@ -2,10 +2,21 @@
 // window asks main what is connected instead of assuming nothing is.
 import { afterEach, expect, test, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
-import { DEFAULT_SETTINGS } from "@/lib/ide-defaults";
+import {
+  createChatConfig,
+  createProjectConfig,
+  DEFAULT_SETTINGS,
+} from "@/lib/ide-defaults";
 import type { HostConnectionState } from "@/types/ide";
 import { createHostActions } from "./host-actions";
 import type { IdeState } from "./ide-store-types";
+import {
+  BROWSER_TAB_KEYED_STATE,
+  CHAT_KEYED_STATE,
+  PROJECT_KEYED_PERSISTED_STATE,
+  PROJECT_KEYED_RUNTIME_STATE,
+  TERMINAL_SESSION_KEYED_STATE,
+} from "./project-runtime-state";
 
 const desktop = vi.hoisted(() => ({
   connectHost: vi.fn(async () => ({})),
@@ -163,4 +174,51 @@ test("editing a host keeps it, and a live connection reconnects when how it is r
     target: "me@new-a",
   });
   expect(hostIds()).toEqual(["a", "b", "c", "d"]);
+});
+
+test("removing an SSH host takes its projects out with their runtime state, and keeps local ones", async () => {
+  const local = createProjectConfig("/local/app", DEFAULT_SETTINGS);
+  const remote = {
+    ...createProjectConfig("/srv/app", DEFAULT_SETTINGS),
+    hostId: "a",
+  };
+  const localChat = createChatConfig(local, { title: "Local" });
+  const remoteChat = createChatConfig(remote, { title: "Remote" });
+  const registeredMaps = Object.fromEntries(
+    [
+      ...BROWSER_TAB_KEYED_STATE,
+      ...CHAT_KEYED_STATE,
+      ...PROJECT_KEYED_PERSISTED_STATE,
+      ...PROJECT_KEYED_RUNTIME_STATE,
+      ...TERMINAL_SESSION_KEYED_STATE,
+    ].map((key) => [key, {}]),
+  );
+  const { store } = createTestStore();
+  store.setState({
+    ...registeredMaps,
+    activeProjectId: remote.id,
+    chats: [localChat, remoteChat],
+    closedProjects: [],
+    hosts: { a: { error: null, loaded: true, state: "connected" } },
+    persist: () => {},
+    projectGitRefreshKeys: { [local.id]: 1, [remote.id]: 2 },
+    projectTerminalSessionIds: { [remote.id]: ["remote-session"] },
+    projects: [
+      { ...local, ui: { ...local.ui, activeChatId: localChat.id } },
+      { ...remote, ui: { ...remote.ui, activeChatId: remoteChat.id } },
+    ],
+    terminalStatus: { "remote-session": "running" },
+  } as unknown as Partial<IdeState>);
+
+  await store.getState().removeSshHost("a");
+
+  const state = store.getState();
+  expect(state.projects.map((project) => project.id)).toEqual([local.id]);
+  expect(state.chats.map((chat) => chat.id)).toEqual([localChat.id]);
+  expect(state.activeProjectId).toBe(local.id);
+  expect(state.projectGitRefreshKeys).toEqual({ [local.id]: 1 });
+  expect(state.projectTerminalSessionIds).toEqual({});
+  expect(state.terminalStatus).toEqual({});
+  expect(state.hosts).toEqual({});
+  expect(state.settings.sshHosts.map((item) => item.id)).not.toContain("a");
 });
