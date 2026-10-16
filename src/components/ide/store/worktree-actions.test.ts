@@ -73,7 +73,6 @@ const createTestStore = (handlers: FakeApiHandlers = {}) => {
         browserTabsByProject: {},
         nextTerminalOrdinalByProject: {},
         pendingChatSubmitByChatId: {},
-        projectFileOpenRequests: {},
         projectFilesRefreshKeys: {},
         projectGitRefreshKeys: {},
         projectTerminalPanelOpenByProject: {},
@@ -259,9 +258,6 @@ test("purging a worktree leaves no state keyed by it, its sessions, tabs or chat
     nextTerminalOrdinalByProject: { [worktree.id]: 2 },
     pendingChatSubmitByChatId: {
       [worktreeChat.id]: { text: "queued" } as never,
-    },
-    projectFileOpenRequests: {
-      [worktree.id]: { filePath: "a.ts", requestId: 1 },
     },
     projectFilesRefreshKeys: { [worktree.id]: 1 },
     projectGitPanelTabByProject: { [worktree.id]: "log" },

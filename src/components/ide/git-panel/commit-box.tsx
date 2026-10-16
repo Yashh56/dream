@@ -38,6 +38,7 @@ const GitCommitBoxImpl = ({
   projectId,
   projectPath,
   status,
+  statusReady,
 }: {
   /** Whether the Changes tab is the one shown in a visible Git panel. */
   active: boolean;
@@ -45,8 +46,14 @@ const GitCommitBoxImpl = ({
   projectPath: string;
   /** A full status read. */
   status: ProjectGitStatusResponse | null;
+  statusReady: boolean;
 }) => {
   const gitT = useTranslations("git");
+  const isProjectStreaming = useIdeStore((s) =>
+    s.chats.some(
+      (chat) => chat.projectId === projectId && s.streamingChatIds[chat.id],
+    ),
+  );
   const gitRefreshKey = useIdeStore(
     (s) => s.projectGitRefreshKeys[projectId] ?? 0,
   );
@@ -75,11 +82,11 @@ const GitCommitBoxImpl = ({
     hasChanges && Boolean(message.trim()) && !generating && submitting === null;
   const canCommitPush = canCommit && hasPushDestination(status);
 
-  // While generation is on, the message follows the changes. It is only
-  // generated while the tab is shown; the message generated after an agent
-  // turn is usually already cached.
+  // Keep the last message while an agent is working. Generate from fresh
+  // status once all of the project's turns have ended; the background
+  // generation at turn completion shares this cache request.
   useEffect(() => {
-    if (!(active && autoGenerateMessage)) {
+    if (!(active && autoGenerateMessage && statusReady) || isProjectStreaming) {
       setGenerating(false);
       return;
     }
@@ -139,11 +146,13 @@ const GitCommitBoxImpl = ({
     gitT,
     hasChanges,
     includeUnstaged,
+    isProjectStreaming,
     model,
     modelSpeed,
     projectPath,
     provider,
     reasoningEffort,
+    statusReady,
   ]);
 
   const focusMessage = useCallback(() => {

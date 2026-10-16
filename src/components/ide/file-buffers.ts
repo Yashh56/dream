@@ -2,7 +2,8 @@ export interface FileBuffer {
   diskContent: string;
   draftContent: string;
   status: "clean" | "dirty" | "saving" | "conflict";
-  error: string | null;
+  /** Why the last save failed, as thrown; null when it did not. */
+  error: unknown;
 }
 
 export type FileBuffersState = Record<string, FileBuffer>;
@@ -23,19 +24,15 @@ export type FileBufferAction =
   | { type: "edit"; key: string; content: string }
   | { type: "save-start"; key: string }
   | { type: "save-success"; key: string; content: string }
-  | { type: "save-failure"; key: string; error: string }
-  | { type: "save-conflict"; key: string; error: string }
+  | { type: "save-failure"; key: string; error: unknown }
+  | { type: "save-conflict"; key: string; error: unknown }
   | { type: "discard"; key: string }
   | { type: "invalidate"; key: string }
-  | { type: "refresh-project"; projectId: string };
+  | { type: "refresh" };
 
-const FILE_BUFFER_KEY_SEPARATOR = "\0";
-
-export const getFileBufferKey = (projectId: string, filePath: string) =>
-  `${projectId}${FILE_BUFFER_KEY_SEPARATOR}${filePath}`;
-
-const isProjectBufferKey = (key: string, projectId: string) =>
-  key.startsWith(`${projectId}${FILE_BUFFER_KEY_SEPARATOR}`);
+/** A draft that differs from what was last read from or written to disk. */
+export const isBufferDirty = (buffer: FileBuffer | null | undefined) =>
+  Boolean(buffer && buffer.draftContent !== buffer.diskContent);
 
 export const fileBuffersReducer = (
   state: FileBuffersState,
@@ -159,15 +156,12 @@ export const fileBuffersReducer = (
       delete next[action.key];
       return next;
     }
-    case "refresh-project": {
+    case "refresh": {
       let changed = false;
       const next: FileBuffersState = {};
 
       for (const [key, buffer] of Object.entries(state)) {
-        if (
-          isProjectBufferKey(key, action.projectId) &&
-          buffer.status === "clean"
-        ) {
+        if (buffer.status === "clean") {
           changed = true;
           continue;
         }

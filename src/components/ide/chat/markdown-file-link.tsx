@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useIdeStore } from "../ide-store";
 import { MaterialFileIcon } from "../material-file-icon";
 import { useOpenLocalPath } from "../ssh/use-open-local-path";
+import { useOpenProjectFile } from "../use-open-project-file";
 
 type MarkdownFileLinkProps = ComponentProps<"a"> & {
   node?: unknown;
@@ -187,12 +188,16 @@ export const MarkdownFileLink = ({
   projectPath,
   ...props
 }: MarkdownFileLinkProps) => {
-  const openProjectFile = useIdeStore((state) => state.openProjectFile);
   const openLocalPath = useOpenLocalPath();
   const projectId = useIdeStore((state) => state.activeProjectId);
   const projectFilePath = useMemo(
     () => getProjectFilePathFromHref(href, projectPath),
     [href, projectPath],
+  );
+  // In the chat's project, found by its folder, not the active project.
+  const { open: openProjectFile } = useOpenProjectFile(
+    projectPath,
+    projectFilePath,
   );
   const externalFilePath = useMemo(
     () =>
@@ -212,9 +217,7 @@ export const MarkdownFileLink = ({
       event.stopPropagation();
 
       if (projectFilePath) {
-        if (projectId) {
-          openProjectFile(projectId, projectFilePath);
-        }
+        openProjectFile();
         return;
       }
 

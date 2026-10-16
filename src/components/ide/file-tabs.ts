@@ -5,37 +5,29 @@ export interface FileTab {
   pinned: boolean;
 }
 
-export interface ProjectFileTabsState {
+/** One project's open file tabs and which of them is showing. */
+export interface FileTabsState {
   activePath: string | null;
   tabs: FileTab[];
 }
 
-export type FileTabsState = Record<string, ProjectFileTabsState>;
-
 export type FileTabsAction =
-  | { type: "preview"; projectId: string; path: string }
-  | { type: "pin"; projectId: string; path: string }
-  | { type: "activate"; projectId: string; path: string }
-  | { type: "close"; projectId: string; path: string }
-  | { type: "reorder"; projectId: string; fromIndex: number; toIndex: number };
+  | { type: "preview"; path: string }
+  | { type: "pin"; path: string }
+  | { type: "activate"; path: string }
+  | { type: "close"; path: string }
+  | { type: "reorder"; fromIndex: number; toIndex: number };
 
-export const EMPTY_PROJECT_FILE_TABS: ProjectFileTabsState = {
+export const EMPTY_FILE_TABS: FileTabsState = {
   activePath: null,
   tabs: [],
 };
 
-export const getProjectFileTabs = (
+/** The next tabs; the same object when the action changes nothing. */
+export const fileTabsReducer = (
   state: FileTabsState,
-  projectId: string | null,
-): ProjectFileTabsState =>
-  projectId
-    ? (state[projectId] ?? EMPTY_PROJECT_FILE_TABS)
-    : EMPTY_PROJECT_FILE_TABS;
-
-const reduceProject = (
-  state: ProjectFileTabsState,
   action: FileTabsAction,
-): ProjectFileTabsState => {
+): FileTabsState => {
   switch (action.type) {
     case "preview": {
       if (state.tabs.some((tab) => tab.path === action.path)) {
@@ -128,17 +120,4 @@ const reduceProject = (
       return { ...state, tabs };
     }
   }
-};
-
-export const fileTabsReducer = (
-  state: FileTabsState,
-  action: FileTabsAction,
-): FileTabsState => {
-  const current = state[action.projectId] ?? EMPTY_PROJECT_FILE_TABS;
-  const next = reduceProject(current, action);
-  if (next === current) {
-    return state;
-  }
-
-  return { ...state, [action.projectId]: next };
 };

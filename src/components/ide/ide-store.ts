@@ -1,12 +1,13 @@
 import { create } from "zustand";
+import { apiClient } from "@/lib/api-client";
 import { LOCAL_HOST_ID, setHostResolver } from "@/lib/host-routing";
 import { DEFAULT_SETTINGS } from "@/lib/ide-defaults";
 import {
   encodePersistedState,
   getProjectHostId,
-  normalizeProjectPathKey,
 } from "../../../electron/shared/persisted-state-codec.js";
-import { getChatsForProject } from "./ide-state";
+import { createFileEditorSessions } from "./file-editor-session";
+import { findProjectForPath, getChatsForProject } from "./ide-state";
 import { createBrowserActions } from "./store/browser-actions";
 import { createCatalogActions } from "./store/catalog-actions";
 import { createChatActions } from "./store/chat-actions";
@@ -46,6 +47,16 @@ const transcriptCache = createTranscriptCache(
   () => useIdeStore.getState(),
   (state) => useIdeStore.setState(state),
 );
+
+/** Each open project's Files panel tabs and drafts (file-editor-session.ts). */
+export const fileEditorSessions = createFileEditorSessions({
+  api: apiClient,
+  getProjectPath: (projectId) =>
+    useIdeStore.getState().projects.find((project) => project.id === projectId)
+      ?.path ?? null,
+  onSaved: (projectId) =>
+    useIdeStore.getState().bumpProjectGitRefreshKey(projectId),
+});
 
 // ---------------------------------------------------------------------------
 // Store
@@ -88,7 +99,6 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   activeBrowserTabIdByProject: {},
   projectGitRefreshKeys: {},
   projectFilesRefreshKeys: {},
-  projectFileOpenRequests: {},
   projectFileSearchRequests: {},
   stateHydrated: false,
   persistenceBlocked: false,
@@ -161,7 +171,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   ...createSavedPromptActions(set, get),
 
   // ── Actions: panels ─────────────────────────────────────────────────
-  ...createPanelActions(set),
+  ...createPanelActions(set, get, { fileEditor: fileEditorSessions }),
 
   // ── Actions: settings ───────────────────────────────────────────────
   ...createSettingsActions(set, get),
@@ -219,6 +229,27 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 }));
 
 useIdeStore.subscribe(transcriptCache.observe);
+
+// The Files panel sessions follow the store: a files refresh reads clean
+// files again, and a project that is no longer open takes its session with
+// it.
+useIdeStore.subscribe((state, previous) => {
+  if (state.projectFilesRefreshKeys !== previous.projectFilesRefreshKeys) {
+    for (const [projectId, key] of Object.entries(
+      state.projectFilesRefreshKeys,
+    )) {
+      if (previous.projectFilesRefreshKeys[projectId] !== key) {
+        fileEditorSessions.refresh(projectId);
+      }
+    }
+  }
+  if (state.projects !== previous.projects) {
+    const openIds = new Set(state.projects.map((project) => project.id));
+    for (const project of previous.projects) {
+      if (!openIds.has(project.id)) fileEditorSessions.drop(project.id);
+    }
+  }
+});
 
 /**
  * Saves the dirty slices (store/save-scheduler.ts): what changed in the
@@ -310,15 +341,11 @@ setHostResolver((hint) => {
     if (bySession) return bySession;
   }
   if (typeof hint.projectPath === "string") {
-    // The same path can exist on two hosts: the active project's first.
-    const key = normalizeProjectPathKey(hint.projectPath);
-    const matches = projects.filter(
-      (project) => normalizeProjectPathKey(project.path) === key,
+    const match = findProjectForPath(
+      projects,
+      state.activeProjectId,
+      hint.projectPath,
     );
-    const active = matches.find(
-      (project) => project.id === state.activeProjectId,
-    );
-    const match = active ?? matches[0];
     if (match) return getProjectHostId(match);
   }
   return LOCAL_HOST_ID;

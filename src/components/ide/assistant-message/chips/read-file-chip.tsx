@@ -1,6 +1,6 @@
 import { ExternalLinkIcon, EyeIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CodeBlock,
   CodeBlockActions,
@@ -17,9 +17,8 @@ import {
   getToolCallSource,
   type ToolLikePart,
 } from "../../assistant-message-tools";
-import { normalizeProjectPathKey } from "../../ide-state";
-import { useIdeStore } from "../../ide-store";
 import { MaterialFileIcon } from "../../material-file-icon";
+import { useOpenProjectFile } from "../../use-open-project-file";
 import {
   CHIP_DETAIL_HEADER_CLASSES,
   CHIP_ERROR_SUBTEXT_CLASSES,
@@ -43,8 +42,6 @@ export const ReadFileChip = ({
 }) => {
   const assistantT = useTranslations("assistant");
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const projects = useIdeStore((s) => s.projects);
-  const openProjectFile = useIdeStore((s) => s.openProjectFile);
   const output = part.output;
   const isRunning =
     part.state === "input-available" || part.state === "input-streaming";
@@ -78,27 +75,11 @@ export const ReadFileChip = ({
         ? `Line ${displayStart}`
         : `Lines ${displayStart}-${displayEnd}`
       : null;
-  const projectId = useMemo(() => {
-    if (!projectPath) {
-      return null;
-    }
-
-    const projectPathKey = normalizeProjectPathKey(projectPath);
-    return (
-      projects.find(
-        (project) => normalizeProjectPathKey(project.path) === projectPathKey,
-      )?.id ?? null
-    );
-  }, [projectPath, projects]);
-  const canOpenFile = Boolean(projectId && filePath);
-
-  const handleOpenFile = useCallback(() => {
-    if (!projectId || !filePath) {
-      return;
-    }
-
-    openProjectFile(projectId, filePath);
-  }, [filePath, openProjectFile, projectId]);
+  // The agent's path as it gave it (often absolute); opening resolves it.
+  const { canOpen: canOpenFile, open: handleOpenFile } = useOpenProjectFile(
+    projectPath,
+    filePath,
+  );
 
   useEffect(() => {
     if (defaultExpanded) {

@@ -764,16 +764,25 @@ export const submitChatPrompt = (
   const finishStreaming = () => {
     useIdeStore.getState().setChatStreaming(chatId, false);
     flushProjectPanelRefresh(submittedProject.id);
-    void warmProjectCommitMessage({
-      hostId: submittedProject.hostId,
-      model: gitGenerationModelSelection.model,
-      modelSpeed: gitGenerationModelSelection.modelSpeed,
-      projectPath: submittedProjectPath,
-      provider: gitGenerationModelSelection.provider,
-      reasoningEffort: gitGenerationModelSelection.reasoningEffort,
-      refreshToken:
-        useIdeStore.getState().projectGitRefreshKeys[submittedProject.id] ?? 0,
-    });
+    const currentState = useIdeStore.getState();
+    const isProjectStreaming = currentState.chats.some(
+      (chat) =>
+        chat.projectId === submittedProject.id &&
+        currentState.streamingChatIds[chat.id],
+    );
+    if (!isProjectStreaming) {
+      void warmProjectCommitMessage({
+        hostId: submittedProject.hostId,
+        model: gitGenerationModelSelection.model,
+        modelSpeed: gitGenerationModelSelection.modelSpeed,
+        projectPath: submittedProjectPath,
+        provider: gitGenerationModelSelection.provider,
+        reasoningEffort: gitGenerationModelSelection.reasoningEffort,
+        refreshToken:
+          useIdeStore.getState().projectGitRefreshKeys[submittedProject.id] ??
+          0,
+      });
+    }
     scheduleEviction(session);
   };
 

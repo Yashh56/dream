@@ -3,14 +3,13 @@ import { test } from "vitest";
 import {
   type FileBuffersState,
   fileBuffersReducer,
-  getFileBufferKey,
+  isBufferDirty,
   normalizeFileContentForEditor,
   serializeEditorContent,
 } from "./file-buffers";
 
-const projectId = "project-1";
-const fileA = getFileBufferKey(projectId, "src/a.ts");
-const fileB = getFileBufferKey(projectId, "src/b.ts");
+const fileA = "src/a.ts";
+const fileB = "src/b.ts";
 
 const reduce = (
   actions: Parameters<typeof fileBuffersReducer>[1][],
@@ -64,9 +63,8 @@ test("loading and switching files preserves each draft", () => {
 });
 
 test("refresh removes clean buffers and preserves dirty, saving, and conflict buffers", () => {
-  const otherProjectFile = getFileBufferKey("project-2", "other.ts");
-  const savingFile = getFileBufferKey(projectId, "saving.ts");
-  const conflictFile = getFileBufferKey(projectId, "conflict.ts");
+  const savingFile = "saving.ts";
+  const conflictFile = "conflict.ts";
   const state = reduce([
     { type: "load", key: fileA, content: "a" },
     { type: "load", key: fileB, content: "b" },
@@ -77,18 +75,13 @@ test("refresh removes clean buffers and preserves dirty, saving, and conflict bu
     { type: "load", key: conflictFile, content: "conflict" },
     { type: "edit", key: conflictFile, content: "conflict draft" },
     { type: "save-conflict", key: conflictFile, error: "changed" },
-    { type: "load", key: otherProjectFile, content: "other" },
   ]);
 
-  const refreshed = fileBuffersReducer(state, {
-    type: "refresh-project",
-    projectId,
-  });
+  const refreshed = fileBuffersReducer(state, { type: "refresh" });
   assert.equal(refreshed[fileA], undefined);
   assert.equal(refreshed[fileB]?.draftContent, "draft b");
   assert.equal(refreshed[savingFile]?.status, "saving");
   assert.equal(refreshed[conflictFile]?.status, "conflict");
-  assert.equal(refreshed[otherProjectFile]?.status, "clean");
 });
 
 test("save success advances disk content and clears the error", () => {
@@ -157,4 +150,21 @@ test("discard restores disk content without changing it", () => {
   assert.equal(state[fileA]?.diskContent, "disk");
   assert.equal(state[fileA]?.draftContent, "disk");
   assert.equal(state[fileA]?.status, "clean");
+});
+
+test("a buffer is dirty while its draft differs from disk, conflicts included", () => {
+  const state = reduce([
+    { type: "load", key: fileA, content: "disk" },
+    { type: "edit", key: fileA, content: "draft" },
+    { type: "save-start", key: fileA },
+    { type: "save-conflict", key: fileA, error: "changed" },
+  ]);
+  assert.equal(isBufferDirty(state[fileA]), true);
+  assert.equal(isBufferDirty(undefined), false);
+  assert.equal(
+    isBufferDirty(
+      fileBuffersReducer(state, { type: "discard", key: fileA })[fileA],
+    ),
+    false,
+  );
 });

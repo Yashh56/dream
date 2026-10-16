@@ -15,7 +15,6 @@ export const PROJECT_KEYED_RUNTIME_STATE = [
   "activeTerminalSessionIdByProject",
   "draftChatIdByProject",
   "nextTerminalOrdinalByProject",
-  "projectFileOpenRequests",
   "projectFileSearchRequests",
   "projectFilesRefreshKeys",
   "projectGitPanelTabByProject",

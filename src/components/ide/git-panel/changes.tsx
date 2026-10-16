@@ -826,6 +826,7 @@ const GitChangesImpl = ({
           projectId={activeProject.id}
           projectPath={activeProject.path}
           status={gitStatus}
+          statusReady={!statusLoading && hasFreshGitStatus}
         />
       ) : null}
 

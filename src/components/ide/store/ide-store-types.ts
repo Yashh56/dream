@@ -142,10 +142,6 @@ export interface IdeState {
   activeBrowserTabIdByProject: Record<string, string | null>;
   projectGitRefreshKeys: Record<string, number>;
   projectFilesRefreshKeys: Record<string, number>;
-  projectFileOpenRequests: Record<
-    string,
-    { filePath: string; position?: ProjectFilePosition; requestId: number }
-  >;
   /** Bumped to show the Files panel's find in files, per project. */
   projectFileSearchRequests: Record<string, number>;
   stateHydrated: boolean;
@@ -359,11 +355,16 @@ export interface IdeState {
   setProjectRightPanelOpen: (projectId: string, open: boolean) => void;
   setProjectRightPanelView: (projectId: string, view: RightPanelView) => void;
   setAppView: (view: AppView) => void;
+  /**
+   * Shows a file in the project's Files panel, optionally at a position.
+   * `filePath` may be absolute or relative, with either separator; false
+   * when it is not a file of that open project.
+   */
   openProjectFile: (
     projectId: string,
     filePath: string,
     position?: ProjectFilePosition,
-  ) => void;
+  ) => boolean;
   /** Opens the Files panel on find in files and focuses its query. */
   openProjectFileSearch: (projectId: string) => void;
   setOutputPanelOpen: (open: boolean) => void;

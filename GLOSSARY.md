@@ -267,6 +267,19 @@ a failure to start it because it is gone, makes the host forget it.
 Provider readiness checks and turn launches read it rather than looking
 the CLI up, which on Windows is a PowerShell process each time.
 
+## File editor session
+
+A project's open files in the Files panel, held outside React
+(`src/components/ide/file-editor-session.ts`): its file tabs (a **preview
+tab** the next open replaces, or **pinned** ones), each open text file's
+**buffer** (what is on disk and the unsaved **draft**), how each was read,
+and a pending reveal for the editor. One per open project, created by the
+store as `fileEditorSessions`; panels render its snapshot, so a draft
+outlives the panel showing it. Closing a tab forgets the file; a refresh
+reads clean files again and keeps drafts. Every way of opening a project
+file goes through `openProjectFile`, which turns the path into the
+project-relative form once (`project-file-path.ts`).
+
 ## Composer draft
 
 The chat composer's text read as a mention-aware document

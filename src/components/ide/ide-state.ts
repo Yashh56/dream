@@ -37,6 +37,26 @@ export const areProjectsEqualExceptLastUsedAt = (
   );
 };
 
+/**
+ * The project at `path`. The same path can be a project on two hosts; the
+ * active project wins, then the first in `projects`.
+ */
+export const findProjectForPath = <T extends ProjectConfig>(
+  projects: readonly T[],
+  activeProjectId: string | null,
+  path: string,
+): T | null => {
+  const key = normalizeProjectPathKey(path);
+  const matches = projects.filter(
+    (project) => normalizeProjectPathKey(project.path) === key,
+  );
+  return (
+    matches.find((project) => project.id === activeProjectId) ??
+    matches[0] ??
+    null
+  );
+};
+
 export const getChatsForProject = (chats: ChatConfig[], projectId: string) =>
   chats.filter(
     (chat) => chat.projectId === projectId && chat.deletedAt === null,

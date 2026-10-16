@@ -1,6 +1,6 @@
 import { ExternalLinkIcon, PenLineIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CodeBlock,
   CodeBlockActions,
@@ -27,13 +27,12 @@ import {
   type ToolLikePart,
 } from "../../assistant-message-tools";
 import { IdeDiffViewer } from "../../diff-viewer";
-import { normalizeProjectPathKey } from "../../ide-state";
-import { useIdeStore } from "../../ide-store";
 import { MaterialFileIcon } from "../../material-file-icon";
 import {
   projectResourceKey,
   readProjectResource,
 } from "../../project-resources";
+import { useOpenProjectFile } from "../../use-open-project-file";
 import {
   ActionApproval,
   ApprovalStatusLabel,
@@ -325,8 +324,6 @@ export const WriteFileChip = ({
     message: string;
   } | null>(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
-  const projects = useIdeStore((s) => s.projects);
-  const openProjectFile = useIdeStore((s) => s.openProjectFile);
   const output = part.output;
   const state = (part.state ?? "input-streaming") as ToolPart["state"];
   const isRunning = state === "input-available" || state === "input-streaming";
@@ -408,19 +405,10 @@ export const WriteFileChip = ({
     (hasError || displayDiffCode !== null || content !== null || hasOutput);
   const displayFilename =
     filename === "file" && isRunning ? uiT("writing") : filename;
-  const projectId = useMemo(() => {
-    if (!projectPath) {
-      return null;
-    }
-
-    const projectPathKey = normalizeProjectPathKey(projectPath);
-    return (
-      projects.find(
-        (project) => normalizeProjectPathKey(project.path) === projectPathKey,
-      )?.id ?? null
-    );
-  }, [projectPath, projects]);
-  const canOpenFile = Boolean(projectId && projectRelativeFilePath);
+  const { canOpen: canOpenFile, open: handleOpenFile } = useOpenProjectFile(
+    projectPath,
+    filePath,
+  );
   const parsedDiff = useMemo(
     () =>
       !isRunning && displayDiffCode
@@ -448,14 +436,6 @@ export const WriteFileChip = ({
     !hasFetchedGitDiff &&
     !currentGitDiffError &&
     Boolean(projectPath && projectRelativeFilePath);
-
-  const handleOpenFile = useCallback(() => {
-    if (!projectId || !projectRelativeFilePath) {
-      return;
-    }
-
-    openProjectFile(projectId, projectRelativeFilePath);
-  }, [openProjectFile, projectId, projectRelativeFilePath]);
 
   useEffect(() => {
     if (defaultExpanded) {

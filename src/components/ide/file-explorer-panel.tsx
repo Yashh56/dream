@@ -22,9 +22,9 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import type { BundledLanguage } from "shiki";
@@ -54,7 +54,6 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ApiError,
   apiClient,
   fetchApiBlob,
   getApiErrorMessage,
@@ -62,19 +61,14 @@ import {
 } from "@/lib/api-client";
 import { getDesktopApi } from "@/lib/electron";
 import { cn } from "@/lib/utils";
+import { isBufferDirty } from "./file-buffers";
 import {
-  type FileBuffersState,
-  fileBuffersReducer,
-  getFileBufferKey,
-} from "./file-buffers";
-import type { FileEditorReveal } from "./file-code-editor";
-import {
-  type FileTabsState,
-  fileTabsReducer,
-  getProjectFileTabs,
-} from "./file-tabs";
+  EMPTY_FILE_EDITOR_SNAPSHOT,
+  type FileEditorSnapshot,
+  isImageFile,
+} from "./file-editor-session";
 import { AppShellPlaceholder, PanelResizeHandle } from "./ide-helpers";
-import { useIdeStore } from "./ide-store";
+import { fileEditorSessions, useIdeStore } from "./ide-store";
 import { useMaterialFileTreeIcons } from "./material-file-icon";
 import {
   ProjectDirectoryLoader,
@@ -113,20 +107,6 @@ export interface FileExplorerPanelProps {
 /** What the tree column shows: the file tree, or find in files. */
 type FileTreeMode = "files" | "search";
 
-/** A reveal for the editor of one open file. */
-interface PendingFileReveal extends FileEditorReveal {
-  bufferKey: string;
-}
-
-interface ProjectFileMetadata {
-  lineEnding: "crlf" | "lf";
-  readOnlyReason: string | null;
-  writable: boolean;
-}
-
-const isFilePreviewUnavailableStatus = (status: number) =>
-  status === 413 || status === 415;
-
 interface ProjectFileTreeProps {
   active: boolean;
   onSelectedFileMissing: (path: string) => void;
@@ -143,23 +123,6 @@ interface ProjectFileTreeProps {
    */
   toolbarSlot: HTMLElement | null;
 }
-
-const IMAGE_EXTENSIONS = new Set([
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "webp",
-  "svg",
-  "bmp",
-  "ico",
-  "avif",
-]);
-
-const isImageFile = (filePath: string): boolean => {
-  const extension = filePath.split(".").pop()?.toLowerCase() ?? "";
-  return IMAGE_EXTENSIONS.has(extension);
-};
 
 const inferLanguage = (filePath: string): BundledLanguage => {
   const extension = filePath.split(".").pop()?.toLowerCase() ?? "";
@@ -785,6 +748,19 @@ const ProjectFileTreeStatus = ({
   );
 };
 
+const noSubscription = () => () => {};
+const emptySnapshot = (): FileEditorSnapshot => EMPTY_FILE_EDITOR_SNAPSHOT;
+
+/** The project's file editor session and its current snapshot. */
+const useFileEditorSession = (projectId: string | null) => {
+  const session = projectId ? fileEditorSessions.session(projectId) : null;
+  const snapshot = useSyncExternalStore(
+    session?.subscribe ?? noSubscription,
+    session?.getSnapshot ?? emptySnapshot,
+  );
+  return { session, snapshot };
+};
+
 const FileExplorerPanelImpl = ({
   active = true,
   expanded = false,
@@ -805,28 +781,15 @@ const FileExplorerPanelImpl = ({
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const treePaneRef = useRef<HTMLDivElement | null>(null);
   const treeWidthRef = useRef<number | null>(null);
-  const previousProjectFilesRefreshKeyByProjectRef = useRef<
-    Record<string, number>
-  >({});
 
-  const [fileTabs, dispatchFileTab] = useReducer(
-    fileTabsReducer,
-    {} as FileTabsState,
-  );
-  const [fileBuffers, dispatchFileBuffer] = useReducer(
-    fileBuffersReducer,
-    {} as FileBuffersState,
-  );
-  const [fileMetadata, setFileMetadata] = useState<
-    Record<string, ProjectFileMetadata>
-  >({});
-  const [filePreviewMessagesByProject, setFilePreviewMessagesByProject] =
-    useState<Record<string, Record<string, string>>>({});
+  const projectId = activeProject?.id ?? null;
+  const projectPath = activeProject?.path ?? null;
+  const { session, snapshot } = useFileEditorSession(projectId);
   const [selectedImagePreviewUrl, setSelectedImagePreviewUrl] = useState<
     string | null
   >(null);
-  const [fileLoading, setFileLoading] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [editorSearchRequest, setEditorSearchRequest] = useState(0);
   const [isEditorSearchOpen, setIsEditorSearchOpen] = useState(false);
   const [treeMode, setTreeMode] = useState<FileTreeMode>("files");
@@ -834,10 +797,6 @@ const FileExplorerPanelImpl = ({
     null,
   );
   const [projectSearchFocusRequest, setProjectSearchFocusRequest] = useState(0);
-  const [pendingReveal, setPendingReveal] = useState<PendingFileReveal | null>(
-    null,
-  );
-  const revealRequestIdRef = useRef(0);
   const selectedImagePreviewUrlRef = useRef<string | null>(null);
 
   const replaceSelectedImagePreviewUrl = useCallback((url: string | null) => {
@@ -850,39 +809,55 @@ const FileExplorerPanelImpl = ({
     selectedImagePreviewUrlRef.current = url;
   }, []);
 
-  const projectId = activeProject?.id ?? null;
-  const projectPath = activeProject?.path ?? null;
   const wordWrapEnabled = activeProject?.ui.fileEditorWordWrap ?? false;
   const projectFilesRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectFilesRefreshKeys[projectId] ?? 0) : 0,
   );
-  const fileOpenRequest = useIdeStore((s) =>
-    projectId ? (s.projectFileOpenRequests[projectId] ?? null) : null,
-  );
-  const fileOpenRequestPath = fileOpenRequest?.filePath ?? null;
-  const fileOpenRequestPosition = fileOpenRequest?.position ?? null;
   const fileSearchRequest = useIdeStore((s) =>
     projectId ? (s.projectFileSearchRequests[projectId] ?? 0) : 0,
   );
-  const fileOpenRequestKey = fileOpenRequest
-    ? `${fileOpenRequest.requestId}:${fileOpenRequest.filePath}`
-    : "";
-  const projectFileTabs = getProjectFileTabs(fileTabs, projectId);
-  const selectedFilePath = projectFileTabs.activePath;
-  const selectedFileBufferKey =
-    projectId && selectedFilePath
-      ? getFileBufferKey(projectId, selectedFilePath)
-      : null;
-  const selectedFileBuffer = selectedFileBufferKey
-    ? (fileBuffers[selectedFileBufferKey] ?? null)
+
+  // The session keeps errors as thrown; this puts them into words.
+  const describeError = useCallback(
+    (error: unknown, fallback: string) =>
+      typeof error === "string"
+        ? error
+        : getApiErrorMessage(error, fallback, (status) =>
+            uiT("requestFailedStatus", { status }),
+          ),
+    [uiT],
+  );
+
+  const selectedFilePath = snapshot.activePath;
+  const selectedFileIsImage = selectedFilePath
+    ? isImageFile(selectedFilePath)
+    : false;
+  const selectedFileBuffer = selectedFilePath
+    ? (snapshot.buffers[selectedFilePath] ?? null)
     : null;
-  const selectedFileMetadata = selectedFileBufferKey
-    ? (fileMetadata[selectedFileBufferKey] ?? null)
+  const selectedFileRead = selectedFilePath
+    ? (snapshot.reads[selectedFilePath] ?? null)
     : null;
+  const selectedFileMetadata = selectedFileRead?.metadata ?? null;
+  const selectedFileIsDirty = isBufferDirty(selectedFileBuffer);
+  // Too large or binary: a notice in place of the preview, not an error.
   const selectedFilePreviewMessage =
-    projectId && selectedFilePath
-      ? (filePreviewMessagesByProject[projectId]?.[selectedFilePath] ?? null)
+    selectedFileRead?.status === "unavailable"
+      ? describeError(selectedFileRead.error, panelsT("failedToReadFile"))
       : null;
+  const fileError = selectedFileIsImage
+    ? imageError
+    : selectedFileRead?.status === "failed"
+      ? describeError(selectedFileRead.error, panelsT("failedToReadFile"))
+      : null;
+  const fileLoading = selectedFileIsImage
+    ? imageLoading
+    : selectedFileRead?.status === "loading";
+  const selectedFileReveal =
+    snapshot.reveal && snapshot.reveal.path === selectedFilePath
+      ? snapshot.reveal
+      : null;
+
   useEffect(
     () => () => {
       if (selectedImagePreviewUrlRef.current) {
@@ -936,79 +911,6 @@ const FileExplorerPanelImpl = ({
     [projectId],
   );
 
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-
-    if (!projectId || !projectPath) {
-      return;
-    }
-
-    const previousRefreshKey =
-      previousProjectFilesRefreshKeyByProjectRef.current[projectId];
-    const refreshChanged =
-      previousRefreshKey !== undefined &&
-      previousRefreshKey !== projectFilesRefreshKey;
-    previousProjectFilesRefreshKeyByProjectRef.current[projectId] =
-      projectFilesRefreshKey;
-
-    if (refreshChanged) {
-      dispatchFileBuffer({ type: "refresh-project", projectId });
-      setFilePreviewMessagesByProject((current) => {
-        if (!current[projectId]) {
-          return current;
-        }
-
-        const next = { ...current };
-        delete next[projectId];
-        return next;
-      });
-    }
-  }, [active, projectFilesRefreshKey, projectId, projectPath]);
-
-  const queueReveal = useCallback(
-    (path: string, position: ProjectFilePosition, focus: boolean) => {
-      if (!projectId) {
-        return;
-      }
-      revealRequestIdRef.current += 1;
-      setPendingReveal({
-        ...position,
-        bufferKey: getFileBufferKey(projectId, path),
-        focus,
-        requestId: revealRequestIdRef.current,
-      });
-    },
-    [projectId],
-  );
-
-  // A request's position is revealed once; the request itself is replayed
-  // whenever the panel becomes active again.
-  const revealedOpenRequestKeyRef = useRef("");
-  useEffect(() => {
-    if (!active || !projectId || !fileOpenRequestPath) {
-      return;
-    }
-
-    dispatchFileTab({ type: "preview", projectId, path: fileOpenRequestPath });
-    setFileError(null);
-    if (
-      fileOpenRequestPosition &&
-      revealedOpenRequestKeyRef.current !== fileOpenRequestKey
-    ) {
-      revealedOpenRequestKeyRef.current = fileOpenRequestKey;
-      queueReveal(fileOpenRequestPath, fileOpenRequestPosition, false);
-    }
-  }, [
-    active,
-    fileOpenRequestKey,
-    fileOpenRequestPath,
-    fileOpenRequestPosition,
-    projectId,
-    queueReveal,
-  ]);
-
   const handledFileSearchRequestRef = useRef(0);
   useEffect(() => {
     if (!active || fileSearchRequest === handledFileSearchRequestRef.current) {
@@ -1027,118 +929,17 @@ const FileExplorerPanelImpl = ({
   }, []);
 
   useEffect(() => {
-    void projectFilesRefreshKey;
-    if (!projectId || !projectPath || !selectedFilePath) {
-      return;
-    }
-
-    if (isImageFile(selectedFilePath)) {
-      return;
-    }
-
-    const bufferKey = getFileBufferKey(projectId, selectedFilePath);
-    if (fileBuffers[bufferKey]) {
-      return;
-    }
-
-    if (
-      filePreviewMessagesByProject[projectId]?.[selectedFilePath] !== undefined
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadSelectedFile = async () => {
-      setFileLoading(true);
-      setFileError(null);
-
-      try {
-        const payload = await apiClient.readProjectFile({
-          filePath: selectedFilePath,
-          projectPath,
-        });
-        if (cancelled) {
-          return;
-        }
-
-        const loadedBufferKey = getFileBufferKey(projectId, payload.filePath);
-        dispatchFileBuffer({
-          type: "load",
-          key: loadedBufferKey,
-          content: payload.content,
-        });
-        setFileMetadata((current) => ({
-          ...current,
-          [loadedBufferKey]: {
-            lineEnding: payload.lineEnding,
-            readOnlyReason: payload.readOnlyReason,
-            writable: payload.writable,
-          },
-        }));
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        const message = getApiErrorMessage(
-          error,
-          panelsT("failedToReadFile"),
-          (status) => uiT("requestFailedStatus", { status }),
-        );
-        // Too large or binary: a notice in place of the preview, not an error.
-        if (
-          error instanceof ApiError &&
-          isFilePreviewUnavailableStatus(error.status)
-        ) {
-          setFilePreviewMessagesByProject((current) => ({
-            ...current,
-            [projectId]: {
-              ...(current[projectId] ?? {}),
-              [selectedFilePath]: message,
-            },
-          }));
-          return;
-        }
-        setFileError(message);
-      } finally {
-        if (!cancelled) {
-          setFileLoading(false);
-        }
-      }
-    };
-
-    void loadSelectedFile();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    fileBuffers,
-    filePreviewMessagesByProject,
-    panelsT,
-    projectId,
-    projectPath,
-    projectFilesRefreshKey,
-    selectedFilePath,
-    uiT,
-  ]);
-
-  useEffect(() => {
-    if (!projectId || !projectPath || !selectedFilePath) {
+    if (!projectPath || !selectedFilePath || !selectedFileIsImage) {
       replaceSelectedImagePreviewUrl(null);
-      return;
-    }
-
-    if (!isImageFile(selectedFilePath)) {
-      replaceSelectedImagePreviewUrl(null);
+      setImageError(null);
       return;
     }
 
     let cancelled = false;
 
     const loadSelectedImage = async () => {
-      setFileLoading(true);
-      setFileError(null);
+      setImageLoading(true);
+      setImageError(null);
       replaceSelectedImagePreviewUrl(null);
 
       try {
@@ -1155,15 +956,11 @@ const FileExplorerPanelImpl = ({
         replaceSelectedImagePreviewUrl(objectUrl);
       } catch (error) {
         if (!cancelled) {
-          setFileError(
-            getApiErrorMessage(error, panelsT("failedToReadImage"), (status) =>
-              uiT("requestFailedStatus", { status }),
-            ),
-          );
+          setImageError(describeError(error, panelsT("failedToReadImage")));
         }
       } finally {
         if (!cancelled) {
-          setFileLoading(false);
+          setImageLoading(false);
         }
       }
     };
@@ -1174,42 +971,41 @@ const FileExplorerPanelImpl = ({
       cancelled = true;
     };
   }, [
+    describeError,
     panelsT,
-    projectId,
     projectPath,
     replaceSelectedImagePreviewUrl,
+    selectedFileIsImage,
     selectedFilePath,
-    uiT,
   ]);
 
   const resetEditorChrome = useCallback(() => {
-    setFileError(null);
     setEditorSearchRequest(0);
     setIsEditorSearchOpen(false);
   }, []);
 
   const handleSelectFile = useCallback(
     (path: string | null) => {
-      if (!projectId || !path) {
+      if (!session || !path) {
         return;
       }
 
-      dispatchFileTab({ type: "preview", projectId, path });
+      session.open(path);
       resetEditorChrome();
     },
-    [projectId, resetEditorChrome],
+    [resetEditorChrome, session],
   );
 
   const handlePinFile = useCallback(
     (path: string) => {
-      if (!projectId) {
+      if (!session) {
         return;
       }
 
-      dispatchFileTab({ type: "pin", projectId, path });
+      session.open(path, { pin: true });
       resetEditorChrome();
     },
-    [projectId, resetEditorChrome],
+    [resetEditorChrome, session],
   );
 
   const handleOpenSearchResult = useCallback(
@@ -1218,246 +1014,107 @@ const FileExplorerPanelImpl = ({
       position: ProjectFilePosition,
       { pin }: { pin: boolean },
     ) => {
-      if (!projectId) {
+      if (!session) {
         return;
       }
 
-      dispatchFileTab({ type: pin ? "pin" : "preview", projectId, path });
+      session.open(path, { focus: pin, pin, position });
       resetEditorChrome();
-      queueReveal(path, position, pin);
     },
-    [projectId, queueReveal, resetEditorChrome],
+    [resetEditorChrome, session],
   );
 
   const handleActivateTab = useCallback(
     (path: string) => {
-      if (!projectId) {
+      if (!session) {
         return;
       }
 
-      dispatchFileTab({ type: "activate", projectId, path });
+      session.activate(path);
       resetEditorChrome();
     },
-    [projectId, resetEditorChrome],
+    [resetEditorChrome, session],
   );
 
-  const closeFileTab = useCallback(
-    (tabProjectId: string, path: string) => {
-      dispatchFileTab({ type: "close", projectId: tabProjectId, path });
-      resetEditorChrome();
-    },
-    [resetEditorChrome],
-  );
-
-  // Closing a tab with unsaved changes asks Save / Don't Save / Cancel first,
+  // Closing a tab with unsaved changes asks Save / Discard / Cancel first,
   // so a draft never outlives its tab.
-  const [pendingCloseTab, setPendingCloseTab] = useState<{
-    projectId: string;
-    path: string;
-  } | null>(null);
+  const [pendingCloseTab, setPendingCloseTab] = useState<string | null>(null);
 
   const handleCloseTab = useCallback(
     (path: string) => {
-      if (!projectId) {
+      if (!session) {
         return;
       }
 
-      const buffer = fileBuffers[getFileBufferKey(projectId, path)];
-      if (buffer && buffer.draftContent !== buffer.diskContent) {
-        setPendingCloseTab({ projectId, path });
+      if (session.close(path) === "confirm") {
+        setPendingCloseTab(path);
         return;
       }
-
-      closeFileTab(projectId, path);
+      resetEditorChrome();
     },
-    [closeFileTab, fileBuffers, projectId],
+    [resetEditorChrome, session],
   );
 
   const handleReorderTabs = useCallback(
     (fromIndex: number, toIndex: number) => {
-      if (!projectId) {
-        return;
-      }
-
-      dispatchFileTab({ type: "reorder", projectId, fromIndex, toIndex });
+      session?.reorder(fromIndex, toIndex);
     },
-    [projectId],
+    [session],
   );
 
   const handleSelectedFileMissing = useCallback(
     (path: string) => {
-      if (!projectId) {
-        return;
-      }
-      dispatchFileTab({ type: "close", projectId, path });
+      session?.forgetMissing(path);
     },
-    [projectId],
+    [session],
   );
-
-  // Editing a preview tab promotes it to a persistent tab so the draft can't
-  // be silently swapped out by the next single-click (VS Code behaviour).
-  const activeTabIsPreview = projectFileTabs.tabs.some(
-    (tab) => tab.path === selectedFilePath && !tab.pinned,
-  );
-  const activeBufferIsDirty = Boolean(
-    selectedFileBuffer &&
-      selectedFileBuffer.draftContent !== selectedFileBuffer.diskContent,
-  );
-  useEffect(() => {
-    if (!projectId || !selectedFilePath) {
-      return;
-    }
-    if (activeTabIsPreview && activeBufferIsDirty) {
-      dispatchFileTab({ type: "pin", projectId, path: selectedFilePath });
-    }
-  }, [activeBufferIsDirty, activeTabIsPreview, projectId, selectedFilePath]);
 
   const fileTabItems = useMemo<StandardTabItem[]>(
     () =>
-      projectId
-        ? projectFileTabs.tabs.map((tab) => {
-            const buffer = fileBuffers[getFileBufferKey(projectId, tab.path)];
-            const isDirty = Boolean(
-              buffer && buffer.draftContent !== buffer.diskContent,
-            );
-
-            return {
-              id: tab.path,
-              label: tab.path.split("/").pop() ?? tab.path,
-              labelClassName: tab.pinned ? undefined : "italic",
-              leading: isDirty ? (
-                <span
-                  className="size-2 shrink-0 rounded-full bg-amber-500"
-                  title={panelsT("unsavedChanges")}
-                />
-              ) : (
-                <FileIcon
-                  className="shrink-0 text-muted-foreground"
-                  size={12}
-                />
-              ),
-            };
-          })
-        : [],
-    [fileBuffers, projectFileTabs.tabs, projectId, panelsT],
+      snapshot.tabs.map((tab) => ({
+        id: tab.path,
+        label: tab.path.split("/").pop() ?? tab.path,
+        labelClassName: tab.pinned ? undefined : "italic",
+        leading: isBufferDirty(snapshot.buffers[tab.path]) ? (
+          <span
+            className="size-2 shrink-0 rounded-full bg-amber-500"
+            title={panelsT("unsavedChanges")}
+          />
+        ) : (
+          <FileIcon className="shrink-0 text-muted-foreground" size={12} />
+        ),
+      })),
+    [panelsT, snapshot.buffers, snapshot.tabs],
   );
 
   const handleReloadFromDisk = useCallback(() => {
-    if (!selectedFileBufferKey) {
-      return;
+    if (session && selectedFilePath) {
+      session.reload(selectedFilePath);
     }
-
-    dispatchFileBuffer({ type: "invalidate", key: selectedFileBufferKey });
-    setFileMetadata((current) => {
-      if (!current[selectedFileBufferKey]) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[selectedFileBufferKey];
-      return next;
-    });
-    setFileError(null);
-  }, [selectedFileBufferKey]);
-
-  const fileBuffersRef = useRef(fileBuffers);
-  fileBuffersRef.current = fileBuffers;
-  const fileMetadataRef = useRef(fileMetadata);
-  fileMetadataRef.current = fileMetadata;
-
-  // Saves one open file's draft. Resolves true only when it reached disk.
-  const saveFileBuffer = useCallback(
-    async (targetFilePath: string): Promise<boolean> => {
-      if (!projectId || !projectPath) {
-        return false;
-      }
-
-      const targetProjectId = projectId;
-      const targetBufferKey = getFileBufferKey(projectId, targetFilePath);
-      const targetBuffer = fileBuffersRef.current[targetBufferKey];
-      if (
-        !targetBuffer ||
-        targetBuffer.status !== "dirty" ||
-        !fileMetadataRef.current[targetBufferKey]?.writable
-      ) {
-        return false;
-      }
-
-      dispatchFileBuffer({ type: "save-start", key: targetBufferKey });
-
-      try {
-        const payload = await apiClient.writeProjectFile({
-          content: targetBuffer.draftContent,
-          expectedContent: targetBuffer.diskContent,
-          filePath: targetFilePath,
-          projectPath,
-        });
-        dispatchFileBuffer({
-          type: "save-success",
-          key: targetBufferKey,
-          content: payload.content,
-        });
-        useIdeStore.getState().bumpProjectGitRefreshKey(targetProjectId);
-        return true;
-      } catch (error) {
-        dispatchFileBuffer({
-          // 409: the file changed on disk since it was opened.
-          type:
-            error instanceof ApiError && error.status === 409
-              ? "save-conflict"
-              : "save-failure",
-          key: targetBufferKey,
-          error: getApiErrorMessage(
-            error,
-            panelsT("failedToSaveFile"),
-            (status) => uiT("requestFailedStatus", { status }),
-          ),
-        });
-        return false;
-      }
-    },
-    [panelsT, projectId, projectPath, uiT],
-  );
+  }, [selectedFilePath, session]);
 
   const handleSaveEditing = useCallback(async () => {
-    if (selectedFilePath) {
-      await saveFileBuffer(selectedFilePath);
+    if (session && selectedFilePath) {
+      await session.save(selectedFilePath);
     }
-  }, [saveFileBuffer, selectedFilePath]);
+  }, [selectedFilePath, session]);
 
   const handleSaveAndClosePendingTab = useCallback(async () => {
     const pending = pendingCloseTab;
     setPendingCloseTab(null);
-    if (!pending || pending.projectId !== projectId) {
-      return;
+    if (session && pending && (await session.saveAndClose(pending))) {
+      resetEditorChrome();
     }
-
-    if (await saveFileBuffer(pending.path)) {
-      closeFileTab(pending.projectId, pending.path);
-    } else {
-      // Keep the tab and show it so the save error or conflict is visible.
-      handleActivateTab(pending.path);
-    }
-  }, [
-    closeFileTab,
-    handleActivateTab,
-    pendingCloseTab,
-    projectId,
-    saveFileBuffer,
-  ]);
+  }, [pendingCloseTab, resetEditorChrome, session]);
 
   const handleDiscardAndClosePendingTab = useCallback(() => {
     const pending = pendingCloseTab;
     setPendingCloseTab(null);
-    if (!pending) {
-      return;
+    if (session && pending) {
+      session.discardAndClose(pending);
+      resetEditorChrome();
     }
-
-    dispatchFileBuffer({
-      type: "discard",
-      key: getFileBufferKey(pending.projectId, pending.path),
-    });
-    closeFileTab(pending.projectId, pending.path);
-  }, [closeFileTab, pendingCloseTab]);
+  }, [pendingCloseTab, resetEditorChrome, session]);
 
   const isSaveShortcut = useShortcutMatcher("saveFile");
   const handleEditorKeyDown = useCallback(
@@ -1674,8 +1331,7 @@ const FileExplorerPanelImpl = ({
               />
               {selectedFilePath &&
               selectedFileBuffer &&
-              selectedFileBufferKey &&
-              !isImageFile(selectedFilePath) ? (
+              !selectedFileIsImage ? (
                 <div className="ml-2 flex shrink-0 items-center gap-1">
                   <Button
                     aria-label={uiT("searchCurrentFile")}
@@ -1699,10 +1355,7 @@ const FileExplorerPanelImpl = ({
                   <Button
                     aria-label={commonT("save")}
                     className={
-                      selectedFileBuffer.draftContent !==
-                      selectedFileBuffer.diskContent
-                        ? undefined
-                        : "text-muted-foreground"
+                      selectedFileIsDirty ? undefined : "text-muted-foreground"
                     }
                     disabled={
                       selectedFileBuffer.status !== "dirty" ||
@@ -1712,12 +1365,7 @@ const FileExplorerPanelImpl = ({
                     size="icon-xs"
                     title={commonT("save")}
                     type="button"
-                    variant={
-                      selectedFileBuffer.draftContent !==
-                      selectedFileBuffer.diskContent
-                        ? "accent-subtle"
-                        : "ghost"
-                    }
+                    variant={selectedFileIsDirty ? "accent-subtle" : "ghost"}
                   >
                     {selectedFileBuffer.status === "saving" ? (
                       <Spinner className="size-3.5" />
@@ -1745,13 +1393,13 @@ const FileExplorerPanelImpl = ({
                 </div>
               </div>
             ) : fileLoading &&
-              (isImageFile(selectedFilePath)
+              (selectedFileIsImage
                 ? !selectedImagePreviewUrl
                 : !selectedFileBuffer) ? (
               <div className="flex h-full items-center justify-center gap-2 text-muted-foreground text-sm">
                 <Spinner className="size-4" />
               </div>
-            ) : isImageFile(selectedFilePath) ? (
+            ) : selectedFileIsImage ? (
               selectedImagePreviewUrl ? (
                 <div className="flex h-full items-center justify-center p-6">
                   <img
@@ -1761,7 +1409,7 @@ const FileExplorerPanelImpl = ({
                   />
                 </div>
               ) : null
-            ) : selectedFileBuffer && selectedFileBufferKey ? (
+            ) : selectedFileBuffer ? (
               <CodeBlockContainer
                 className="flex h-full max-h-full flex-col overflow-hidden rounded-none border-0 shadow-none"
                 language={inferLanguage(selectedFilePath)}
@@ -1777,7 +1425,12 @@ const FileExplorerPanelImpl = ({
                   {selectedFileBuffer.error ? (
                     <div className="flex shrink-0 items-center justify-between gap-3 border-destructive-border border-b bg-destructive-surface-muted px-3 py-2 text-destructive text-xs">
                       <div>
-                        <div>{selectedFileBuffer.error}</div>
+                        <div>
+                          {describeError(
+                            selectedFileBuffer.error,
+                            panelsT("failedToSaveFile"),
+                          )}
+                        </div>
                         {selectedFileBuffer.status === "conflict" ? (
                           <div className="mt-1 font-medium">
                             {panelsT("reloadDraftWarning")}
@@ -1811,7 +1464,7 @@ const FileExplorerPanelImpl = ({
                           !selectedFileMetadata?.writable
                         }
                         filePath={selectedFilePath}
-                        key={selectedFileBufferKey}
+                        key={selectedFilePath}
                         lineEnding={
                           selectedFileMetadata?.lineEnding ??
                           (selectedFileBuffer.diskContent.includes("\r\n")
@@ -1819,18 +1472,10 @@ const FileExplorerPanelImpl = ({
                             : "lf")
                         }
                         onChange={(content) =>
-                          dispatchFileBuffer({
-                            type: "edit",
-                            key: selectedFileBufferKey,
-                            content,
-                          })
+                          session?.edit(selectedFilePath, content)
                         }
                         onSearchOpenChange={setIsEditorSearchOpen}
-                        reveal={
-                          pendingReveal?.bufferKey === selectedFileBufferKey
-                            ? pendingReveal
-                            : null
-                        }
+                        reveal={selectedFileReveal}
                         searchRequest={editorSearchRequest}
                         value={selectedFileBuffer.draftContent}
                         wordWrap={wordWrapEnabled}
@@ -1855,7 +1500,7 @@ const FileExplorerPanelImpl = ({
           <AlertDialogHeader>
             <AlertDialogTitle>
               {panelsT("saveChangesTitle", {
-                name: pendingCloseTab?.path.split("/").pop() ?? "",
+                name: pendingCloseTab?.split("/").pop() ?? "",
               })}
             </AlertDialogTitle>
             <AlertDialogDescription>

@@ -1,10 +1,14 @@
 import type { ProjectConfig } from "@/types/ide";
+import type { FileEditorSessions } from "../file-editor-session";
 import { DEFAULT_GIT_PANEL_TAB } from "../ide-types";
+import { resolveProjectFilePath } from "../project-file-path";
 import { updateProjectUiInList } from "./helpers";
-import type { IdeState, IdeStoreSet } from "./ide-store-types";
+import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 
 export const createPanelActions = (
   set: IdeStoreSet,
+  get: IdeStoreGet,
+  { fileEditor }: { fileEditor: FileEditorSessions },
 ): Pick<
   IdeState,
   | "togglePanel"
@@ -210,43 +214,25 @@ export const createPanelActions = (
   setAppView: (appView) => set({ appView }),
 
   openProjectFile: (projectId, filePath, position) => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    const normalizedFilePath =
-      typeof filePath === "string" ? filePath.trim() : "";
-    if (!normalizedProjectId || !normalizedFilePath) {
-      return;
+    const project = get().projects.find((item) => item.id === projectId);
+    // However the caller named it, the file opens under one path: relative
+    // to the project. A path outside the project does not open here.
+    const path = project
+      ? resolveProjectFilePath(project.path, filePath)
+      : null;
+    if (!project || !path) {
+      return false;
     }
 
-    set((state) => {
-      if (
-        !state.projects.some((project) => project.id === normalizedProjectId)
-      ) {
-        return state;
-      }
-
-      const currentRequest = state.projectFileOpenRequests[normalizedProjectId];
-
-      return {
-        projectFileOpenRequests: {
-          ...state.projectFileOpenRequests,
-          [normalizedProjectId]: {
-            filePath: normalizedFilePath,
-            ...(position ? { position } : {}),
-            requestId: (currentRequest?.requestId ?? 0) + 1,
-          },
-        },
-        projects: updateProjectUiInList(
-          state.projects,
-          normalizedProjectId,
-          (project) => ({
-            ...project.ui,
-            rightPanelOpen: true,
-            rightPanelView: "explorer",
-          }),
-        ),
-      };
-    });
+    fileEditor.session(project.id).open(path, { position });
+    set((state) => ({
+      projects: updateProjectUiInList(state.projects, project.id, (item) => ({
+        ...item.ui,
+        rightPanelOpen: true,
+        rightPanelView: "explorer",
+      })),
+    }));
+    return true;
   },
 
   openProjectFileSearch: (projectId) => {
