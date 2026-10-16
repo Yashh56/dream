@@ -1,11 +1,13 @@
 /**
  * The commit graph beside the log: each commit sits in a lane, and every
- * row says which lane lines pass it, which run down into its node and which
- * leave the node for its parents below.
+ * row says which lane lines pass it, which run down into its node, which
+ * leave the node for its parents below and which shift into another lane.
  *
- * Lanes never move sideways, so a straight line keeps one column for its
- * whole length; a lane freed by a branch that ended is reused by the next
- * one that needs a column.
+ * Two lines waiting for the same commit become one as soon as the second
+ * appears, kept in the leftmost of their lanes, so a merged branch's lane
+ * closes where its last commit is drawn rather than running on to the
+ * distant commit it forked from. A freed lane is reused by the next line
+ * that needs one.
  */
 export interface GitGraphRow {
   /** The lane the commit's node sits in. */
@@ -16,6 +18,8 @@ export interface GitGraphRow {
   incoming: number[];
   /** Lanes the node's lines go down into, one per parent. */
   outgoing: number[];
+  /** Lines that move from one lane (above) to another (below) in this row. */
+  shifting: { from: number; to: number }[];
   /** Whether the commit has more than one parent. */
   merge: boolean;
 }
@@ -33,7 +37,7 @@ const takeFreeLane = (lanes: (string | null)[]) => {
   return free === -1 ? lanes.length : free;
 };
 
-/** Lays out `commits`, newest first with every child before its parents. */
+/** Lays out `commits`, every child before its parents. */
 export const buildGitGraph = (commits: readonly GraphCommit[]): GitGraph => {
   // The commit each lane is waiting for; null is a free lane.
   const lanes: (string | null)[] = [];
@@ -41,13 +45,11 @@ export const buildGitGraph = (commits: readonly GraphCommit[]): GitGraph => {
   let laneCount = 0;
 
   for (const commit of commits) {
+    const before = [...lanes];
     const incoming: number[] = [];
-    const passing: number[] = [];
-    lanes.forEach((expected, index) => {
+    before.forEach((expected, index) => {
       if (expected === commit.hash) {
         incoming.push(index);
-      } else if (expected !== null) {
-        passing.push(index);
       }
     });
 
@@ -58,17 +60,30 @@ export const buildGitGraph = (commits: readonly GraphCommit[]): GitGraph => {
     }
 
     const outgoing: number[] = [];
+    const shifting: { from: number; to: number }[] = [];
     // A host older than parents in the log sends none: no lines down.
     const parents = commit.parents ?? [];
     const [firstParent, ...otherParents] = parents;
     if (firstParent) {
-      lanes[column] = firstParent;
-      outgoing.push(column);
+      const waiting = lanes.indexOf(firstParent);
+      if (waiting === -1) {
+        lanes[column] = firstParent;
+        outgoing.push(column);
+      } else if (waiting < column) {
+        // Join the line already on its way there, further left.
+        outgoing.push(waiting);
+      } else {
+        // The line further right moves over into this commit's lane.
+        lanes[column] = firstParent;
+        lanes[waiting] = null;
+        outgoing.push(column);
+        shifting.push({ from: waiting, to: column });
+      }
     }
     for (const parent of otherParents) {
-      const existing = lanes.indexOf(parent);
-      if (existing !== -1) {
-        outgoing.push(existing);
+      const waiting = lanes.indexOf(parent);
+      if (waiting !== -1) {
+        outgoing.push(waiting);
         continue;
       }
       const lane = takeFreeLane(lanes);
@@ -76,21 +91,29 @@ export const buildGitGraph = (commits: readonly GraphCommit[]): GitGraph => {
       outgoing.push(lane);
     }
 
+    const shifted = new Set(shifting.map((shift) => shift.from));
+    const passing: number[] = [];
+    before.forEach((expected, index) => {
+      if (
+        expected !== null &&
+        expected !== commit.hash &&
+        !shifted.has(index)
+      ) {
+        passing.push(index);
+      }
+    });
+
+    laneCount = Math.max(laneCount, before.length, column + 1, lanes.length);
     while (lanes.length > 0 && lanes[lanes.length - 1] === null) {
       lanes.pop();
     }
-    laneCount = Math.max(
-      laneCount,
-      column + 1,
-      lanes.length,
-      ...passing.map((lane) => lane + 1),
-    );
     rows.push({
       column,
       incoming,
       merge: parents.length > 1,
       outgoing,
       passing,
+      shifting,
     });
   }
 

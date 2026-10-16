@@ -11,7 +11,11 @@ import type { ProjectGitLogCommit, ProjectGitLogResponse } from "@/types/ide";
 import { formatLastActiveTime } from "../activity-time";
 import { projectResourceKey, useProjectResource } from "../project-resources";
 import { buildGitGraph, type GitGraphRow } from "./log-graph";
-import { GitLogGraphCell, getGitGraphWidth } from "./log-graph-cell";
+import {
+  type GitGraphLayout,
+  GitLogGraphCell,
+  getGitGraphLayout,
+} from "./log-graph-cell";
 
 const GIT_LOG_PAGE_SIZE = 100;
 const COPIED_FEEDBACK_MS = 1500;
@@ -66,8 +70,8 @@ export const GitLogRow = ({
   relativeTimeFormatter,
 }: {
   commit: ProjectGitLogCommit;
-  /** The commit's row of the graph, and the graph's width in pixels. */
-  graph?: { row: GitGraphRow; width: number };
+  /** The commit's row of the graph, and how the graph is drawn. */
+  graph?: { layout: GitGraphLayout; row: GitGraphRow };
   relativeTimeFormatter: Intl.RelativeTimeFormat;
 }) => {
   const gitT = useTranslations("git");
@@ -113,7 +117,7 @@ export const GitLogRow = ({
 
   return (
     <div className="group relative flex min-w-0 rounded-md hover:bg-surface-50 dark:hover:bg-surface-900">
-      {graph ? <GitLogGraphCell row={graph.row} width={graph.width} /> : null}
+      {graph ? <GitLogGraphCell layout={graph.layout} row={graph.row} /> : null}
       <div
         className={cn("min-w-0 flex-1 py-2 pr-3", graph ? "pl-1" : "pl-3")}
         title={tooltip}
@@ -266,7 +270,10 @@ export const GitLog = ({
     () => (normalizedQuery ? null : buildGitGraph(commits)),
     [commits, normalizedQuery],
   );
-  const graphWidth = graph ? getGitGraphWidth(graph.laneCount) : 0;
+  const graphLayout = useMemo(
+    () => (graph ? getGitGraphLayout(graph.laneCount) : null),
+    [graph],
+  );
 
   const errorMessage = error === null ? null : error || gitT("unableToLoadLog");
   let emptyMessage: string | null = null;
@@ -310,7 +317,9 @@ export const GitLog = ({
                 <GitLogRow
                   commit={commit}
                   graph={
-                    graphRow ? { row: graphRow, width: graphWidth } : undefined
+                    graphRow && graphLayout
+                      ? { layout: graphLayout, row: graphRow }
+                      : undefined
                   }
                   key={commit.hash}
                   relativeTimeFormatter={relativeTimeFormatter}
