@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/persisted-fields-once.md` tracks PFO-01 from the October 16
+  review: plain persisted fields declared once in a codec table, and one
+  project UI normalizer for loading and saving.
 - `tasks/project-git-writes.md` tracks PGW-01 from the October 16 review:
   git writes, their in-flight state and their refresh in one store module.
 - `tasks/one-workspace-save-path.md` tracks WSP-01 from the October 16

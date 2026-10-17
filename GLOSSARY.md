@@ -276,6 +276,13 @@ payload, a legacy blob) into a valid `PersistedIdeState`, encodes live store
 state into what deserves to be saved, and maps projects, chats and settings
 to and from database rows. A persisted field is added there, once.
 
+A **plain persisted field** is a top-level field stored as one `config` row
+whose value depends on no other field (the app view, the chat sort). It is a
+row in the codec's `PLAIN_PERSISTED_FIELDS`, its decoder; the empty state,
+decode, encode, the `config` rows, the store's initial state, hydration and
+save, and the save scheduler's config slice all follow that table. Adding
+one is that row, its type, and its setter.
+
 ## Agent turn
 
 One request to an agent provider and everything it streams back for a

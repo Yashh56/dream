@@ -127,13 +127,12 @@ export const DEFAULT_PROJECT_UI = {
 
 /** @returns {PersistedIdeState} */
 export const createEmptyPersistedState = () => ({
+  ...plainPersistedFieldsOf({}),
   activeProjectId: null,
-  appView: DEFAULT_APP_VIEW,
   savedPrompts: [],
   activeBrowserTabIdByProject: {},
   browserTabsByProject: {},
   chats: [],
-  chatSort: "recent",
   closedProjects: [],
   messagesByChatId: {},
   projects: [],
@@ -290,6 +289,46 @@ const normalizeChatSort = (value) =>
   value === "createdDesc" || value === "createdAsc" || value === "titleAsc"
     ? value
     : "recent";
+
+/**
+ * The plain persisted fields: each is one `config` row whose value does not
+ * depend on any other field, so it is declared here once, as its decoder (a
+ * decoder given nothing answers the field's default). The empty state,
+ * decoding, encoding, the `config` rows, the store's initial state, its
+ * hydration and save, and the save scheduler's config slice all follow this
+ * table. Fields that depend on others (the active project, browser tabs)
+ * keep their own handling below.
+ */
+export const PLAIN_PERSISTED_FIELDS =
+  /** @satisfies {{ [K in keyof PersistedIdeState]?: (value: unknown) => PersistedIdeState[K] }} */ ({
+    appView: (value) => normalizeAppView(value) ?? DEFAULT_APP_VIEW,
+    chatSort: normalizeChatSort,
+  });
+
+/** @typedef {keyof typeof PLAIN_PERSISTED_FIELDS} PlainPersistedField */
+/** @typedef {Pick<PersistedIdeState, PlainPersistedField>} PlainPersistedFields */
+
+/** @type {readonly PlainPersistedField[]} */
+export const PLAIN_PERSISTED_FIELD_NAMES =
+  /** @type {PlainPersistedField[]} */ (Object.keys(PLAIN_PERSISTED_FIELDS));
+
+/**
+ * The plain persisted fields of `source`, each decoded: its default when
+ * absent or not valid.
+ * @param {unknown} source
+ * @returns {PlainPersistedFields}
+ */
+export const plainPersistedFieldsOf = (source) => {
+  const record = asRecord(source);
+  return /** @type {PlainPersistedFields} */ (
+    Object.fromEntries(
+      PLAIN_PERSISTED_FIELD_NAMES.map((name) => [
+        name,
+        PLAIN_PERSISTED_FIELDS[name](record[name]),
+      ]),
+    )
+  );
+};
 
 /**
  * @param {unknown} value
@@ -1228,11 +1267,11 @@ export const decodePersistedState = (raw) => {
   );
 
   return {
+    ...plainPersistedFieldsOf(raw),
     activeProjectId: ensureActiveProject(
       projectsWithUi,
       asNullableString(raw.activeProjectId),
     ),
-    appView: normalizeAppView(raw.appView) ?? DEFAULT_APP_VIEW,
     savedPrompts: normalizeSavedPrompts(raw.savedPrompts),
     activeBrowserTabIdByProject: normalizeActiveBrowserTabIds(
       raw.activeBrowserTabIdByProject,
@@ -1240,7 +1279,6 @@ export const decodePersistedState = (raw) => {
     ),
     browserTabsByProject,
     chats,
-    chatSort: normalizeChatSort(raw.chatSort),
     closedProjects: closedProjectsWithUi,
     messagesByChatId,
     projects: projectsWithUi,
@@ -1322,11 +1360,11 @@ export const encodePersistedState = (state) => {
   );
 
   return {
+    ...plainPersistedFieldsOf(state),
     activeProjectId: ensureActiveProject(
       persistedProjects,
       state.activeProjectId,
     ),
-    appView: normalizeAppView(state.appView) ?? DEFAULT_APP_VIEW,
     savedPrompts: normalizeSavedPrompts(state.savedPrompts),
     activeBrowserTabIdByProject: normalizeActiveBrowserTabIds(
       state.activeBrowserTabIdByProject,
@@ -1334,7 +1372,6 @@ export const encodePersistedState = (state) => {
     ),
     browserTabsByProject,
     chats,
-    chatSort: normalizeChatSort(state.chatSort),
     closedProjects: persistedClosedProjects,
     messagesByChatId: persistedMessagesByChatId,
     projects: persistedProjects,
@@ -1380,7 +1417,7 @@ export function getProjectHostId(project) {
  * @property {string} projectId
  * @property {"open" | "closed"} status
  * @property {number} sortOrder
- * @property {UnknownRecord} ui
+ * @property {ProjectUiState} ui
  * @property {string | null} lastUsedAt
  * @property {UnknownRecord} snapshot the project's catalog fields, cached
  */
@@ -1412,30 +1449,6 @@ export const projectToCatalogRow = (project) => {
   };
 };
 
-/** @param {unknown} value */
-const encodeProjectUi = (value) => {
-  const ui = asRecord(value);
-  return {
-    activeChatId: asNullableString(ui.activeChatId),
-    openChatIds: asIdList(ui.openChatIds),
-    chatColumnWidths: normalizeChatColumnWidths(ui.chatColumnWidths),
-    chatHistoryPanelOpen: ui.chatHistoryPanelOpen === true,
-    changesDiffWordWrap: ui.changesDiffWordWrap !== false,
-    fileEditorWordWrap: ui.fileEditorWordWrap !== false,
-    multiChat: ui.multiChat === true,
-    panelSizes: normalizePanelSizes(ui.panelSizes),
-    rightPanelOpen: asBoolean(
-      ui.rightPanelOpen,
-      asBoolean(
-        asRecord(ui.panelVisibility).right,
-        DEFAULT_PROJECT_UI.rightPanelOpen,
-      ),
-    ),
-    rightPanelView: normalizeRightPanelView(ui.rightPanelView),
-    stashItems: Array.isArray(ui.stashItems) ? ui.stashItems : [],
-  };
-};
-
 /**
  * @param {ProjectConfig} project
  * @param {"open" | "closed"} status
@@ -1450,7 +1463,7 @@ export const projectToWorkspaceRow = (project, status, sortOrder) => {
     projectId: project.id,
     status,
     sortOrder,
-    ui: encodeProjectUi(project.ui),
+    ui: normalizeProjectUi(project.ui),
     lastUsedAt: asTimestamp(project.lastUsedAt),
     snapshot: projectFromRow(catalog),
   };
@@ -1738,9 +1751,8 @@ const SETTINGS_CONFIG_PREFIX = "settings.";
 export const stateToConfig = (state) => {
   /** @type {Record<string, unknown>} */
   const config = {
+    ...plainPersistedFieldsOf(state),
     activeProjectId: asNullableString(state.activeProjectId),
-    appView: normalizeAppView(state.appView) ?? DEFAULT_APP_VIEW,
-    chatSort: normalizeChatSort(state.chatSort),
     browserTabsByProject: asRecord(state.browserTabsByProject),
     activeBrowserTabIdByProject: asRecord(state.activeBrowserTabIdByProject),
   };
@@ -1768,9 +1780,10 @@ export const stateFromConfig = (config) => {
   }
 
   return {
+    ...Object.fromEntries(
+      PLAIN_PERSISTED_FIELD_NAMES.map((name) => [name, config[name]]),
+    ),
     activeProjectId: config.activeProjectId,
-    appView: config.appView,
-    chatSort: config.chatSort,
     browserTabsByProject: config.browserTabsByProject,
     activeBrowserTabIdByProject: config.activeBrowserTabIdByProject,
     settings,

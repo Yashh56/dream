@@ -11,6 +11,9 @@ import {
   ensureActiveChatForProject,
   ensureActiveProject,
   mergeWorkspaceAndCatalog,
+  PLAIN_PERSISTED_FIELD_NAMES,
+  PLAIN_PERSISTED_FIELDS,
+  plainPersistedFieldsOf,
   projectFromRow,
   projectToCatalogRow,
   projectToWorkspaceRow,
@@ -533,6 +536,77 @@ test("encode then decode is the identity on a decoded state", () => {
 });
 
 // ── rows ──────────────────────────────────────────────────────────────
+
+// A valid value of each plain persisted field, not its default where the
+// field has another. A field added to the table without one fails here.
+const PLAIN_FIELD_SAMPLES = {
+  appView: "code",
+  chatSort: "titleAsc",
+};
+
+test("every plain persisted field has a sample", () => {
+  assert.deepEqual(
+    [...PLAIN_PERSISTED_FIELD_NAMES].sort(),
+    Object.keys(PLAIN_FIELD_SAMPLES).sort(),
+  );
+});
+
+test("a plain persisted field defaults when absent or invalid", () => {
+  const empty = createEmptyPersistedState();
+  for (const name of PLAIN_PERSISTED_FIELD_NAMES) {
+    const fallback = PLAIN_PERSISTED_FIELDS[name](undefined);
+    assert.equal(empty[name], fallback, name);
+    assert.equal(decodePersistedState({})[name], fallback, name);
+    assert.equal(
+      decodePersistedState({ [name]: { not: "valid" } })[name],
+      fallback,
+      name,
+    );
+    assert.equal(plainPersistedFieldsOf(null)[name], fallback, name);
+  }
+});
+
+test("a plain persisted field survives decode, encode and the config rows", () => {
+  const decoded = decodePersistedState(PLAIN_FIELD_SAMPLES);
+  const encoded = encodePersistedState(decoded);
+  const throughConfig = decodePersistedState(
+    stateFromConfig(stateToConfig(encoded)),
+  );
+  for (const [name, value] of Object.entries(PLAIN_FIELD_SAMPLES)) {
+    assert.equal(decoded[name], value, name);
+    assert.equal(encoded[name], value, name);
+    assert.equal(stateToConfig(encoded)[name], value, name);
+    assert.equal(throughConfig[name], value, name);
+  }
+});
+
+test("a project's ui is stored as decoded: stash items included", () => {
+  const [project] = decodePersistedState({
+    projects: [createRawProject()],
+  }).projects;
+  const ui = {
+    ...project.ui,
+    stashItems: [
+      { createdAt: "2026-10-01T00:00:00.000Z", id: "kept", text: "one" },
+      { createdAt: "2026-10-01T00:00:00.000Z", id: "kept", text: "two" },
+      { nope: true },
+    ],
+  };
+  const row = projectToWorkspaceRow({ ...project, ui }, "open", 0);
+  // The decode gives the project a fresh default chat; the rest of its ui is
+  // what the row stores.
+  const { activeChatId, openChatIds, ...decodedUi } = decodePersistedState({
+    projects: [{ ...project, ui }],
+  }).projects[0].ui;
+  assert.deepEqual(
+    { ...row.ui, activeChatId, openChatIds },
+    { ...decodedUi, activeChatId, openChatIds },
+  );
+  assert.deepEqual(
+    row.ui.stashItems.map((item) => item.text),
+    ["one"],
+  );
+});
 
 test("a project survives the row round trip", () => {
   const project = decodePersistedState({

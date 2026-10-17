@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from "@/lib/ide-defaults";
 import {
   encodePersistedState,
   getProjectHostId,
+  plainPersistedFieldsOf,
 } from "../../../electron/shared/persisted-state-codec.js";
 import { createFileEditorSessions } from "./file-editor-session";
 import { findProjectForPath, getChatsForProject } from "./ide-state";
@@ -65,13 +66,12 @@ export const fileEditorSessions = createFileEditorSessions({
 
 export const useIdeStore = create<IdeState>((set, get) => ({
   // ── Persisted state ─────────────────────────────────────────────────
+  ...plainPersistedFieldsOf({}),
   projects: [],
   closedProjects: [],
   activeProjectId: null,
-  appView: "code",
   savedPrompts: [],
   chats: [],
-  chatSort: "recent",
   settings: DEFAULT_SETTINGS,
   messagesByChatId: {},
   pendingChatSubmitByChatId: {},
@@ -199,12 +199,11 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
     set({
       ...restored,
-      appView: loaded.appView,
+      ...plainPersistedFieldsOf(loaded),
       savedPrompts: loaded.savedPrompts,
       activeBrowserTabIdByProject: loaded.activeBrowserTabIdByProject,
       browserTabsByProject: loaded.browserTabsByProject,
       settings: loaded.settings,
-      chatSort: loaded.chatSort,
       hostRunningChatIds: Object.fromEntries(
         getLoadedRunningChatIds().map((chatId) => [chatId, true as const]),
       ),
@@ -260,31 +259,29 @@ useIdeStore.subscribe((state, previous) => {
  * chats encoded.
  */
 const saveSlices = (dirty: ReadonlySet<SaveSlice>) => {
+  const state = useIdeStore.getState();
   const {
     activeProjectId,
     activeBrowserTabIdByProject,
-    appView,
     browserTabsByProject,
-    chatSort,
     chats,
     closedProjects,
     savedPrompts,
     projects,
     settings,
     stateHydrated,
-  } = useIdeStore.getState();
+  } = state;
   if (!stateHydrated) return;
 
   const catalogChanged = dirty.has("projects") || dirty.has("chats");
   const encoded = encodePersistedState({
+    ...plainPersistedFieldsOf(state),
     activeBrowserTabIdByProject,
     activeProjectId,
-    appView,
     savedPrompts,
     browserTabsByProject,
     // Config and saved prompts do not depend on chats.
     chats: catalogChanged ? chats : [],
-    chatSort,
     closedProjects,
     // Message bodies have their own per-chat persistence path.
     messagesByChatId: {},

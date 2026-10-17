@@ -5,7 +5,8 @@
  * sends the dirty slices only. `flush` saves now (an explicit persist, a
  * closing window).
  *
- *   config        active project, app view, chat sort, browser tabs, settings
+ *   config        the plain persisted fields (the codec's table), active
+ *                 project, browser tabs, settings
  *   savedPrompts  saved prompts
  *   projects      open and closed projects (their rows, their catalog)
  *   chats         chats (their catalog, and the project rows they settle)
@@ -15,6 +16,7 @@
  *
  * Pure: the timers are passed in, so it is tested without React or time.
  */
+import { PLAIN_PERSISTED_FIELD_NAMES } from "../../../../electron/shared/persisted-state-codec.js";
 
 export type SaveSlice = "chats" | "config" | "projects" | "savedPrompts";
 
@@ -22,11 +24,10 @@ export type SaveSlice = "chats" | "config" | "projects" | "savedPrompts";
 export const SAVE_SLICE_FIELDS = {
   chats: ["chats"],
   config: [
+    ...PLAIN_PERSISTED_FIELD_NAMES,
     "activeBrowserTabIdByProject",
     "activeProjectId",
-    "appView",
     "browserTabsByProject",
-    "chatSort",
     "settings",
   ],
   projects: ["closedProjects", "projects"],
