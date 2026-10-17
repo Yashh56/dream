@@ -261,8 +261,7 @@
     "addProjectForFiles": "Add a project to browse its files.",
     "changesActions": "Changes actions",
     "clearSearch": "Clear search",
-    "enableWordWrap": "Enable word wrap",
-    "fileActions": "File actions",
+    "wordWrap": "Word wrap",
     "revertAllChanges": "Revert all changes",
     "searchFiles": "Search files",
     "splitDiff": "Split diff",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Pull request",
-    "actions": "Pull request actions",
     "views": "Pull request views",
     "summary": "Summary",
     "open": "Open",

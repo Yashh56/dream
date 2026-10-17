@@ -261,8 +261,7 @@
     "addProjectForFiles": "Agrega un proyecto para explorar sus archivos.",
     "changesActions": "Acciones de cambios",
     "clearSearch": "Borrar búsqueda",
-    "enableWordWrap": "Activar ajuste de línea",
-    "fileActions": "Acciones de archivos",
+    "wordWrap": "Ajuste de línea",
     "revertAllChanges": "Revertir todos los cambios",
     "searchFiles": "Buscar archivos",
     "splitDiff": "Diff dividido",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Solicitud de extracción",
-    "actions": "Acciones de la solicitud de extracción",
     "views": "Vistas de la solicitud de extracción",
     "summary": "Resumen",
     "open": "Abierta",

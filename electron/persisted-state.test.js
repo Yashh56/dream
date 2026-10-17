@@ -864,8 +864,8 @@ const FULL_PROJECT_UI = {
   openChatIds: [FULL_CHAT_ID],
   chatColumnWidths: { [FULL_CHAT_ID]: 480 },
   chatHistoryPanelOpen: true,
-  changesDiffWordWrap: true,
-  fileEditorWordWrap: true,
+  changesDiffWordWrap: false,
+  fileEditorWordWrap: false,
   multiChat: true,
   panelSizes: {
     chatHistoryPanelWidth: 450,

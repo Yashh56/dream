@@ -261,8 +261,7 @@
     "addProjectForFiles": "Thêm dự án để duyệt tệp.",
     "changesActions": "Thao tác thay đổi",
     "clearSearch": "Xóa tìm kiếm",
-    "enableWordWrap": "Bật ngắt dòng",
-    "fileActions": "Thao tác tệp",
+    "wordWrap": "Ngắt dòng",
     "revertAllChanges": "Hoàn tác tất cả thay đổi",
     "searchFiles": "Tìm kiếm tệp",
     "splitDiff": "Diff chia đôi",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Pull request",
-    "actions": "Thao tác pull request",
     "views": "Chế độ xem pull request",
     "summary": "Tóm tắt",
     "open": "Đang mở",

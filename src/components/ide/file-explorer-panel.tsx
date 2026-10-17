@@ -4,14 +4,12 @@ import {
   useFileTreeSearch,
 } from "@pierre/trees/react";
 import {
-  Ellipsis,
   FileIcon,
   Files,
   RotateCw,
   Save,
   Search,
   TextSearch,
-  TextWrap,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -43,13 +41,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SearchInput } from "@/components/ui/search-input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -78,6 +69,7 @@ import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 import { useShortcutMatcher } from "./shortcuts/shortcuts";
 import { type StandardTabItem, StandardTabs } from "./standard-tabs";
 import type { ProjectFilePosition } from "./store/ide-store-types";
+import { WordWrapToggle } from "./word-wrap-toggle";
 
 const FILE_TREE_MIN_WIDTH_PX = 250;
 const FILE_TREE_MAX_WIDTH_RATIO = 0.5;
@@ -593,7 +585,7 @@ const FileExplorerPanelImpl = ({
     selectedImagePreviewUrlRef.current = url;
   }, []);
 
-  const wordWrapEnabled = activeProject?.ui.fileEditorWordWrap ?? false;
+  const wordWrapEnabled = activeProject?.ui.fileEditorWordWrap ?? true;
   const projectFilesRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectFilesRefreshKeys[projectId] ?? 0) : 0,
   );
@@ -670,13 +662,6 @@ const FileExplorerPanelImpl = ({
         : undefined,
     });
   }, [projectId, projectPath]);
-
-  const handleRefreshFiles = useCallback(() => {
-    if (!projectId) {
-      return;
-    }
-    useIdeStore.getState().bumpProjectFilesRefreshKey(projectId);
-  }, [projectId]);
 
   const handleWordWrapChange = useCallback(
     (enabled: boolean) => {
@@ -1005,33 +990,10 @@ const FileExplorerPanelImpl = ({
           {activeProject.path}
         </button>
         <div className="flex shrink-0 items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  aria-label={panelsT("fileActions")}
-                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
-                  title={panelsT("fileActions")}
-                  type="button"
-                />
-              }
-            >
-              <Ellipsis className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={handleRefreshFiles}>
-                <RotateCw className="size-4" />
-                {commonT("refresh")}
-              </DropdownMenuItem>
-              <DropdownMenuCheckboxItem
-                checked={wordWrapEnabled}
-                onCheckedChange={handleWordWrapChange}
-              >
-                <TextWrap className="size-4" />
-                {panelsT("enableWordWrap")}
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <WordWrapToggle
+            onPressedChange={handleWordWrapChange}
+            pressed={wordWrapEnabled}
+          />
           {onToggleExpanded ? (
             <RightPanelExpandButton
               expanded={Boolean(expanded)}

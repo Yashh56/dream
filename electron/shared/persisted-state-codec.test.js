@@ -80,8 +80,8 @@ test("decode merges persisted projects and chats into defaults", () => {
   assert.deepEqual(decoded.messagesByChatId["chat-one"], [userMessage]);
   assert.equal(decoded.projects[0].ui.activeChatId, "chat-one");
   assert.deepEqual(decoded.projects[0].ui.openChatIds, ["chat-one"]);
-  assert.equal(decoded.projects[0].ui.changesDiffWordWrap, false);
-  assert.equal(decoded.projects[0].ui.fileEditorWordWrap, false);
+  assert.equal(decoded.projects[0].ui.changesDiffWordWrap, true);
+  assert.equal(decoded.projects[0].ui.fileEditorWordWrap, true);
   assert.equal(decoded.projects[0].runCommand, "pnpm dev");
   assert.equal(decoded.settings.archiveChatsAfterDays, 14);
   assert.equal(decoded.settings.locale, "en");
@@ -93,9 +93,9 @@ test("decode keeps every project ui preference", () => {
     projects: [
       createRawProject({
         ui: {
-          changesDiffWordWrap: true,
+          changesDiffWordWrap: false,
           chatHistoryPanelOpen: true,
-          fileEditorWordWrap: true,
+          fileEditorWordWrap: false,
           panelSizes: { chatHistoryPanelWidth: 450, terminalHeight: 300 },
           rightPanelView: "terminal",
         },
@@ -104,9 +104,9 @@ test("decode keeps every project ui preference", () => {
   });
 
   const { ui } = decoded.projects[0];
-  assert.equal(ui.changesDiffWordWrap, true);
+  assert.equal(ui.changesDiffWordWrap, false);
   assert.equal(ui.chatHistoryPanelOpen, true);
-  assert.equal(ui.fileEditorWordWrap, true);
+  assert.equal(ui.fileEditorWordWrap, false);
   assert.equal(ui.panelSizes.chatHistoryPanelWidth, 450);
   assert.equal(ui.panelSizes.terminalHeight, 300);
   assert.equal(ui.panelSizes.leftSidebarWidth, 240);

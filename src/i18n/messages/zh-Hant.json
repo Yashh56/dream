@@ -260,8 +260,7 @@
   "panels": {
     "addProjectForFiles": "新增專案以瀏覽檔案。",
     "changesActions": "變更操作",
-    "enableWordWrap": "啟用自動換行",
-    "fileActions": "檔案操作",
+    "wordWrap": "自動換行",
     "revertAllChanges": "還原所有變更",
     "splitDiff": "並排差異",
     "unifiedDiff": "統一差異",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "拉取請求",
-    "actions": "拉取請求操作",
     "views": "拉取請求檢視",
     "summary": "摘要",
     "open": "開啟中",

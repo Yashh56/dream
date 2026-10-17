@@ -261,8 +261,7 @@
     "addProjectForFiles": "ファイルを参照するにはプロジェクトを追加してください。",
     "changesActions": "変更操作",
     "clearSearch": "検索をクリア",
-    "enableWordWrap": "折り返しを有効にする",
-    "fileActions": "ファイル操作",
+    "wordWrap": "折り返し",
     "revertAllChanges": "すべての変更を元に戻す",
     "searchFiles": "ファイルを検索",
     "splitDiff": "分割 diff",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "プルリクエスト",
-    "actions": "プルリクエストの操作",
     "views": "プルリクエストの表示",
     "summary": "概要",
     "open": "オープン",

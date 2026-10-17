@@ -3,9 +3,7 @@ import {
   ChevronsUpDown,
   Columns2,
   Ellipsis,
-  RotateCw,
   Rows3,
-  TextWrap,
   Undo2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -20,10 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
@@ -40,6 +36,7 @@ import {
 import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
 import { gitDiffResourceKey, useProjectResource } from "../project-resources";
+import { WordWrapToggle } from "../word-wrap-toggle";
 import { GitCommitBox } from "./commit-box";
 import { GitPanelHeaderActions } from "./header-actions";
 
@@ -104,7 +101,6 @@ const GitChangesImpl = ({
   active,
   projectId: requestedProjectId,
 }: GitChangesProps) => {
-  const commonT = useTranslations("common");
   const panelsT = useTranslations("panels");
   const activeProject = useIdeStore(
     (s) =>
@@ -116,7 +112,7 @@ const GitChangesImpl = ({
   const projectId = activeProject?.id ?? null;
   const projectPath = activeProject?.path ?? null;
   const hostId = activeProject?.hostId;
-  const wordWrapEnabled = activeProject?.ui.changesDiffWordWrap ?? false;
+  const wordWrapEnabled = activeProject?.ui.changesDiffWordWrap ?? true;
   const gitRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectGitRefreshKeys[projectId] ?? 0) : 0,
   );
@@ -189,13 +185,6 @@ const GitChangesImpl = ({
   const handleForceRenderDiff = useCallback((filePath: string) => {
     dispatch({ path: filePath, type: "force-render" });
   }, []);
-
-  const handleRefreshChanges = useCallback(() => {
-    if (!projectId) {
-      return;
-    }
-    bumpProjectGitRefreshKey(projectId);
-  }, [bumpProjectGitRefreshKey, projectId]);
 
   const handleWordWrapChange = useCallback(
     (enabled: boolean) => {
@@ -335,6 +324,11 @@ const GitChangesImpl = ({
           )}
         </Button>
 
+        <WordWrapToggle
+          onPressedChange={handleWordWrapChange}
+          pressed={wordWrapEnabled}
+        />
+
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -349,18 +343,6 @@ const GitChangesImpl = ({
             <Ellipsis className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={handleRefreshChanges}>
-              <RotateCw className="size-4" />
-              {commonT("refresh")}
-            </DropdownMenuItem>
-            <DropdownMenuCheckboxItem
-              checked={wordWrapEnabled}
-              onCheckedChange={handleWordWrapChange}
-            >
-              <TextWrap className="size-4" />
-              {panelsT("enableWordWrap")}
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={
                 visibleChanges.length === 0 || view.reverting.length > 0

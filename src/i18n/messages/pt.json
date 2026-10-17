@@ -261,8 +261,7 @@
     "addProjectForFiles": "Adicione um projeto para navegar pelos arquivos.",
     "changesActions": "Ações de alterações",
     "clearSearch": "Limpar pesquisa",
-    "enableWordWrap": "Ativar quebra de linha",
-    "fileActions": "Ações de arquivo",
+    "wordWrap": "Quebra de linha",
     "revertAllChanges": "Reverter todas as alterações",
     "searchFiles": "Pesquisar arquivos",
     "splitDiff": "Diff dividido",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Pull request",
-    "actions": "Ações do pull request",
     "views": "Visualizações do pull request",
     "summary": "Resumo",
     "open": "Aberto",

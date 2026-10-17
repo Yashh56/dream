@@ -261,8 +261,7 @@
     "addProjectForFiles": "Fügen Sie ein Projekt hinzu, um seine Dateien zu durchsuchen.",
     "changesActions": "Änderungsaktionen",
     "clearSearch": "Suche löschen",
-    "enableWordWrap": "Zeilenumbruch aktivieren",
-    "fileActions": "Dateiaktionen",
+    "wordWrap": "Zeilenumbruch",
     "revertAllChanges": "Alle Änderungen verwerfen",
     "searchFiles": "Dateien durchsuchen",
     "splitDiff": "Geteiltes Diff",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Pull Request",
-    "actions": "Pull-Request-Aktionen",
     "views": "Pull-Request-Ansichten",
     "summary": "Zusammenfassung",
     "open": "Offen",

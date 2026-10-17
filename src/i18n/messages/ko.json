@@ -261,8 +261,7 @@
     "addProjectForFiles": "파일을 탐색하려면 프로젝트를 추가하세요.",
     "changesActions": "변경 작업",
     "clearSearch": "검색 지우기",
-    "enableWordWrap": "자동 줄 바꿈 사용",
-    "fileActions": "파일 작업",
+    "wordWrap": "자동 줄 바꿈",
     "revertAllChanges": "모든 변경 사항 되돌리기",
     "searchFiles": "파일 검색",
     "splitDiff": "분할 diff",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "풀 리퀘스트",
-    "actions": "풀 리퀘스트 작업",
     "views": "풀 리퀘스트 보기",
     "summary": "요약",
     "open": "열림",

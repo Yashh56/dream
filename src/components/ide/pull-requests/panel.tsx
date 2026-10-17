@@ -8,16 +8,13 @@ import {
   CircleX,
   Clock3,
   Columns2,
-  Ellipsis,
   ExternalLink,
   File,
   GitBranch,
   GitMerge,
   type LucideIcon,
   Pencil,
-  RotateCw,
   Rows3,
-  TextWrap,
 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import {
@@ -37,13 +34,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   InlineEditor,
   InlineEditorFooter,
 } from "@/components/ui/inline-editor";
@@ -61,6 +51,7 @@ import { IdeDiffViewer } from "../diff-viewer";
 import { GitPanelHeaderActions } from "../git-panel/header-actions";
 import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
+import { WordWrapToggle } from "../word-wrap-toggle";
 import {
   type Page,
   type PrAction,
@@ -72,7 +63,6 @@ import {
   usePrDraft,
   usePullRequestContext,
 } from "./api";
-
 import { PrMarkdownImage } from "./markdown-image";
 import { MergePrDialog } from "./merge-pr-dialog";
 import { PullRequestStatus } from "./status-badge";
@@ -895,14 +885,11 @@ function PullRequestFileRow({
   );
 }
 
-function Files({
-  onRefresh,
-  ...props
-}: SectionProps & { onRefresh: () => void }) {
+function Files(props: SectionProps) {
   const t = useTranslations();
   const panelsT = useTranslations("panels");
   const [mode, setMode] = useState<DiffViewMode>("unified");
-  const [wordWrap, setWordWrap] = useState(false);
+  const [wordWrap, setWordWrap] = useState(true);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
     () => new Set(),
   );
@@ -970,33 +957,7 @@ function Files({
             <ChevronsUpDown className="size-3.5" />
           )}
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label={panelsT("changesActions")}
-                title={panelsT("changesActions")}
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted data-[popup-open]:text-foreground"
-              />
-            }
-          >
-            <Ellipsis className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={onRefresh}>
-              <RotateCw className="size-4" />
-              {t("common.refresh")}
-            </DropdownMenuItem>
-            <DropdownMenuCheckboxItem
-              checked={wordWrap}
-              onCheckedChange={setWordWrap}
-            >
-              <TextWrap className="size-4" />
-              {panelsT("enableWordWrap")}
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <WordWrapToggle onPressedChange={setWordWrap} pressed={wordWrap} />
       </div>
       {files.items.map((file) => (
         <PullRequestFileRow
@@ -1388,11 +1349,7 @@ function Detail({
             </TabsContent>
           ) : (
             <TabsContent value="files" className="h-full">
-              <Files
-                key={`${number}:${pr.commit}`}
-                {...section}
-                onRefresh={() => setRevision((value) => value + 1)}
-              />
+              <Files key={`${number}:${pr.commit}`} {...section} />
             </TabsContent>
           )
         ) : null}
@@ -1444,26 +1401,6 @@ export function PullRequestView({
             {t("worktrees.merge")}
           </Button>
         ) : null}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted data-[popup-open]:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                title={t("pullRequests.actions")}
-                aria-label={t("pullRequests.actions")}
-              />
-            }
-          >
-            <Ellipsis className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onClick={refresh}>
-              <RotateCw className="size-4" />
-              {t("common.refresh")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </GitPanelHeaderActions>
       {context.error ? (
         <div role="alert" className="p-4 text-sm space-y-3">

@@ -261,8 +261,7 @@
     "addProjectForFiles": "添加项目以浏览其文件。",
     "changesActions": "更改操作",
     "clearSearch": "清除搜索",
-    "enableWordWrap": "启用自动换行",
-    "fileActions": "文件操作",
+    "wordWrap": "自动换行",
     "revertAllChanges": "还原所有更改",
     "searchFiles": "搜索文件",
     "splitDiff": "分栏差异",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "拉取请求",
-    "actions": "拉取请求操作",
     "views": "拉取请求视图",
     "summary": "摘要",
     "open": "开放",

@@ -102,7 +102,7 @@ test("a project's view state sends its own row and nothing else", async () => {
     LOCAL,
   );
 
-  const edited = { ...b, ui: { ...b.ui, changesDiffWordWrap: true } };
+  const edited = { ...b, ui: { ...b.ui, changesDiffWordWrap: false } };
   const changes = takeWorkspaceChanges(
     record,
     recordWorkspace(encode([a, edited]), { rows: true }),
@@ -120,7 +120,7 @@ test("a project's view state sends its own row and nothing else", async () => {
     .workspaceProjects.find((row) => row.projectId === b.id);
   assert.equal(
     (stored?.ui as { changesDiffWordWrap?: boolean }).changesDiffWordWrap,
-    true,
+    false,
   );
 });
 
@@ -191,7 +191,7 @@ test("a host this window has not loaded only has its rows moved, never removed",
     recordWorkspace(
       encode([
         local,
-        { ...remote, ui: { ...remote.ui, changesDiffWordWrap: true } },
+        { ...remote, ui: { ...remote.ui, changesDiffWordWrap: false } },
       ]),
       { rows: true },
     ),

@@ -261,8 +261,7 @@
     "addProjectForFiles": "Aggiungi un progetto per esplorare i file.",
     "changesActions": "Azioni modifiche",
     "clearSearch": "Cancella ricerca",
-    "enableWordWrap": "Abilita ritorno a capo",
-    "fileActions": "Azioni file",
+    "wordWrap": "A capo automatico",
     "revertAllChanges": "Annulla tutte le modifiche",
     "searchFiles": "Cerca file",
     "splitDiff": "Diff diviso",
@@ -447,7 +446,6 @@
   },
   "pullRequests": {
     "title": "Pull request",
-    "actions": "Azioni della pull request",
     "views": "Viste della pull request",
     "summary": "Riepilogo",
     "open": "Aperta",
