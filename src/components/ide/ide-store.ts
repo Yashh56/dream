@@ -11,6 +11,7 @@ import { findProjectForPath, getChatsForProject } from "./ide-state";
 import { createBrowserActions } from "./store/browser-actions";
 import { createCatalogActions } from "./store/catalog-actions";
 import { createChatActions } from "./store/chat-actions";
+import { createGitWriteActions } from "./store/git-write-actions";
 import {
   getBrowserTabsForProject,
   resolveActiveBrowserTab,
@@ -97,6 +98,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   browserTabsByProject: {},
   activeBrowserTabIdByProject: {},
   projectGitRefreshKeys: {},
+  gitWriteByProject: {},
   projectFilesRefreshKeys: {},
   projectFileSearchRequests: {},
   stateHydrated: false,
@@ -165,6 +167,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   // ── Actions: projects and chats ─────────────────────────────────────
   ...createProjectLifecycleActions(set, get),
   ...createWorktreeActions(set, get),
+  ...createGitWriteActions(set, get),
   ...createChatActions(set, get),
   ...createStashActions(set, get),
   ...createSavedPromptActions(set, get),

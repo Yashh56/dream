@@ -35,38 +35,15 @@ import type {
   ProjectGitStatusResponse,
   ProjectGitWorktreesResponse,
 } from "@/types/ide";
+import {
+  narrowGitStatus,
+  SUMMARY_GIT_STATUS_DETAIL,
+} from "../../../electron/shared/git-changes.js";
 import { normalizeProjectPathKey } from "./ide-state";
 import { useIdeStore } from "./ide-store";
 import type { PullRequestContext } from "./pull-requests/api";
 
 export type ProjectGitStatusDetail = "full" | "summary";
-
-/** `status` as a summary read would have reported it (no untracked files,
- * line counts or remote details), the same narrowing the host makes. */
-export const narrowGitStatusToSummary = (
-  status: ProjectGitStatusResponse,
-): ProjectGitStatusResponse => {
-  if (!status.isRepo) return status;
-  const changes: ProjectGitStatusEntry[] = status.changes
-    .filter((change) => change.status !== "untracked")
-    .map((change) => ({ ...change, addedLines: 0, removedLines: 0 }));
-  return {
-    ...status,
-    addedLines: 0,
-    aheadCount: 0,
-    baseBranch: null,
-    behindCount: 0,
-    changes,
-    fileCount: changes.length,
-    hasStagedChanges: changes.some((change) => change.staged),
-    hasUnstagedChanges: changes.some((change) => change.unstaged),
-    remoteName: null,
-    removedLines: 0,
-    stagedCount: changes.filter((change) => change.staged).length,
-    unstagedCount: changes.filter((change) => change.unstaged).length,
-    upstreamBranch: null,
-  };
-};
 
 const hostOptions = (key: ResourceKey) => ({ hostId: key.hostId });
 
@@ -82,7 +59,8 @@ const specs = {
         hostOptions(key),
       ),
     serves: (have, want) => have.detail === "full" && want.detail === "summary",
-    serve: (status) => narrowGitStatusToSummary(status),
+    // The narrowing the host makes for a summary read (git-changes.js).
+    serve: (status) => narrowGitStatus(status, SUMMARY_GIT_STATUS_DETAIL),
   } satisfies ResourceSpec<ProjectGitStatusResponse>,
   gitBranches: {
     group: "git",

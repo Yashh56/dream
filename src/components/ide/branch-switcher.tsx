@@ -58,9 +58,6 @@ const BranchSwitcherImpl = ({
   const projectHostId = useIdeStore(
     (s) => s.projects.find((project) => project.id === projectId)?.hostId,
   );
-  const bumpProjectGitRefreshKey = useIdeStore(
-    (s) => s.bumpProjectGitRefreshKey,
-  );
   // The button shows the branch from the status every footer shares; the
   // branch list is read only when the menu opens.
   const {
@@ -83,6 +80,7 @@ const BranchSwitcherImpl = ({
   } = useProjectGitBranches(projectPath, {
     active: false,
     hostId: projectHostId,
+    projectId,
   });
   const currentBranch = statusBranch ?? listedBranch;
 
@@ -142,12 +140,12 @@ const BranchSwitcherImpl = ({
         return;
       }
 
+      // The checkout refreshes the project's git state itself.
       await checkoutBranch(normalizedBranchName, create);
-      bumpProjectGitRefreshKey(projectId);
       setOpen(false);
       setSearchValue("");
     },
-    [bumpProjectGitRefreshKey, checkoutBranch, currentBranch, projectId],
+    [checkoutBranch, currentBranch],
   );
 
   const handleOpenCreateDialog = useCallback(() => {

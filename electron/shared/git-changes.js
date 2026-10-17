@@ -69,3 +69,92 @@ export const gitChangesKey = (changes, options) =>
         .sort(([a], [b]) => a.localeCompare(b)),
     ),
   });
+
+/**
+ * @typedef {{
+ *   addedLines: number,
+ *   fileCount: number,
+ *   hasStagedChanges: boolean,
+ *   hasUnstagedChanges: boolean,
+ *   removedLines: number,
+ *   stagedCount: number,
+ *   unstagedCount: number,
+ * }} GitChangesSummary
+ */
+
+/**
+ * The totals a git status reports over its changes.
+ * @param {readonly Partial<GitChange>[]} changes
+ * @returns {GitChangesSummary}
+ */
+export const summarizeGitChanges = (changes) =>
+  changes.reduce(
+    /**
+     * @param {GitChangesSummary} current
+     * @param {Partial<GitChange>} change
+     * @returns {GitChangesSummary}
+     */
+    (current, change) => ({
+      addedLines: current.addedLines + (change.addedLines ?? 0),
+      fileCount: current.fileCount + 1,
+      hasStagedChanges: current.hasStagedChanges || Boolean(change.staged),
+      hasUnstagedChanges:
+        current.hasUnstagedChanges || Boolean(change.unstaged),
+      removedLines: current.removedLines + (change.removedLines ?? 0),
+      stagedCount: current.stagedCount + (change.staged ? 1 : 0),
+      unstagedCount: current.unstagedCount + (change.unstaged ? 1 : 0),
+    }),
+    {
+      addedLines: 0,
+      fileCount: 0,
+      hasStagedChanges: false,
+      hasUnstagedChanges: false,
+      removedLines: 0,
+      stagedCount: 0,
+      unstagedCount: 0,
+    },
+  );
+
+/** What a summary status read leaves out: everything optional. */
+export const SUMMARY_GIT_STATUS_DETAIL = Object.freeze({
+  includeMetadata: false,
+  includeStats: false,
+  includeUntracked: false,
+});
+
+/**
+ * `status` as a read with less `detail` would have reported it: without
+ * untracked files, line counts or upstream and remote details, as asked.
+ * The host answers a less detailed read from a full one with it, and so
+ * does the renderer's resource cache, so both agree on what a summary is.
+ * @template {{ isRepo: boolean, changes: Partial<GitChange>[] }} Status
+ * @param {Status} status
+ * @param {{ includeMetadata: boolean, includeStats: boolean, includeUntracked: boolean }} detail
+ * @returns {Status}
+ */
+export const narrowGitStatus = (status, detail) => {
+  if (!status.isRepo) return status;
+  const changes = status.changes
+    .filter(
+      (change) => detail.includeUntracked || change.status !== "untracked",
+    )
+    .map((change) =>
+      detail.includeStats
+        ? change
+        : { ...change, addedLines: 0, removedLines: 0 },
+    );
+  return {
+    ...status,
+    ...(detail.includeMetadata
+      ? {}
+      : {
+          aheadCount: 0,
+          baseBranch: null,
+          behindCount: 0,
+          remoteName: null,
+          upstreamBranch: null,
+        }),
+    changes,
+    ...summarizeGitChanges(changes),
+  };
+};

@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-client";
 import type {
   AiProvider,
   ModelSpeed,
@@ -30,6 +30,7 @@ import {
   cachedPullRequestDetails,
   generatePullRequestDetails,
 } from "../git-generated-text";
+import { useIdeStore } from "../ide-store";
 import { getPullRequestBranchError } from "./branch-utils";
 import {
   ActionError,
@@ -48,6 +49,7 @@ export const CreatePrDialog = ({
   open,
   model,
   modelSpeed,
+  projectId,
   projectPath,
   provider,
   reasoningEffort,
@@ -61,6 +63,8 @@ export const CreatePrDialog = ({
   open: boolean;
   model: string;
   modelSpeed: ModelSpeed;
+  /** The project the pull request is created from (its git writes). */
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   reasoningEffort: ReasoningEffort | null;
@@ -211,8 +215,9 @@ export const CreatePrDialog = ({
 
       setSubmitting(true);
       setError(null);
-      try {
-        const response = await apiClient.gitCreatePullRequest({
+      const outcome = await useIdeStore
+        .getState()
+        .createProjectPullRequest(projectId, {
           baseBranch,
           commitMessage:
             nextStep === "commit-push-create" ? generatedCommitMessage : null,
@@ -221,15 +226,14 @@ export const CreatePrDialog = ({
           includeUnstaged: true,
           nextStep,
           openPrPage: false,
-          projectPath,
           title,
         });
-        onCompleted(response.url, false);
+      setSubmitting(false);
+      if (outcome.ok) {
+        onCompleted(outcome.result.url, false);
         onOpenChange(false);
-      } catch (error) {
-        setError(getApiErrorMessage(error, gitT("unableToCreatePr")));
-      } finally {
-        setSubmitting(false);
+      } else {
+        setError(getApiErrorMessage(outcome.error, gitT("unableToCreatePr")));
       }
     },
     [
@@ -243,7 +247,7 @@ export const CreatePrDialog = ({
       nextStep,
       onCompleted,
       onOpenChange,
-      projectPath,
+      projectId,
       submitting,
       title,
     ],

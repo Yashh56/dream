@@ -205,6 +205,17 @@ while the branch has no newer work. The PR panel and the worktree compare
 both ask `branchPullRequest`. A pull request's **checks** come summed up:
 unavailable, none, failed (with a count), pending or passed.
 
+## Project git writes
+
+Commit, push, pull, fetch, revert, checkout and creating a pull request,
+for one project (`store/git-write-actions.ts`), whichever surface asks.
+Each runs on the project's host; one runs at a time per project
+(`gitWriteByProject`), and a second is refused; the project's git state is
+read again once when it ends; it answers an outcome and never throws, and
+the surface decides how a failure shows. Which statuses a summary read
+leaves out is `narrowGitStatus` in `electron/shared/git-changes.js`, the
+same on host and client.
+
 ## Commit draft
 
 A commit being written (`src/components/ide/git-actions/commit-draft.ts`):

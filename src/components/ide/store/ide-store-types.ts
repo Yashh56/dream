@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { StoreApi } from "zustand";
-import type { ApiClient } from "@/lib/api-client";
+import type { ApiClient, ApiRequestOf, ApiResponseOf } from "@/lib/api-client";
 import type {
   AiProvider,
   AppSettings,
@@ -14,6 +14,7 @@ import type {
   PanelSizes,
   PendingChatSubmit,
   ProjectConfig,
+  ProjectGitStatusEntry,
   ProjectGitWorktreeCleanupResponse,
   ProjectGitWorktreeInfo,
   ProjectGitWorktreeMergeResponse,
@@ -36,6 +37,22 @@ export interface ProjectFilePosition {
   column: number;
   length: number;
 }
+
+/** A git write a project can have running (store/git-write-actions.ts). */
+export type GitWrite =
+  | "checkout"
+  | "commit"
+  | "commit-push"
+  | "fetch"
+  | "pull"
+  | "pull-request"
+  | "push"
+  | "revert";
+
+/** How a git write went: its answer, or why it did not happen. */
+export type GitWriteOutcome<Result> =
+  | { ok: true; result: Result }
+  | { ok: false; error: unknown };
 
 export interface StoreActionDependencies {
   /** The route client; tests pass a fake (`createFakeApiClient`). */
@@ -139,6 +156,8 @@ export interface IdeState {
   browserTabsByProject: Record<string, BrowserTabState[]>;
   activeBrowserTabIdByProject: Record<string, string | null>;
   projectGitRefreshKeys: Record<string, number>;
+  /** The git write running for each project, if any (git-write-actions.ts). */
+  gitWriteByProject: Record<string, GitWrite>;
   projectFilesRefreshKeys: Record<string, number>;
   /** Bumped to show the Files panel's find in files, per project. */
   projectFileSearchRequests: Record<string, number>;
@@ -428,6 +447,38 @@ export interface IdeState {
   setChatAwaitingAnswer: (chatId: string, awaiting: boolean) => void;
   setChatTitleGenerating: (chatId: string, generating: boolean) => void;
   bumpProjectGitRefreshKey: (projectId: string) => void;
+
+  // Actions - git writes (store/git-write-actions.ts). Each runs on the
+  // project's host, refuses to start while another write of the project
+  // runs, refreshes the project's git state once when done, and answers an
+  // outcome rather than throwing.
+  commitProject: (
+    projectId: string,
+    commit: { message: string; includeUnstaged: boolean; push: boolean },
+  ) => Promise<GitWriteOutcome<unknown>>;
+  pushProject: (
+    projectId: string,
+  ) => Promise<GitWriteOutcome<ApiResponseOf<"gitPush">>>;
+  pullProject: (
+    projectId: string,
+  ) => Promise<GitWriteOutcome<ApiResponseOf<"gitPull">>>;
+  fetchProject: (
+    projectId: string,
+  ) => Promise<GitWriteOutcome<ApiResponseOf<"gitFetch">>>;
+  /** Reverts one changed file, or every change. */
+  revertProjectChanges: (
+    projectId: string,
+    target: ProjectGitStatusEntry | "all",
+  ) => Promise<GitWriteOutcome<unknown>>;
+  checkoutProjectBranch: (
+    projectId: string,
+    branchName: string,
+    options?: { create?: boolean },
+  ) => Promise<GitWriteOutcome<ApiResponseOf<"gitCheckout">>>;
+  createProjectPullRequest: (
+    projectId: string,
+    request: Omit<ApiRequestOf<"gitCreatePullRequest">, "projectPath">,
+  ) => Promise<GitWriteOutcome<ApiResponseOf<"gitCreatePullRequest">>>;
   bumpProjectFilesRefreshKey: (projectId: string) => void;
   setBrowserError: (error: string | null) => void;
   setBrowserLoading: (id: string, loading: boolean) => void;

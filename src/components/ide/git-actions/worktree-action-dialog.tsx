@@ -262,9 +262,6 @@ export const WorktreeActionDialog = ({
     () => getDefaultGitGenerationModelSelection(settings),
     [settings],
   );
-  const bumpProjectGitRefreshKey = useIdeStore(
-    (s) => s.bumpProjectGitRefreshKey,
-  );
   const completeWorktreeProject = useIdeStore((s) => s.completeWorktreeProject);
   const forgetWorktree = useIdeStore((s) => s.forgetWorktree);
   const purgeWorktreeProject = useIdeStore((s) => s.purgeWorktreeProject);
@@ -474,15 +471,13 @@ export const WorktreeActionDialog = ({
         branch={project.worktree.branch}
         model={model}
         modelSpeed={modelSpeed}
-        onCompleted={() => {
-          bumpProjectGitRefreshKey(project.id);
-        }}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
             setPhase("review");
           }
         }}
         open
+        projectId={project.id}
         projectPath={project.path}
         provider={provider}
         reasoningEffort={reasoningEffort}

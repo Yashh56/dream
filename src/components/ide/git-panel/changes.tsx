@@ -25,7 +25,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useProjectGitStatus } from "@/hooks/use-project-git-status";
-import { apiClient } from "@/lib/api-client";
 import type { ProjectGitStatusEntry } from "@/types/ide";
 import { ChangesRow, type DiffViewMode } from "../changes";
 import {
@@ -116,9 +115,6 @@ const GitChangesImpl = ({
   const gitRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectGitRefreshKeys[projectId] ?? 0) : 0,
   );
-  const bumpProjectGitRefreshKey = useIdeStore(
-    (s) => s.bumpProjectGitRefreshKey,
-  );
   const {
     changes,
     error: statusError,
@@ -208,27 +204,26 @@ const GitChangesImpl = ({
    * or left to the next status if it succeeds.
    */
   const runRevert = useCallback(
-    async (paths: string[], revert: () => Promise<unknown>) => {
+    async (paths: string[], target: ProjectGitStatusEntry | "all") => {
       if (!projectId) {
         return;
       }
       dispatch({ paths, type: "revert-started" });
-      let succeeded = false;
-      try {
-        await revert();
-        succeeded = true;
-      } catch (error) {
-        console.error("[changes] Failed to revert", error);
+      // The revert refreshes the project's git state itself; the version
+      // after it is the one whose status decides what shows again.
+      const store = useIdeStore.getState();
+      const outcome = await store.revertProjectChanges(projectId, target);
+      if (!outcome.ok) {
+        console.error("[changes] Failed to revert", outcome.error);
       }
-      bumpProjectGitRefreshKey(projectId);
       dispatch({
         paths,
-        succeeded,
+        succeeded: outcome.ok,
         type: "revert-finished",
         version: useIdeStore.getState().projectGitRefreshKeys[projectId] ?? 0,
       });
     },
-    [bumpProjectGitRefreshKey, projectId],
+    [projectId],
   );
 
   const handleRevertFile = useCallback(
@@ -240,14 +235,7 @@ const GitChangesImpl = ({
       ) {
         return;
       }
-      void runRevert([change.path], () =>
-        apiClient.gitRevertFile({
-          filePath: change.path,
-          previousPath: change.previousPath,
-          projectPath,
-          status: change.status,
-        }),
-      );
+      void runRevert([change.path], change);
     },
     [projectPath, revertingPathSet, runRevert, view.hidden],
   );
@@ -260,9 +248,7 @@ const GitChangesImpl = ({
     ) {
       return;
     }
-    void runRevert(visibleChangePaths, () =>
-      apiClient.gitRevertAll({ projectPath }),
-    );
+    void runRevert(visibleChangePaths, "all");
   }, [
     projectPath,
     runRevert,

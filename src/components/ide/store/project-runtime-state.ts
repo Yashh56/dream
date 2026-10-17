@@ -14,6 +14,7 @@ type RecordKeyOf<T> = {
 export const PROJECT_KEYED_RUNTIME_STATE = [
   "activeTerminalSessionIdByProject",
   "draftChatIdByProject",
+  "gitWriteByProject",
   "nextTerminalOrdinalByProject",
   "projectFileSearchRequests",
   "projectFilesRefreshKeys",

@@ -5,6 +5,10 @@ import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
 import { createProjectConfig, DEFAULT_SETTINGS } from "@/lib/ide-defaults";
 import type { ProjectGitStatusResponse } from "@/types/ide";
+import {
+  narrowGitStatus,
+  SUMMARY_GIT_STATUS_DETAIL,
+} from "../../../electron/shared/git-changes.js";
 
 const api = vi.hoisted(() => ({
   gitBranches: vi.fn(),
@@ -20,13 +24,15 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
 const { useIdeStore } = await import("./ide-store");
 const {
   gitDiffResourceKey,
-  narrowGitStatusToSummary,
   projectResourceKey,
   projectResources,
   readProjectResource,
 } = await import("./project-resources");
 
 const PROJECT_PATH = "/work/app";
+
+const narrowToSummary = (status: ProjectGitStatusResponse) =>
+  narrowGitStatus(status, SUMMARY_GIT_STATUS_DETAIL);
 
 const fullStatus = (): ProjectGitStatusResponse => ({
   addedLines: 5,
@@ -158,7 +164,7 @@ test("the composer's short list is taken from the explorer's long one", async ()
 });
 
 test("a summary is the full status as the host would have narrowed it", () => {
-  const summary = narrowGitStatusToSummary(fullStatus());
+  const summary = narrowToSummary(fullStatus());
 
   assert.deepEqual(
     summary.changes.map((change) => [change.path, change.addedLines]),

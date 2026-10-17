@@ -43,9 +43,6 @@ const GitCommitBoxImpl = ({
       (chat) => chat.projectId === projectId && s.streamingChatIds[chat.id],
     ),
   );
-  const bumpProjectGitRefreshKey = useIdeStore(
-    (s) => s.bumpProjectGitRefreshKey,
-  );
   const settings = useIdeStore((s) => s.settings);
   const generation = useMemo(
     () => getDefaultGitGenerationModelSelection(settings),
@@ -55,9 +52,10 @@ const GitCommitBoxImpl = ({
   // Keep the last message while an agent is working; generate from a
   // current status once all of the project's turns have ended. The
   // background generation at turn completion shares this request.
-  const { draft, snapshot } = useCommitDraft({
+  const { busy, draft, snapshot } = useCommitDraft({
     ...generation,
     canGenerate: active && statusReady && !isProjectStreaming,
+    projectId,
     projectPath,
     status,
   });
@@ -88,13 +86,13 @@ const GitCommitBoxImpl = ({
 
   const handleCommit = useCallback(
     async (action: CommitAction) => {
-      if (!(action === "commit-push" ? canCommitPush : canCommit)) {
+      if (busy || !(action === "commit-push" ? canCommitPush : canCommit)) {
         return;
       }
+      // The commit refreshes the project's git state itself.
       await draft.submit(action);
-      bumpProjectGitRefreshKey(projectId);
     },
-    [bumpProjectGitRefreshKey, canCommit, canCommitPush, draft, projectId],
+    [busy, canCommit, canCommitPush, draft],
   );
 
   const handleKeyDown = useCallback(
@@ -162,7 +160,7 @@ const GitCommitBoxImpl = ({
         {hasChanges ? <GitChangesDeltaSummary changes={changes} /> : null}
         <Button
           className="ml-auto"
-          disabled={!canCommit}
+          disabled={busy || !canCommit}
           onClick={() => {
             void handleCommit("commit");
           }}
@@ -174,7 +172,7 @@ const GitCommitBoxImpl = ({
           {gitT("commit")}
         </Button>
         <Button
-          disabled={!canCommitPush}
+          disabled={busy || !canCommitPush}
           onClick={() => {
             void handleCommit("commit-push");
           }}

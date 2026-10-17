@@ -109,9 +109,8 @@ const GitFooterActionsImpl = ({
   const gitRefreshKey = useIdeStore(
     (s) => s.projectGitRefreshKeys[projectId] ?? 0,
   );
-  const bumpProjectGitRefreshKey = useIdeStore(
-    (s) => s.bumpProjectGitRefreshKey,
-  );
+  // The git write running for this project, from any surface.
+  const gitWrite = useIdeStore((s) => s.gitWriteByProject[projectId] ?? null);
   const openExternalUrl = useIdeStore((s) => s.openExternalUrl);
   const settings = useIdeStore((s) => s.settings);
   const modelSelection = useMemo(
@@ -119,8 +118,6 @@ const GitFooterActionsImpl = ({
     [settings],
   );
   const showGitPanel = useShowGitPanel(projectId);
-  const [pushing, setPushing] = useState(false);
-  const [syncing, setSyncing] = useState<"fetch" | "pull" | null>(null);
   const [openingRepository, setOpeningRepository] = useState(false);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [worktreeDialogOpen, setWorktreeDialogOpen] = useState(false);
@@ -133,7 +130,8 @@ const GitFooterActionsImpl = ({
     : undefined;
   const hasChanges = getStatusFileCount(status) > 0;
   const canPush = hasPushableCommits(status);
-  const gitBusy = pushing || syncing !== null;
+  const gitBusy = gitWrite !== null;
+  const syncing = gitWrite === "fetch" || gitWrite === "pull" ? gitWrite : null;
   const canCreatePr =
     Boolean(status?.remoteName) &&
     pullRequest?.state !== "open" &&
@@ -150,60 +148,40 @@ const GitFooterActionsImpl = ({
       return;
     }
 
-    setPushing(true);
-    try {
-      const result = await apiClient.gitPush({
-        commitMessage: null,
-        includeUnstaged: true,
-        nextStep: "push",
-        projectPath,
-      });
+    const outcome = await useIdeStore.getState().pushProject(projectId);
+    if (outcome.ok) {
       toast.success(
-        gitT("pushedTo", { target: result.upstreamBranch ?? result.branch }),
+        gitT("pushedTo", {
+          target: outcome.result.upstreamBranch ?? outcome.result.branch,
+        }),
       );
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, gitT("unableToPush")));
-    } finally {
-      setPushing(false);
-      bumpProjectGitRefreshKey(projectId);
+    } else {
+      toast.error(getApiErrorMessage(outcome.error, gitT("unableToPush")));
     }
-  }, [
-    bumpProjectGitRefreshKey,
-    canPush,
-    gitT,
-    projectId,
-    projectPath,
-    gitBusy,
-  ]);
+  }, [canPush, gitBusy, gitT, projectId]);
 
   const handleSync = async (action: "fetch" | "pull") => {
     if (gitBusy) return;
-    setSyncing(action);
-    try {
-      if (action === "fetch") {
-        const result = await apiClient.gitFetch({ projectPath });
-        toast.success(gitT("fetchedFrom", { target: result.remote }));
+    const store = useIdeStore.getState();
+    if (action === "fetch") {
+      const outcome = await store.fetchProject(projectId);
+      if (outcome.ok) {
+        toast.success(gitT("fetchedFrom", { target: outcome.result.remote }));
       } else {
-        const result = await apiClient.gitPull({ projectPath });
-        toast.success(
-          result.commitCount > 0
-            ? gitT("pulledFrom", {
-                count: result.commitCount,
-                target: result.upstreamBranch,
-              })
-            : gitT("alreadyUpToDate", { target: result.upstreamBranch }),
-        );
+        toast.error(getApiErrorMessage(outcome.error, gitT("unableToFetch")));
       }
-    } catch (error) {
-      toast.error(
-        getApiErrorMessage(
-          error,
-          gitT(action === "fetch" ? "unableToFetch" : "unableToPull"),
-        ),
+      return;
+    }
+    const outcome = await store.pullProject(projectId);
+    if (outcome.ok) {
+      const { commitCount, upstreamBranch } = outcome.result;
+      toast.success(
+        commitCount > 0
+          ? gitT("pulledFrom", { count: commitCount, target: upstreamBranch })
+          : gitT("alreadyUpToDate", { target: upstreamBranch }),
       );
-    } finally {
-      setSyncing(null);
-      bumpProjectGitRefreshKey(projectId);
+    } else {
+      toast.error(getApiErrorMessage(outcome.error, gitT("unableToPull")));
     }
   };
 
@@ -227,12 +205,11 @@ const GitFooterActionsImpl = ({
 
   const handlePrCompleted = useCallback(
     (url: string | null, shouldOpen: boolean) => {
-      bumpProjectGitRefreshKey(projectId);
       if (url && shouldOpen) {
         openExternalUrl(url);
       }
     },
-    [bumpProjectGitRefreshKey, openExternalUrl, projectId],
+    [openExternalUrl],
   );
 
   if (!status?.isRepo) {
@@ -372,6 +349,7 @@ const GitFooterActionsImpl = ({
           open
           model={modelSelection.model}
           modelSpeed={modelSelection.modelSpeed}
+          projectId={projectId}
           projectPath={projectPath}
           provider={modelSelection.provider}
           reasoningEffort={modelSelection.reasoningEffort}

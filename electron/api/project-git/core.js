@@ -1,7 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parsePatchFiles } from "@pierre/diffs";
-import { gitChangesKey } from "../../shared/git-changes.js";
+import {
+  gitChangesKey,
+  narrowGitStatus,
+  summarizeGitChanges,
+} from "../../shared/git-changes.js";
 import { execFileAsync } from "../shared/cli.js";
 import {
   canonicalProjectRoot,
@@ -260,32 +264,6 @@ export const getProjectGitMetadata = async (
   };
 };
 
-const summarizeProjectGitChanges = (changes) => {
-  const summary = changes.reduce(
-    (current, change) => ({
-      addedLines: current.addedLines + (change.addedLines ?? 0),
-      fileCount: current.fileCount + 1,
-      hasStagedChanges: current.hasStagedChanges || Boolean(change.staged),
-      hasUnstagedChanges:
-        current.hasUnstagedChanges || Boolean(change.unstaged),
-      removedLines: current.removedLines + (change.removedLines ?? 0),
-      stagedCount: current.stagedCount + (change.staged ? 1 : 0),
-      unstagedCount: current.unstagedCount + (change.unstaged ? 1 : 0),
-    }),
-    {
-      addedLines: 0,
-      fileCount: 0,
-      hasStagedChanges: false,
-      hasUnstagedChanges: false,
-      removedLines: 0,
-      stagedCount: 0,
-      unstagedCount: 0,
-    },
-  );
-
-  return summary;
-};
-
 const isBinaryBuffer = (buffer) => {
   for (const byte of buffer) {
     if (byte === 0) {
@@ -426,33 +404,6 @@ const statusReadKey = (projectPath, options) =>
     .join("")}`;
 
 /** `status` as a read with less detail would have reported it. */
-const narrowProjectGitStatus = (status, options) => {
-  if (!status.isRepo) return status;
-  const changes = status.changes
-    .filter(
-      (change) => options.includeUntracked || change.status !== "untracked",
-    )
-    .map((change) =>
-      options.includeStats
-        ? change
-        : { ...change, addedLines: 0, removedLines: 0 },
-    );
-  return {
-    ...status,
-    ...(options.includeMetadata
-      ? {}
-      : {
-          aheadCount: 0,
-          baseBranch: null,
-          behindCount: 0,
-          remoteName: null,
-          upstreamBranch: null,
-        }),
-    changes,
-    ...summarizeProjectGitChanges(changes),
-  };
-};
-
 /**
  * The project's changes, branch and (in full) line counts and upstream. A
  * read made while an identical one has just started shares it, and a less
@@ -467,7 +418,7 @@ export const listProjectGitChanges = (projectPath, options = {}) => {
       statusReadKey(projectPath, FULL_STATUS),
     );
     if (fullRead) {
-      return fullRead.then((status) => narrowProjectGitStatus(status, detail));
+      return fullRead.then((status) => narrowGitStatus(status, detail));
     }
   }
   return gitRepositories.share(statusReadKey(projectPath, detail), () =>
@@ -636,7 +587,7 @@ const readProjectGitChanges = async (
     changes: enrichedChanges,
     isRepo: true,
     repoRoot: repoInfo.repoRoot,
-    ...summarizeProjectGitChanges(enrichedChanges),
+    ...summarizeGitChanges(enrichedChanges),
   };
 };
 

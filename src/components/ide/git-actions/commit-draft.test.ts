@@ -1,11 +1,15 @@
 import { expect, test, vi } from "vitest";
-import { createFakeApiClient, fakeApiError } from "@/lib/api-client-fake";
+import { fakeApiError } from "@/lib/api-client-fake";
 import type {
   ProjectGitStatusEntry,
   ProjectGitStatusResponse,
 } from "@/types/ide";
 import type { CommitMessageRequest } from "../git-generated-text";
-import { CommitDraft, type CommitDraftInputs } from "./commit-draft";
+import {
+  CommitDraft,
+  type CommitDraftInputs,
+  type CommitRequest,
+} from "./commit-draft";
 
 const change = (
   path: string,
@@ -53,17 +57,19 @@ const createDraft = ({
     resolve: (message: string) => void;
     reject: (error: unknown) => void;
   }[] = [];
-  const api = createFakeApiClient({
-    gitCommit: async () => {
-      if (failCommit) {
-        throw fakeApiError("gitCommit", 500, "nothing to commit");
-      }
-      return {} as never;
-    },
-    gitPush: async () => ({}) as never,
-  });
+  // The store's commitProject, as far as the draft can tell.
+  const commits: CommitRequest[] = [];
+  const commit = async (request: CommitRequest) => {
+    commits.push(request);
+    return failCommit
+      ? {
+          error: fakeApiError("gitCommit", 500, "nothing to commit"),
+          ok: false as const,
+        }
+      : { ok: true as const, result: {} };
+  };
   const draft = new CommitDraft({
-    api: api.client,
+    commit,
     text: {
       cached: (request) =>
         cached.get(request.changes.map((item) => item.path).join(",")),
@@ -82,7 +88,7 @@ const createDraft = ({
     projectPath: "/work/app",
     status,
   });
-  return { api, draft, generations, inputs };
+  return { commits, draft, generations, inputs };
 };
 
 test("a message already generated for these changes shows at once", () => {
@@ -183,26 +189,20 @@ test("turning generation off clears the message for the user to write", () => {
 
 test("commit and commit-and-push send what the draft holds", async () => {
   const cached = new Map([["a.ts", "Fix the thing"]]);
-  const { api, draft, inputs } = createDraft({ cached });
+  const { commits, draft, inputs } = createDraft({ cached });
   draft.update(inputs(statusOf([change("a.ts")])));
 
   await expect(draft.submit("commit-push")).resolves.toBe(true);
-  expect(api.calls.at(-1)).toEqual({
-    name: "gitPush",
-    request: {
-      commitMessage: "Fix the thing",
-      includeUnstaged: true,
-      nextStep: "commit-push",
-      projectPath: "/work/app",
-    },
-  });
+  expect(commits).toEqual([
+    { includeUnstaged: true, message: "Fix the thing", push: true },
+  ]);
   // A sent draft starts over.
   expect(draft.getSnapshot().message).toBe("");
 });
 
 test("commit-and-push needs somewhere to push to", async () => {
   const cached = new Map([["a.ts", "Fix the thing"]]);
-  const { api, draft, inputs } = createDraft({ cached });
+  const { commits, draft, inputs } = createDraft({ cached });
   draft.update(inputs(statusOf([change("a.ts")], { upstream: false })));
 
   expect(draft.getSnapshot()).toMatchObject({
@@ -210,7 +210,7 @@ test("commit-and-push needs somewhere to push to", async () => {
     canCommitPush: false,
   });
   await expect(draft.submit("commit-push")).resolves.toBe(false);
-  expect(api.calls).toHaveLength(0);
+  expect(commits).toHaveLength(0);
 });
 
 test("a commit that fails keeps the message and says why", async () => {

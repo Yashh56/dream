@@ -11,12 +11,8 @@
  * is not current, an agent is still writing) the message stays as it is.
  */
 import { useTranslations } from "next-intl";
-import { useEffect, useState, useSyncExternalStore } from "react";
-import {
-  type ApiClient,
-  apiClient,
-  getApiErrorMessage,
-} from "@/lib/api-client";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getApiErrorMessage } from "@/lib/api-client";
 import type {
   ProjectGitStatusEntry,
   ProjectGitStatusResponse,
@@ -28,6 +24,8 @@ import {
   generateCommitMessage,
   selectCommitChanges,
 } from "../git-generated-text";
+import { useIdeStore } from "../ide-store";
+import type { GitWriteOutcome } from "../store/ide-store-types";
 import { hasPushDestination } from "./utils";
 
 export type CommitAction = "commit" | "commit-push";
@@ -58,8 +56,16 @@ export interface CommitDraftSnapshot {
   submitting: CommitAction | null;
 }
 
+/** What a commit sends: the message, which changes, and whether to push. */
+export interface CommitRequest {
+  includeUnstaged: boolean;
+  message: string;
+  push: boolean;
+}
+
 export interface CommitDraftDependencies {
-  api: Pick<ApiClient, "gitCommit" | "gitPush">;
+  /** Commits (and pushes) the project; the store's `commitProject`. */
+  commit: (request: CommitRequest) => Promise<GitWriteOutcome<unknown>>;
   text?: {
     cached: (request: CommitMessageRequest) => string | undefined;
     generate: (request: CommitMessageRequest) => Promise<string>;
@@ -79,7 +85,7 @@ const INITIAL: CommitDraftSnapshot = {
 };
 
 export class CommitDraft {
-  readonly #api: CommitDraftDependencies["api"];
+  readonly #commit: CommitDraftDependencies["commit"];
   readonly #text: NonNullable<CommitDraftDependencies["text"]>;
   readonly #listeners = new Set<() => void>();
   #inputs: CommitDraftInputs | null = null;
@@ -88,10 +94,10 @@ export class CommitDraft {
   #generation = 0;
 
   constructor({
-    api,
+    commit,
     text = { cached: cachedCommitMessage, generate: generateCommitMessage },
   }: CommitDraftDependencies) {
-    this.#api = api;
+    this.#commit = commit;
     this.#text = text;
   }
 
@@ -144,9 +150,8 @@ export class CommitDraft {
   /** Commits, or commits and pushes. True when it went through. */
   async submit(action: CommitAction): Promise<boolean> {
     const draft = this.#snapshot;
-    const projectPath = this.#inputs?.projectPath;
     if (
-      !projectPath ||
+      !this.#inputs ||
       draft.submitting !== null ||
       !draft.canCommit ||
       (action === "commit-push" && !draft.canCommitPush)
@@ -155,27 +160,20 @@ export class CommitDraft {
     }
 
     this.#set({ error: null, submitting: action });
-    try {
-      if (action === "commit-push") {
-        await this.#api.gitPush({
-          commitMessage: draft.message,
-          includeUnstaged: draft.includeUnstaged,
-          nextStep: "commit-push",
-          projectPath,
-        });
-      } else {
-        await this.#api.gitCommit({
-          includeUnstaged: draft.includeUnstaged,
-          message: draft.message,
-          projectPath,
-        });
-      }
+    const outcome = await this.#commit({
+      includeUnstaged: draft.includeUnstaged,
+      message: draft.message,
+      push: action === "commit-push",
+    });
+    if (outcome.ok) {
       this.#set({ message: "", submitting: null });
       return true;
-    } catch (error) {
-      this.#set({ error: { action, error, kind: "submit" }, submitting: null });
-      return false;
     }
+    this.#set({
+      error: { action, error: outcome.error, kind: "submit" },
+      submitting: null,
+    });
+    return false;
   }
 
   /** Applies `next` and re-derives what follows from it. */
@@ -246,18 +244,36 @@ export class CommitDraft {
   }
 }
 
-/** A commit draft for one composer, kept in step with its inputs. */
+/**
+ * A commit draft for one composer, kept in step with its inputs; it commits
+ * `projectId` through the store's git writes (store/git-write-actions.ts).
+ */
 export const useCommitDraft = ({
   canGenerate,
   model,
   modelSpeed,
+  projectId,
   projectPath,
   provider,
   reasoningEffort,
   status,
-}: CommitDraftInputs) => {
-  const [draft] = useState(() => new CommitDraft({ api: apiClient }));
+}: CommitDraftInputs & { projectId: string }) => {
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const [draft] = useState(
+    () =>
+      new CommitDraft({
+        commit: (request) =>
+          useIdeStore.getState().commitProject(projectIdRef.current, request),
+      }),
+  );
   const snapshot = useSyncExternalStore(draft.subscribe, draft.getSnapshot);
+  // Another git write of the project (a push from the footer...) is
+  // running: a commit now would be refused, so the composer waits.
+  const projectWrite = useIdeStore(
+    (s) => s.gitWriteByProject[projectId] ?? null,
+  );
+  const busy = projectWrite !== null && snapshot.submitting === null;
 
   useEffect(() => {
     draft.update({
@@ -282,7 +298,7 @@ export const useCommitDraft = ({
 
   useEffect(() => () => draft.dispose(), [draft]);
 
-  return { draft, snapshot };
+  return { busy, draft, snapshot };
 };
 
 /** A draft's error in words, for either composer. */

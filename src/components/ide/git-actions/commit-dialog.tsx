@@ -29,17 +29,20 @@ export const CommitDialog = ({
   open,
   model,
   modelSpeed,
+  projectId,
   projectPath,
   provider,
   reasoningEffort,
   status,
 }: {
   branch: string | null;
-  onCompleted: () => void;
+  onCompleted?: () => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   model: string;
   modelSpeed: ModelSpeed;
+  /** The project committed to (its git writes and refresh). */
+  projectId: string;
   projectPath: string;
   provider: AiProvider;
   reasoningEffort: ReasoningEffort | null;
@@ -47,10 +50,11 @@ export const CommitDialog = ({
 }) => {
   const commonT = useTranslations("common");
   const gitT = useTranslations("git");
-  const { draft, snapshot } = useCommitDraft({
+  const { busy, draft, snapshot } = useCommitDraft({
     canGenerate: open,
     model,
     modelSpeed,
+    projectId,
     projectPath,
     provider,
     reasoningEffort,
@@ -77,12 +81,15 @@ export const CommitDialog = ({
 
   const handleSubmitAction = useCallback(
     async (action: CommitAction) => {
+      if (busy) {
+        return;
+      }
       if (await draft.submit(action)) {
-        onCompleted();
+        onCompleted?.();
         onOpenChange(false);
       }
     },
-    [draft, onCompleted, onOpenChange],
+    [busy, draft, onCompleted, onOpenChange],
   );
 
   const handleSubmit = useCallback(
@@ -170,7 +177,7 @@ export const CommitDialog = ({
           <div className="flex justify-end gap-2">
             <Button
               className="min-w-36"
-              disabled={Boolean(submitting) || !canCommit}
+              disabled={busy || Boolean(submitting) || !canCommit}
               type="submit"
               variant="outline"
             >
@@ -179,7 +186,7 @@ export const CommitDialog = ({
             </Button>
             <Button
               className="min-w-36"
-              disabled={Boolean(submitting) || !canCommitPush}
+              disabled={busy || Boolean(submitting) || !canCommitPush}
               onClick={() => {
                 void handleSubmitAction("commit-push");
               }}

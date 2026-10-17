@@ -1,28 +1,32 @@
 import { useTranslations } from "next-intl";
 import { useCallback, useMemo, useState } from "react";
+import { useIdeStore } from "@/components/ide/ide-store";
 import {
   projectResourceKey,
   projectResources,
   useProjectResource,
 } from "@/components/ide/project-resources";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-client";
 
 /**
  * A project's local branches, from the project resource cache (read again
  * when the project's git refresh key moves while `active`), and switching
- * between them.
+ * between them (a git write of `projectId`: store/git-write-actions.ts).
  */
 export const useProjectGitBranches = (
   projectPath: string | null | undefined,
   {
     active = true,
     hostId,
+    projectId,
   }: {
     /** Whether the reader is being shown (default: yes). */
     active?: boolean;
     /** The project's host (absent: the project's own). */
     hostId?: string;
-  } = {},
+    /** The project a checkout writes to. */
+    projectId: string;
+  },
 ) => {
   const uiT = useTranslations("ui");
   const path = projectPath?.trim() ?? "";
@@ -58,27 +62,24 @@ export const useProjectGitBranches = (
 
       setSwitching(true);
       setCheckoutError(null);
-
-      try {
-        const payload = await apiClient.gitCheckout(
-          { branchName, create, projectPath: key.projectPath },
-          { hostId: key.hostId },
-        );
-        projectResources.set(key, payload);
-        return payload;
-      } catch (error) {
-        const message = getApiErrorMessage(
-          error,
-          uiT("failedToSwitchGitBranches"),
-          (status) => uiT("requestFailedStatus", { status }),
-        );
-        setCheckoutError(message);
-        throw new Error(message);
-      } finally {
-        setSwitching(false);
+      const outcome = await useIdeStore
+        .getState()
+        .checkoutProjectBranch(projectId, branchName, { create });
+      setSwitching(false);
+      if (outcome.ok) {
+        // The checkout answers the branch list; show it at once.
+        projectResources.set(key, outcome.result);
+        return outcome.result;
       }
+      const message = getApiErrorMessage(
+        outcome.error,
+        uiT("failedToSwitchGitBranches"),
+        (status) => uiT("requestFailedStatus", { status }),
+      );
+      setCheckoutError(message);
+      throw new Error(message);
     },
-    [key, uiT],
+    [key, projectId, uiT],
   );
 
   const clearError = useCallback(() => {
