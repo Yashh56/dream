@@ -435,7 +435,7 @@ export const API_ROUTES = {
   >("/api/project-git-fetch"),
   gitPull: post<
     Input<typeof projectGitPullRequestSchema>,
-    { upstreamBranch: string }
+    { commitCount: number; upstreamBranch: string }
   >("/api/project-git-pull"),
   gitRemoteUrl: post<
     Input<typeof projectGitRemoteUrlRequestSchema>,

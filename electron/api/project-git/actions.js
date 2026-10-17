@@ -111,7 +111,7 @@ export const pullProjectGitChanges = async (projectPath) => {
     "--no-squash",
     upstream.ref,
   ]);
-  return { upstreamBranch: upstream.upstream };
+  return { commitCount: behindCount, upstreamBranch: upstream.upstream };
 };
 
 export const getProjectGitRemoteUrl = async (projectPath) => {

@@ -15,14 +15,6 @@ import { memo, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -36,7 +28,6 @@ import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { getPullRequestBranchError } from "../git-actions/branch-utils";
 import { CreatePrDialog } from "../git-actions/create-pr-dialog";
-import { ActionError } from "../git-actions/dialog-layout";
 import { getStatusFileCount, hasPushableCommits } from "../git-actions/utils";
 import {
   WorktreeActionDialog,
@@ -99,7 +90,6 @@ const GitFooterActionsImpl = ({
   project: ProjectConfig;
 }) => {
   const gitT = useTranslations("git");
-  const commonT = useTranslations("common");
   const worktreeT = useTranslations("worktrees");
   const projectId = project.id;
   const projectPath = project.path;
@@ -131,8 +121,6 @@ const GitFooterActionsImpl = ({
   const showGitPanel = useShowGitPanel(projectId);
   const [pushing, setPushing] = useState(false);
   const [syncing, setSyncing] = useState<"fetch" | "pull" | null>(null);
-  const [pullOpen, setPullOpen] = useState(false);
-  const [pullError, setPullError] = useState<string | null>(null);
   const [openingRepository, setOpeningRepository] = useState(false);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [worktreeDialogOpen, setWorktreeDialogOpen] = useState(false);
@@ -191,23 +179,28 @@ const GitFooterActionsImpl = ({
   const handleSync = async (action: "fetch" | "pull") => {
     if (gitBusy) return;
     setSyncing(action);
-    setPullError(null);
     try {
       if (action === "fetch") {
         const result = await apiClient.gitFetch({ projectPath });
         toast.success(gitT("fetchedFrom", { target: result.remote }));
       } else {
         const result = await apiClient.gitPull({ projectPath });
-        toast.success(gitT("pulledFrom", { target: result.upstreamBranch }));
-        setPullOpen(false);
+        toast.success(
+          result.commitCount > 0
+            ? gitT("pulledFrom", {
+                count: result.commitCount,
+                target: result.upstreamBranch,
+              })
+            : gitT("alreadyUpToDate", { target: result.upstreamBranch }),
+        );
       }
     } catch (error) {
-      const message = getApiErrorMessage(
-        error,
-        gitT(action === "fetch" ? "unableToFetch" : "unableToPull"),
+      toast.error(
+        getApiErrorMessage(
+          error,
+          gitT(action === "fetch" ? "unableToFetch" : "unableToPull"),
+        ),
       );
-      if (action === "pull") setPullError(message);
-      else toast.error(message);
     } finally {
       setSyncing(null);
       bumpProjectGitRefreshKey(projectId);
@@ -277,13 +270,14 @@ const GitFooterActionsImpl = ({
       </DropdownMenuItem>
       <DropdownMenuItem
         disabled={!status.upstreamBranch || gitBusy}
-        onClick={() => {
-          setPullError(null);
-          setPullOpen(true);
-        }}
+        onClick={() => void handleSync("pull")}
       >
-        <ArrowDown className="size-4" />
-        {gitT("pullMenu")}
+        {syncing === "pull" ? (
+          <Spinner className="size-4" />
+        ) : (
+          <ArrowDown className="size-4" />
+        )}
+        {gitT("pull")}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       {pullRequest ? (
@@ -369,43 +363,6 @@ const GitFooterActionsImpl = ({
         </DropdownMenuTrigger>
         {menu}
       </DropdownMenu>
-
-      <Dialog
-        open={pullOpen}
-        onOpenChange={(open) => {
-          if (syncing !== "pull") setPullOpen(open);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{gitT("pull")}</DialogTitle>
-            <DialogDescription>
-              {gitT("pullDescription", { target: status.upstreamBranch ?? "" })}
-            </DialogDescription>
-          </DialogHeader>
-          <ActionError error={pullError} />
-          <DialogFooter>
-            <Button
-              disabled={syncing === "pull"}
-              onClick={() => setPullOpen(false)}
-              variant="ghost"
-            >
-              {commonT("cancel")}
-            </Button>
-            <Button
-              disabled={!status.upstreamBranch || gitBusy}
-              onClick={() => void handleSync("pull")}
-            >
-              {syncing === "pull" ? (
-                <Spinner className="size-4" />
-              ) : (
-                <ArrowDown className="size-4" />
-              )}
-              {gitT("pull")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {createPrOpen ? (
         <CreatePrDialog
