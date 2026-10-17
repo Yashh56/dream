@@ -26,7 +26,7 @@ export interface ProjectDirectoryLoaderOptions {
   ) => void;
 }
 
-export const normalizeProjectDirectory = (directory: string) => {
+const normalizeProjectDirectory = (directory: string) => {
   const normalized = directory
     .replace(/\\/g, "/")
     .split("/")
@@ -40,7 +40,7 @@ export const toProjectTreePath = (entry: ProjectDirectoryEntry) =>
     ? `${entry.path.replace(/\/+$/, "")}/`
     : entry.path;
 
-export const getProjectFileAncestorDirectories = (filePath: string) => {
+const getProjectFileAncestorDirectories = (filePath: string) => {
   const parts = filePath.replace(/\\/g, "/").split("/").filter(Boolean);
   const directories: string[] = [];
 

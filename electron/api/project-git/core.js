@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parsePatchFiles } from "@pierre/diffs";
+import { gitChangesKey } from "../../shared/git-changes.js";
 import { execFileAsync } from "../shared/cli.js";
 import {
   canonicalProjectRoot,
@@ -1079,42 +1080,6 @@ export const revertAllProjectGitChanges = async (projectPath) => {
   return { reverted: true };
 };
 
-export const getProjectGitCachedDiff = async (
-  projectPath,
-  filePath,
-  { previousPath = null, status },
-) => {
-  const repoInfo = await getGitRepositoryInfo(projectPath);
-  if (!repoInfo.isRepo || !repoInfo.repoRoot) {
-    throw new Error("Project is not a Git repository.");
-  }
-
-  const normalizedFilePath = normalizePath(filePath);
-  const repoRelativePath = toRepoRelativePath(
-    repoInfo.repoRoot,
-    canonicalProjectRoot(projectPath),
-    normalizedFilePath,
-  );
-  const diffResult = await runGitCommand(repoInfo.repoRoot, [
-    "diff",
-    "--cached",
-    "--find-renames",
-    "--no-ext-diff",
-    "--submodule=diff",
-    "--",
-    repoRelativePath,
-  ]);
-
-  return {
-    branch: repoInfo.branch,
-    diff: diffResult.stdout,
-    filePath: normalizedFilePath,
-    parsedDiff: parseSingleFileDiff(diffResult.stdout),
-    previousPath,
-    status,
-  };
-};
-
 /**
  * Fetch diffs for multiple changed files in bulk, minimizing git subprocess
  * spawns. Instead of calling getGitRepositoryInfo + getGitDiffBaseRef + git diff
@@ -1224,37 +1189,8 @@ export const getProjectGitBulkCachedDiff = async (projectPath, changes) => {
  * Build a lightweight fingerprint for a set of git changes that can be used as
  * a cache key *without* fetching the full diff text. Uses the information
  * already available from `git status --porcelain=v2` (file paths, staging
- * state, line counts).
+ * state, line counts), and every option given: anything that shapes the
+ * generated text (model, provider, instructions...) is part of the key.
  */
-export const getProjectGitChangesFingerprint = (
-  changes,
-  {
-    customInstructions = "",
-    includeUnstaged = true,
-    modelSpeed = "standard",
-    projectPath,
-    provider,
-    reasoningEffort,
-  },
-) =>
-  hashContent(
-    JSON.stringify({
-      changes: changes
-        .map((c) => ({
-          addedLines: c.addedLines,
-          path: c.path,
-          previousPath: c.previousPath,
-          removedLines: c.removedLines,
-          staged: c.staged,
-          status: c.status,
-          unstaged: c.unstaged,
-        }))
-        .sort((a, b) => a.path.localeCompare(b.path)),
-      customInstructions,
-      includeUnstaged,
-      modelSpeed,
-      projectPath,
-      provider,
-      reasoningEffort,
-    }),
-  );
+export const getProjectGitChangesFingerprint = (changes, options) =>
+  hashContent(gitChangesKey(changes, options));

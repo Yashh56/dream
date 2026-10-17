@@ -109,3 +109,34 @@ test("fingerprints change when options or change details differ", () => {
     base,
   );
 });
+
+test("fingerprints differ by model, and by any option given", () => {
+  const base = getProjectGitChangesFingerprint([makeChange()], {
+    ...fingerprintOptions,
+    model: "gpt-5-codex",
+  });
+  assert.notEqual(
+    getProjectGitChangesFingerprint([makeChange()], {
+      ...fingerprintOptions,
+      model: "claude-sonnet",
+    }),
+    base,
+  );
+  assert.notEqual(
+    getProjectGitChangesFingerprint([makeChange()], {
+      ...fingerprintOptions,
+      model: "gpt-5-codex",
+      somethingNew: 1,
+    }),
+    base,
+  );
+  // Key order and absent options do not matter.
+  assert.equal(
+    getProjectGitChangesFingerprint([makeChange()], {
+      model: "gpt-5-codex",
+      reasoningEffort: undefined,
+      ...fingerprintOptions,
+    }),
+    base,
+  );
+});

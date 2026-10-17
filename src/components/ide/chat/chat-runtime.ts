@@ -27,7 +27,7 @@ import { getActivityAttention } from "../activity-status";
 import { useActivityStore } from "../activity-store";
 import { getChipToolKind } from "../assistant-message-tools";
 import { mergeChatMessageHistories } from "../chat-message-history";
-import { warmProjectCommitMessage } from "../git-commit-message-cache";
+import { warmProjectCommitMessage } from "../git-generated-text";
 import { chatIsAwaitingAnswer } from "../header/project-tab-status";
 import { useIdeStore } from "../ide-store";
 import { normalizeModelSpeed } from "../ide-types";
@@ -778,9 +778,6 @@ export const submitChatPrompt = (
         projectPath: submittedProjectPath,
         provider: gitGenerationModelSelection.provider,
         reasoningEffort: gitGenerationModelSelection.reasoningEffort,
-        refreshToken:
-          useIdeStore.getState().projectGitRefreshKeys[submittedProject.id] ??
-          0,
       });
     }
     scheduleEviction(session);

@@ -104,7 +104,7 @@ export const dropProjectRuntimeState = (
  * that went with them: the runtime state a close drops, plus the persisted
  * per-project and per-chat maps.
  */
-export const dropPurgedProjectState = (
+const dropPurgedProjectState = (
   state: IdeState,
   projectIds: readonly string[],
   chatIds: readonly string[],

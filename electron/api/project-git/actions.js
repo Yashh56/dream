@@ -1,4 +1,5 @@
 import path from "node:path";
+import { selectCommitChanges } from "../../shared/git-changes.js";
 import { getProvider } from "../providers/registry.js";
 import {
   getGitAheadBehindCounts,
@@ -277,9 +278,7 @@ export const generateProjectGitCommitMessage = async (
   } = {},
 ) => {
   const status = await listProjectGitChanges(projectPath);
-  const changes = status.changes.filter((change) =>
-    includeUnstaged ? change.staged || change.unstaged : change.staged,
-  );
+  const changes = selectCommitChanges(status.changes, includeUnstaged);
 
   if (changes.length === 0) {
     return "";

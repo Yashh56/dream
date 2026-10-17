@@ -194,6 +194,25 @@ again at once. Reads at one version share, one resource can answer another
 time (`maxConcurrentLoads`: diffs). Panels read them with
 `useProjectResource`; no panel reads a refresh key to decide when to fetch.
 
+## Commit draft
+
+A commit being written (`src/components/ide/git-actions/commit-draft.ts`):
+its message, whether it takes unstaged changes, whether the message is
+**generated**, and committing it or committing and pushing. The Changes
+tab's commit box and the worktree's commit dialog both render one. With
+generation on, the message is the project's **generated git text** for the
+changes the commit takes (`selectCommitChanges`), kept while generation
+may not run (an agent is still writing).
+
+## Generated git text
+
+Commit messages and pull request details a model writes
+(`src/components/ide/git-generated-text.ts`), cached by what they are
+written from: the changes as `electron/shared/git-changes.js` names them
+(the same key the main process caches by), the model settings, and for pull
+requests the branches, next step and git version. A failure reaches the
+caller and is never cached.
+
 ## Changes view
 
 What the Git panel's Changes tab shows beyond the git status

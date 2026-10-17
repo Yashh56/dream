@@ -1,38 +1,26 @@
 import { useTranslations } from "next-intl";
-import {
-  type KeyboardEvent,
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, memo, useCallback, useMemo, useRef } from "react";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type { ProjectGitStatusResponse } from "@/types/ide";
-import { GitChangesDeltaSummary } from "../git-actions/summary";
-import { hasPushDestination } from "../git-actions/utils";
 import {
-  generateCachedProjectCommitMessage,
-  getCachedProjectCommitMessage,
-  getCommitChanges,
-} from "../git-commit-message-cache";
+  type CommitAction,
+  useCommitDraft,
+  useCommitDraftErrorText,
+} from "../git-actions/commit-draft";
+import { GitChangesDeltaSummary } from "../git-actions/summary";
 import { useIdeStore } from "../ide-store";
 import { useCommitMessageFocusRequest } from "./show-git-panel";
 
-type CommitAction = "commit" | "commit-push";
-
 /**
- * The Changes tab's commit composer, as the commit dialog was: whether to
- * include unstaged changes, whether to generate the message (on by default,
- * read from the message generated after the last agent turn when there is
- * one), the message, and Commit or Commit & push.
+ * The Changes tab's commit composer (git-actions/commit-draft.ts): whether
+ * to include unstaged changes, whether to generate the message (on by
+ * default, read from the message generated after the last agent turn when
+ * there is one), the message, and Commit or Commit & push.
  */
 const GitCommitBoxImpl = ({
   active,
@@ -55,106 +43,36 @@ const GitCommitBoxImpl = ({
       (chat) => chat.projectId === projectId && s.streamingChatIds[chat.id],
     ),
   );
-  const gitRefreshKey = useIdeStore(
-    (s) => s.projectGitRefreshKeys[projectId] ?? 0,
-  );
   const bumpProjectGitRefreshKey = useIdeStore(
     (s) => s.bumpProjectGitRefreshKey,
   );
   const settings = useIdeStore((s) => s.settings);
-  const { model, modelSpeed, provider, reasoningEffort } = useMemo(
+  const generation = useMemo(
     () => getDefaultGitGenerationModelSelection(settings),
     [settings],
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [message, setMessage] = useState("");
-  const [autoGenerateMessage, setAutoGenerateMessage] = useState(true);
-  const [includeUnstaged, setIncludeUnstaged] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [submitting, setSubmitting] = useState<CommitAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const commitChanges = useMemo(
-    () => getCommitChanges(status, includeUnstaged),
-    [includeUnstaged, status],
-  );
-  const hasChanges = commitChanges.length > 0;
-  const canCommit =
-    hasChanges && Boolean(message.trim()) && !generating && submitting === null;
-  const canCommitPush = canCommit && hasPushDestination(status);
-
-  // Keep the last message while an agent is working. Generate from fresh
-  // status once all of the project's turns have ended; the background
-  // generation at turn completion shares this cache request.
-  useEffect(() => {
-    if (!(active && autoGenerateMessage && statusReady) || isProjectStreaming) {
-      setGenerating(false);
-      return;
-    }
-
-    if (!hasChanges) {
-      setMessage("");
-      setGenerating(false);
-      return;
-    }
-
-    const params = {
-      changes: commitChanges,
-      includeUnstaged,
-      model,
-      modelSpeed,
-      projectPath,
-      provider,
-      reasoningEffort,
-      refreshToken: gitRefreshKey,
-    };
-    const cachedMessage = getCachedProjectCommitMessage(params);
-    if (cachedMessage !== undefined) {
-      setMessage(cachedMessage);
-      setGenerating(false);
-      return;
-    }
-
-    let ignore = false;
-    setMessage("");
-    setError(null);
-    setGenerating(true);
-    void generateCachedProjectCommitMessage(params)
-      .then((nextMessage) => {
-        if (!ignore) {
-          setMessage(nextMessage);
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setError(gitT("unableToGenerateCommitMessage"));
-        }
-      })
-      .finally(() => {
-        if (!ignore) {
-          setGenerating(false);
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [
-    active,
-    autoGenerateMessage,
-    commitChanges,
-    gitRefreshKey,
-    gitT,
-    hasChanges,
-    includeUnstaged,
-    isProjectStreaming,
-    model,
-    modelSpeed,
+  // Keep the last message while an agent is working; generate from a
+  // current status once all of the project's turns have ended. The
+  // background generation at turn completion shares this request.
+  const { draft, snapshot } = useCommitDraft({
+    ...generation,
+    canGenerate: active && statusReady && !isProjectStreaming,
     projectPath,
-    provider,
-    reasoningEffort,
-    statusReady,
-  ]);
+    status,
+  });
+  const {
+    autoGenerate,
+    canCommit,
+    canCommitPush,
+    changes,
+    generating,
+    includeUnstaged,
+    message,
+    submitting,
+  } = snapshot;
+  const error = useCommitDraftErrorText(snapshot.error);
+  const hasChanges = changes.length > 0;
 
   const focusMessage = useCallback(() => {
     const textarea = textareaRef.current;
@@ -168,62 +86,15 @@ const GitCommitBoxImpl = ({
   }, []);
   useCommitMessageFocusRequest(projectId, active, focusMessage);
 
-  const handleAutoGenerateMessageChange = useCallback((checked: boolean) => {
-    setAutoGenerateMessage(checked);
-    setGenerating(false);
-    if (!checked) {
-      setMessage("");
-    }
-  }, []);
-
   const handleCommit = useCallback(
     async (action: CommitAction) => {
-      if (!canCommit || (action === "commit-push" && !canCommitPush)) {
+      if (!(action === "commit-push" ? canCommitPush : canCommit)) {
         return;
       }
-
-      setSubmitting(action);
-      setError(null);
-      try {
-        if (action === "commit-push") {
-          await apiClient.gitPush({
-            commitMessage: message,
-            includeUnstaged,
-            nextStep: "commit-push",
-            projectPath,
-          });
-        } else {
-          await apiClient.gitCommit({
-            includeUnstaged,
-            message,
-            projectPath,
-          });
-        }
-        setMessage("");
-      } catch (commitError) {
-        setError(
-          getApiErrorMessage(
-            commitError,
-            action === "commit-push"
-              ? gitT("unableToCommitAndPush")
-              : gitT("unableToCommit"),
-          ),
-        );
-      } finally {
-        setSubmitting(null);
-        bumpProjectGitRefreshKey(projectId);
-      }
+      await draft.submit(action);
+      bumpProjectGitRefreshKey(projectId);
     },
-    [
-      bumpProjectGitRefreshKey,
-      canCommit,
-      canCommitPush,
-      gitT,
-      includeUnstaged,
-      message,
-      projectId,
-      projectPath,
-    ],
+    [bumpProjectGitRefreshKey, canCommit, canCommitPush, draft, projectId],
   );
 
   const handleKeyDown = useCallback(
@@ -246,7 +117,7 @@ const GitCommitBoxImpl = ({
           <Switch
             checked={includeUnstaged}
             id={`commit-include-unstaged-${projectId}`}
-            onCheckedChange={setIncludeUnstaged}
+            onCheckedChange={(checked) => draft.setIncludeUnstaged(checked)}
           />
           <span>{gitT("includeUnstaged")}</span>
         </label>
@@ -255,9 +126,9 @@ const GitCommitBoxImpl = ({
           htmlFor={`commit-auto-generate-${projectId}`}
         >
           <Switch
-            checked={autoGenerateMessage}
+            checked={autoGenerate}
             id={`commit-auto-generate-${projectId}`}
-            onCheckedChange={handleAutoGenerateMessageChange}
+            onCheckedChange={(checked) => draft.setAutoGenerate(checked)}
           />
           <span>{gitT("autoGenerateMessage")}</span>
         </label>
@@ -269,10 +140,10 @@ const GitCommitBoxImpl = ({
           aria-label={gitT("commitMessage")}
           className="max-h-40 min-h-16 resize-none text-sm"
           disabled={submitting !== null}
-          onChange={(event) => setMessage(event.target.value)}
+          onChange={(event) => draft.setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={generating ? "" : gitT("enterCommitMessage")}
-          readOnly={autoGenerateMessage}
+          readOnly={autoGenerate}
           ref={textareaRef}
           value={message}
         />
@@ -288,7 +159,7 @@ const GitCommitBoxImpl = ({
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
 
       <div className="flex items-center gap-2">
-        {hasChanges ? <GitChangesDeltaSummary changes={commitChanges} /> : null}
+        {hasChanges ? <GitChangesDeltaSummary changes={changes} /> : null}
         <Button
           className="ml-auto"
           disabled={!canCommit}

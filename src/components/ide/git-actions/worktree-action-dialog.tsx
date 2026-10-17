@@ -262,9 +262,6 @@ export const WorktreeActionDialog = ({
     () => getDefaultGitGenerationModelSelection(settings),
     [settings],
   );
-  const gitRefreshKey = useIdeStore(
-    (s) => s.projectGitRefreshKeys[project.id] ?? 0,
-  );
   const bumpProjectGitRefreshKey = useIdeStore(
     (s) => s.bumpProjectGitRefreshKey,
   );
@@ -489,7 +486,6 @@ export const WorktreeActionDialog = ({
         projectPath={project.path}
         provider={provider}
         reasoningEffort={reasoningEffort}
-        refreshToken={gitRefreshKey}
         status={compare?.worktreeStatus ?? null}
       />
     );

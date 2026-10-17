@@ -1,19 +1,12 @@
 import { Code, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { useTranslations } from "next-intl";
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type FormEvent, useCallback, useEffect } from "react";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
 import type {
   AiProvider,
   ModelSpeed,
@@ -21,16 +14,14 @@ import type {
   ReasoningEffort,
 } from "@/types/ide";
 import {
-  generateCachedProjectCommitMessage,
-  getCachedProjectCommitMessage,
-  getCommitChanges,
-} from "../git-commit-message-cache";
+  type CommitAction,
+  useCommitDraft,
+  useCommitDraftErrorText,
+} from "./commit-draft";
 import { ActionError, DialogMetricRow, GitDialogHeader } from "./dialog-layout";
 import { GitChangesDeltaSummary } from "./summary";
-import { hasPushDestination } from "./utils";
 
-type CommitSubmitAction = "commit" | "commit-push";
-
+/** Commits a worktree's changes, in a dialog (git-actions/commit-draft.ts). */
 export const CommitDialog = ({
   branch,
   onCompleted,
@@ -41,7 +32,6 @@ export const CommitDialog = ({
   projectPath,
   provider,
   reasoningEffort,
-  refreshToken,
   status,
 }: {
   branch: string | null;
@@ -53,184 +43,46 @@ export const CommitDialog = ({
   projectPath: string;
   provider: AiProvider;
   reasoningEffort: ReasoningEffort | null;
-  refreshToken: number;
   status: ProjectGitStatusResponse | null;
 }) => {
   const commonT = useTranslations("common");
   const gitT = useTranslations("git");
-  const [commitMessage, setCommitMessage] = useState("");
-  const [autoGenerateMessage, setAutoGenerateMessage] = useState(true);
-  const [generatingCommitMessage, setGeneratingCommitMessage] = useState(false);
-  const [includeUnstaged, setIncludeUnstaged] = useState(true);
-  const [submittingAction, setSubmittingAction] =
-    useState<CommitSubmitAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const commitChanges = useMemo(
-    () => getCommitChanges(status, includeUnstaged),
-    [includeUnstaged, status],
-  );
-  const hasCommitChanges = commitChanges.length > 0;
-  const canCommit =
-    Boolean(commitMessage.trim()) &&
-    hasCommitChanges &&
-    !generatingCommitMessage;
-  const canCommitPush = canCommit && hasPushDestination(status);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    setAutoGenerateMessage(true);
-    setCommitMessage("");
-    setGeneratingCommitMessage(false);
-    setIncludeUnstaged(true);
-    setSubmittingAction(null);
-    setError(null);
-  }, [open]);
-
-  useEffect(() => {
-    if (!(open && autoGenerateMessage)) {
-      setGeneratingCommitMessage(false);
-      return;
-    }
-
-    if (!hasCommitChanges) {
-      setCommitMessage("");
-      setGeneratingCommitMessage(false);
-      return;
-    }
-
-    const cachedMessage = getCachedProjectCommitMessage({
-      changes: commitChanges,
-      includeUnstaged,
-      model,
-      modelSpeed,
-      projectPath,
-      provider,
-      reasoningEffort,
-      refreshToken,
-    });
-    if (cachedMessage !== undefined) {
-      setCommitMessage(cachedMessage);
-      setGeneratingCommitMessage(false);
-      return;
-    }
-
-    let ignore = false;
-    setCommitMessage("");
-    setError(null);
-    setGeneratingCommitMessage(true);
-    void generateCachedProjectCommitMessage({
-      changes: commitChanges,
-      includeUnstaged,
-      model,
-      modelSpeed,
-      projectPath,
-      provider,
-      reasoningEffort,
-      refreshToken,
-    })
-      .then((nextMessage) => {
-        if (ignore) {
-          return;
-        }
-        setCommitMessage(nextMessage);
-      })
-      .catch(() => {
-        if (ignore) {
-          return;
-        }
-        setError(gitT("unableToGenerateCommitMessage"));
-      })
-      .finally(() => {
-        if (!ignore) {
-          setGeneratingCommitMessage(false);
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [
-    autoGenerateMessage,
-    commitChanges,
-    hasCommitChanges,
-    includeUnstaged,
+  const { draft, snapshot } = useCommitDraft({
+    canGenerate: open,
     model,
     modelSpeed,
-    open,
     projectPath,
     provider,
     reasoningEffort,
-    refreshToken,
-    gitT,
-  ]);
+    status,
+  });
+  const {
+    autoGenerate,
+    canCommit,
+    canCommitPush,
+    changes,
+    generating,
+    includeUnstaged,
+    message,
+    submitting,
+  } = snapshot;
+  const error = useCommitDraftErrorText(snapshot.error);
 
-  const handleAutoGenerateMessageChange = useCallback(
-    (nextChecked: boolean) => {
-      setAutoGenerateMessage(nextChecked);
-      setGeneratingCommitMessage(false);
-      if (!nextChecked) {
-        setCommitMessage("");
-      }
-    },
-    [],
-  );
+  // Each opening starts a fresh draft.
+  useEffect(() => {
+    if (open) {
+      draft.reset();
+    }
+  }, [draft, open]);
 
   const handleSubmitAction = useCallback(
-    async (action: CommitSubmitAction) => {
-      if (
-        submittingAction ||
-        !canCommit ||
-        (action === "commit-push" && !canCommitPush)
-      ) {
-        return;
-      }
-
-      setSubmittingAction(action);
-      setError(null);
-      try {
-        if (action === "commit-push") {
-          await apiClient.gitPush({
-            commitMessage,
-            includeUnstaged,
-            nextStep: "commit-push",
-            projectPath,
-          });
-        } else {
-          await apiClient.gitCommit({
-            includeUnstaged,
-            message: commitMessage,
-            projectPath,
-          });
-        }
+    async (action: CommitAction) => {
+      if (await draft.submit(action)) {
         onCompleted();
         onOpenChange(false);
-      } catch (error) {
-        setError(
-          getApiErrorMessage(
-            error,
-            action === "commit-push"
-              ? gitT("unableToCommitAndPush")
-              : gitT("unableToCommit"),
-          ),
-        );
-      } finally {
-        setSubmittingAction(null);
       }
     },
-    [
-      canCommit,
-      canCommitPush,
-      commitMessage,
-      includeUnstaged,
-      gitT,
-      onCompleted,
-      onOpenChange,
-      projectPath,
-      submittingAction,
-    ],
+    [draft, onCompleted, onOpenChange],
   );
 
   const handleSubmit = useCallback(
@@ -261,7 +113,7 @@ export const CommitDialog = ({
             <DialogMetricRow
               icon={<Code className="size-4" />}
               label={commonT("changes")}
-              value={<GitChangesDeltaSummary changes={commitChanges} />}
+              value={<GitChangesDeltaSummary changes={changes} />}
             />
           </div>
 
@@ -272,7 +124,7 @@ export const CommitDialog = ({
             <Switch
               checked={includeUnstaged}
               id="commit-include-unstaged"
-              onCheckedChange={setIncludeUnstaged}
+              onCheckedChange={(checked) => draft.setIncludeUnstaged(checked)}
             />
             <span>{gitT("includeUnstaged")}</span>
           </label>
@@ -282,9 +134,9 @@ export const CommitDialog = ({
             htmlFor="commit-auto-generate-message"
           >
             <Switch
-              checked={autoGenerateMessage}
+              checked={autoGenerate}
               id="commit-auto-generate-message"
-              onCheckedChange={handleAutoGenerateMessageChange}
+              onCheckedChange={(checked) => draft.setAutoGenerate(checked)}
             />
             <span>{gitT("autoGenerateMessage")}</span>
           </label>
@@ -295,17 +147,15 @@ export const CommitDialog = ({
             </label>
             <div className="relative">
               <Textarea
-                aria-busy={generatingCommitMessage}
+                aria-busy={generating}
                 className="min-h-24 resize-none"
                 id="commit-message"
-                readOnly={autoGenerateMessage}
-                onChange={(event) => setCommitMessage(event.target.value)}
-                placeholder={
-                  generatingCommitMessage ? "" : gitT("enterCommitMessage")
-                }
-                value={commitMessage}
+                readOnly={autoGenerate}
+                onChange={(event) => draft.setMessage(event.target.value)}
+                placeholder={generating ? "" : gitT("enterCommitMessage")}
+                value={message}
               />
-              {generatingCommitMessage ? (
+              {generating ? (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm">
                   <Shimmer as="span" duration={1.5}>
                     {gitT("generatingCommitMessage")}
@@ -320,24 +170,22 @@ export const CommitDialog = ({
           <div className="flex justify-end gap-2">
             <Button
               className="min-w-36"
-              disabled={Boolean(submittingAction) || !canCommit}
+              disabled={Boolean(submitting) || !canCommit}
               type="submit"
               variant="outline"
             >
-              {submittingAction === "commit" ? (
-                <Spinner className="size-4" />
-              ) : null}
+              {submitting === "commit" ? <Spinner className="size-4" /> : null}
               <span>{gitT("commit")}</span>
             </Button>
             <Button
               className="min-w-36"
-              disabled={Boolean(submittingAction) || !canCommitPush}
+              disabled={Boolean(submitting) || !canCommitPush}
               onClick={() => {
                 void handleSubmitAction("commit-push");
               }}
               type="button"
             >
-              {submittingAction === "commit-push" ? (
+              {submitting === "commit-push" ? (
                 <Spinner className="size-4" />
               ) : null}
               <span>{gitT("commitAndPush")}</span>
