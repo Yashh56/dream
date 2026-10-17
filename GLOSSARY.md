@@ -341,6 +341,20 @@ chats on a model the settings offer, and the defaults on a picked model.
 It is pure, and runs on every write of settings (`settleSettings` in
 `store/settings-actions.ts`) and on hydration, never in an effect.
 
+## Desktop bridge
+
+`window.dream` (`DesktopApi`): what the renderer asks of the Electron main
+process (windows, clipboard, dialogs, notifications, SSH hosts, theme
+preferences, the workspace save) and what it is told back. Each **desktop
+method** is a row in `electron/shared/desktop-channels.js`: its channel,
+and whether it is invoked, sent or subscribed to. The preload builds
+`window.dream` from the table, the fixture page builds the same over a
+fake, and the main process's **desktop handlers**
+(`electron/desktop-handlers.js`, built with Electron's parts passed in)
+are registered on it. The theme preferences' rules are
+`electron/shared/theme-preferences.js`, shared by the main process, the
+preload and the renderer.
+
 ## Provider adapter
 
 The translator from one provider's native events to agent-turn calls

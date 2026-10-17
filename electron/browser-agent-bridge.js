@@ -1,4 +1,5 @@
 import { ipcMain, webContents } from "electron";
+import { desktopChannel } from "./shared/desktop-channels.js";
 
 /**
  * Main-process bridge that lets agent tools drive the renderer's `<webview>`
@@ -273,60 +274,66 @@ export function createBrowserAgentBridge({ sendToRenderer }) {
   // Renderer -> main: guest registry
   // -------------------------------------------------------------------------
 
-  ipcMain.on("browser:guest-attached", (_event, payload) => {
-    const projectId =
-      typeof payload?.projectId === "string" ? payload.projectId : "";
-    const tabId = typeof payload?.tabId === "string" ? payload.tabId : "";
-    const webContentsId = Number(payload?.webContentsId);
-    if (!projectId || !tabId || !Number.isInteger(webContentsId)) {
-      return;
-    }
-    if (!liveGuest(webContentsId)) {
-      return;
-    }
-
-    const guests = getProjectGuests(projectId);
-    const existing = guests.get(tabId);
-    if (existing && existing.webContentsId !== webContentsId) {
-      cleanupGuest(existing.webContentsId);
-    }
-    guests.set(tabId, { attachedAt: Date.now(), webContentsId });
-    hookGuest(webContentsId);
-    notifyGuestWaiters();
-  });
-
-  ipcMain.on("browser:guest-detached", (_event, payload) => {
-    const projectId =
-      typeof payload?.projectId === "string" ? payload.projectId : "";
-    const tabId = typeof payload?.tabId === "string" ? payload.tabId : "";
-    const guests = guestsByProject.get(projectId);
-    const entry = guests?.get(tabId);
-    if (!entry) {
-      return;
-    }
-    guests.delete(tabId);
-    if (guests.size === 0) {
-      guestsByProject.delete(projectId);
-    }
-    const stillReferenced = [...guestsByProject.values()].some((map) =>
-      [...map.values()].some(
-        (item) => item.webContentsId === entry.webContentsId,
-      ),
-    );
-    if (!stillReferenced) {
-      const meta = guestMeta.get(entry.webContentsId);
-      if (meta) {
-        meta.cleanup();
-        guestMeta.delete(entry.webContentsId);
+  ipcMain.on(
+    desktopChannel("reportBrowserGuestAttached"),
+    (_event, payload) => {
+      const projectId =
+        typeof payload?.projectId === "string" ? payload.projectId : "";
+      const tabId = typeof payload?.tabId === "string" ? payload.tabId : "";
+      const webContentsId = Number(payload?.webContentsId);
+      if (!projectId || !tabId || !Number.isInteger(webContentsId)) {
+        return;
       }
-    }
-  });
+      if (!liveGuest(webContentsId)) {
+        return;
+      }
+
+      const guests = getProjectGuests(projectId);
+      const existing = guests.get(tabId);
+      if (existing && existing.webContentsId !== webContentsId) {
+        cleanupGuest(existing.webContentsId);
+      }
+      guests.set(tabId, { attachedAt: Date.now(), webContentsId });
+      hookGuest(webContentsId);
+      notifyGuestWaiters();
+    },
+  );
+
+  ipcMain.on(
+    desktopChannel("reportBrowserGuestDetached"),
+    (_event, payload) => {
+      const projectId =
+        typeof payload?.projectId === "string" ? payload.projectId : "";
+      const tabId = typeof payload?.tabId === "string" ? payload.tabId : "";
+      const guests = guestsByProject.get(projectId);
+      const entry = guests?.get(tabId);
+      if (!entry) {
+        return;
+      }
+      guests.delete(tabId);
+      if (guests.size === 0) {
+        guestsByProject.delete(projectId);
+      }
+      const stillReferenced = [...guestsByProject.values()].some((map) =>
+        [...map.values()].some(
+          (item) => item.webContentsId === entry.webContentsId,
+        ),
+      );
+      if (!stillReferenced) {
+        const meta = guestMeta.get(entry.webContentsId);
+        if (meta) {
+          meta.cleanup();
+          guestMeta.delete(entry.webContentsId);
+        }
+      }
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Main -> renderer: commands
   // -------------------------------------------------------------------------
 
-  ipcMain.on("browser:command-result", (_event, payload) => {
+  ipcMain.on(desktopChannel("sendBrowserCommandResult"), (_event, payload) => {
     const id = typeof payload?.id === "string" ? payload.id : "";
     const pending = pendingCommands.get(id);
     if (!pending) {
@@ -359,7 +366,12 @@ export function createBrowserAgentBridge({ sendToRenderer }) {
         );
       }, COMMAND_TIMEOUT_MS);
       pendingCommands.set(id, { reject, resolve, timer });
-      sendToRenderer("browser:command", { id, payload, projectId, type });
+      sendToRenderer(desktopChannel("onBrowserCommand"), {
+        id,
+        payload,
+        projectId,
+        type,
+      });
     });
   }
 
@@ -407,7 +419,7 @@ export function createBrowserAgentBridge({ sendToRenderer }) {
 
   function publishActivity(projectId, tool) {
     const counts = activityByProject.get(projectId);
-    sendToRenderer("browser:agent-activity", {
+    sendToRenderer(desktopChannel("onBrowserAgentActivity"), {
       active: Boolean(counts && counts.size > 0),
       projectId,
       tool,

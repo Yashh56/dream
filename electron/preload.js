@@ -1,56 +1,37 @@
+// `window.dream`: the desktop methods of shared/desktop-channels.js over
+// Electron IPC, plus what the page needs before it runs (its API session
+// token, and the theme preferences, applied before the first paint).
 import { contextBridge, ipcRenderer } from "electron";
+import {
+  createDesktopMethods,
+  DESKTOP_SYNC_CHANNELS,
+} from "./shared/desktop-channels.js";
+import {
+  applyAccentColor,
+  applyBaseColor,
+  applyResolvedTheme,
+  normalizeThemePreferences,
+  resolveTheme,
+} from "./shared/theme-preferences.js";
 
-const apiSessionToken = ipcRenderer.sendSync("api:get-session-token");
+const apiSessionToken = ipcRenderer.sendSync(
+  DESKTOP_SYNC_CHANNELS.apiSessionToken,
+);
 if (!apiSessionToken) {
   throw new Error("Missing API session token from Electron main process.");
 }
 
-const BASE_COLORS = new Set(["neutral", "slate", "gray", "zinc", "stone"]);
-const ACCENT_COLORS = new Set([
-  "black-white",
-  "red",
-  "orange",
-  "amber",
-  "yellow",
-  "lime",
-  "green",
-  "emerald",
-  "teal",
-  "cyan",
-  "sky",
-  "blue",
-  "indigo",
-  "violet",
-  "purple",
-  "fuchsia",
-  "pink",
-  "rose",
-]);
-
-const normalizeTheme = (theme) =>
-  theme === "light" || theme === "dark" || theme === "system" ? theme : "dark";
-
-const normalizeBaseColor = (baseColor) =>
-  BASE_COLORS.has(baseColor) ? baseColor : "zinc";
-
-const normalizeAccentColor = (accentColor) =>
-  ACCENT_COLORS.has(accentColor) ? accentColor : "green";
-
-const getSystemTheme = () =>
-  window.matchMedia?.("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-
-const getPreloadThemePreferences = () => {
+const getMainThemePreferences = () => {
   try {
     // Read on every load: BrowserWindow arguments retain the original theme
     // after a reload, even when the saved preferences have since changed.
-    return ipcRenderer.sendSync("theme:get-initial-preferences");
+    return ipcRenderer.sendSync(DESKTOP_SYNC_CHANNELS.initialThemePreferences);
   } catch {
     return null;
   }
 };
 
+// What the page itself last stored (lib/ui-store.ts, next-themes).
 const getBrowserThemePreferences = () => {
   try {
     const rawUiPreferences = window.localStorage?.getItem(
@@ -68,42 +49,26 @@ const getBrowserThemePreferences = () => {
   }
 };
 
-const initialThemePreferences = (() => {
-  const preferences =
-    getPreloadThemePreferences() ?? getBrowserThemePreferences();
-  return {
-    accentColor: normalizeAccentColor(preferences?.accentColor),
-    baseColor: normalizeBaseColor(preferences?.baseColor),
-    theme: normalizeTheme(preferences?.theme),
-  };
-})();
+const initialThemePreferences = normalizeThemePreferences(
+  getMainThemePreferences() ?? getBrowserThemePreferences(),
+);
 
 const applyInitialThemePreferences = () => {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  const root = document.documentElement;
+  const root =
+    typeof document === "undefined" ? null : document.documentElement;
   if (!root) {
     return;
   }
 
-  const resolvedTheme =
-    initialThemePreferences.theme === "system"
-      ? getSystemTheme()
-      : initialThemePreferences.theme;
-
-  root.classList.toggle("dark", resolvedTheme === "dark");
-  root.classList.toggle("light", resolvedTheme === "light");
-  root.style.colorScheme = resolvedTheme;
-
-  if (initialThemePreferences.baseColor === "neutral") {
-    root.removeAttribute("data-base-color");
-  } else {
-    root.setAttribute("data-base-color", initialThemePreferences.baseColor);
-  }
-
-  root.setAttribute("data-accent-color", initialThemePreferences.accentColor);
+  applyResolvedTheme(
+    root,
+    resolveTheme(
+      initialThemePreferences.theme,
+      window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
+    ),
+  );
+  applyBaseColor(root, initialThemePreferences.baseColor);
+  applyAccentColor(root, initialThemePreferences.accentColor);
 };
 
 if (typeof document !== "undefined" && document.documentElement) {
@@ -114,95 +79,25 @@ if (typeof document !== "undefined" && document.documentElement) {
   });
 }
 
-const subscribe = (channel, listener) => {
-  const subscription = (_event, payload) => {
-    listener(payload);
-  };
-
-  ipcRenderer.on(channel, subscription);
-
-  return () => {
-    ipcRenderer.removeListener(channel, subscription);
-  };
-};
-
 contextBridge.exposeInMainWorld("dream", {
   isElectron: true,
   apiSessionToken,
   initialThemePreferences,
-
-  openExternal: (url) => ipcRenderer.invoke("shell:open-external", { url }),
-  openPath: (path) => ipcRenderer.invoke("shell:open-path", { path }),
-  writeClipboardText: (text) =>
-    ipcRenderer.invoke("clipboard:write-text", { text }),
-  writeClipboardImage: (png) =>
-    ipcRenderer.invoke("clipboard:write-image", { png }),
-  saveTextFile: (payload) => ipcRenderer.invoke("files:save-text", payload),
-
-  captureAppScreenshot: () => ipcRenderer.invoke("app:capture-screenshot"),
-  showScreenshotInFolder: (path) =>
-    ipcRenderer.invoke("app:show-screenshot-in-folder", { path }),
-  onAppScreenshotRequested: (listener) =>
-    subscribe("app:screenshot-requested", listener),
-
-  showNotification: (payload) =>
-    ipcRenderer.invoke("notifications:show", payload),
-  onNotificationClicked: (listener) =>
-    subscribe("notifications:clicked", listener),
-
-  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
-  windowMaximize: () => ipcRenderer.invoke("window:maximize"),
-  windowClose: () => ipcRenderer.invoke("window:close"),
-
-  pickProjectDirectory: () => ipcRenderer.invoke("projects:pick-directory"),
-
-  loadState: () => ipcRenderer.invoke("state:load"),
-  saveWorkspaceChanges: (changes) =>
-    ipcRenderer.invoke("state:save-workspace", changes),
-  getThemePreferences: () => ipcRenderer.invoke("theme:get-preferences"),
-  setThemePreference: (theme) => ipcRenderer.invoke("theme:set", { theme }),
-  setBaseColor: (baseColor) =>
-    ipcRenderer.invoke("theme:set-base-color", { baseColor }),
-  setAccentColor: (accentColor) =>
-    ipcRenderer.invoke("theme:set-accent-color", { accentColor }),
-
-  // Terminals are served by the host (src/lib/terminal-client.ts), not IPC.
-
-  // SSH hosts: connecting, their state, and ssh's prompts.
-  connectHost: (payload) => ipcRenderer.invoke("hosts:connect", payload),
-  disconnectHost: (hostId) =>
-    ipcRenderer.invoke("hosts:disconnect", { hostId }),
-  getHostState: (hostId) => ipcRenderer.invoke("hosts:state", { hostId }),
-  forwardHostPort: (hostId, port) =>
-    ipcRenderer.invoke("hosts:forward-port", { hostId, port }),
-  onHostStatus: (listener) => subscribe("hosts:status", listener),
-  onHostPrompt: (listener) => subscribe("hosts:prompt", listener),
-  answerHostPrompt: (promptId, answer) =>
-    ipcRenderer.send("hosts:prompt-answer", { answer, promptId }),
-
-  updateBrowser: (payload) => ipcRenderer.send("browser:update", payload),
-  captureBrowserPage: (payload) =>
-    ipcRenderer.invoke("browser:capture-page", payload),
-  onBrowserError: (listener) => subscribe("browser:error", listener),
-  onBrowserPageState: (listener) => subscribe("browser:page-state", listener),
-  onBrowserStatus: (listener) => subscribe("browser:status", listener),
-  // Agent browser control: the renderer registers mounted <webview> guests
-  // and answers commands (open/activate/close tab) that only it can perform.
-  reportBrowserGuestAttached: (payload) =>
-    ipcRenderer.send("browser:guest-attached", payload),
-  reportBrowserGuestDetached: (payload) =>
-    ipcRenderer.send("browser:guest-detached", payload),
-  onBrowserCommand: (listener) => subscribe("browser:command", listener),
-  onBrowserAgentActivity: (listener) =>
-    subscribe("browser:agent-activity", listener),
-  sendBrowserCommandResult: (payload) =>
-    ipcRenderer.send("browser:command-result", payload),
-
-  detectEditors: () => ipcRenderer.invoke("editors:detect"),
-  openInEditor: (payload) => ipcRenderer.invoke("editors:open", payload),
-
-  getUpdateStatus: () => ipcRenderer.invoke("updates:get-status"),
-  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
-  installUpdate: () => ipcRenderer.invoke("updates:install"),
-  onUpdateStatus: (listener) => subscribe("updates:status", listener),
+  ...createDesktopMethods({
+    invoke: (channel, payload) =>
+      payload === undefined
+        ? ipcRenderer.invoke(channel)
+        : ipcRenderer.invoke(channel, payload),
+    send: (channel, payload) => ipcRenderer.send(channel, payload),
+    subscribe: (channel, listener) => {
+      /** @type {(event: unknown, payload: unknown) => void} */
+      const subscription = (_event, payload) => {
+        listener(payload);
+      };
+      ipcRenderer.on(channel, subscription);
+      return () => {
+        ipcRenderer.removeListener(channel, subscription);
+      };
+    },
+  }),
 });

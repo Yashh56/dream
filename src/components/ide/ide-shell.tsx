@@ -16,6 +16,7 @@ import { EmptyProjectWorkspace } from "./empty-project-workspace";
 import { IdeHeader } from "./ide-header";
 import { useIdeStore } from "./ide-store";
 import { ProjectWorkspace } from "./project-workspace";
+import { watchRendererUnload } from "./renderer-unload-guard";
 import { GlobalShortcuts } from "./shortcuts/global-shortcuts";
 import { SshPromptDialog } from "./ssh/ssh-prompt-dialog";
 import { watchHostBrowser } from "./store/host-browser-watch";
@@ -157,45 +158,13 @@ export const IdeShell = () => {
     document.querySelector(".boot-loading")?.remove();
   }, [appReady]);
 
-  // Best-effort: ask the host to stop PTYs on page hide/unload. Keyboard
-  // reload and in-app navigations are intercepted in the main process so
-  // sessions are closed before the renderer is torn down; this covers the
-  // remaining unload paths.
+  // Terminals stop as the page unloads (renderer-unload-guard.ts).
   useEffect(() => {
-    if (!getDesktopApi()) {
-      return;
-    }
-
-    const hasActiveTerminalSessions = () => {
-      const state = useIdeStore.getState();
-      if (
-        Object.values(state.terminalStatus).some(
-          (status) => status === "running",
-        )
-      ) {
-        return true;
-      }
-
-      return Object.values(state.projectTerminalSessionIds).some(
-        (sessionIds) => sessionIds.length > 0,
-      );
-    };
-
-    const stopActiveSessions = () => {
-      if (!hasActiveTerminalSessions()) {
-        return;
-      }
-
-      void terminalClient.stopAll({ keepalive: true });
-    };
-
-    window.addEventListener("pagehide", stopActiveSessions);
-    window.addEventListener("beforeunload", stopActiveSessions);
-
-    return () => {
-      window.removeEventListener("pagehide", stopActiveSessions);
-      window.removeEventListener("beforeunload", stopActiveSessions);
-    };
+    if (!getDesktopApi()) return;
+    return watchRendererUnload({
+      getState: useIdeStore.getState,
+      stopAll: () => terminalClient.stopAll({ keepalive: true }),
+    });
   }, []);
 
   // Each host's catalog changes made elsewhere (another window, the host

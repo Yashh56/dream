@@ -5,26 +5,25 @@ import {
 } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
+import {
+  applyResolvedTheme,
+  DEFAULT_THEME_PREFERENCES,
+  isThemePreference,
+  resolveTheme,
+} from "../../electron/shared/theme-preferences.js";
 
-const isThemePreference = (
-  theme: unknown,
-): theme is "light" | "dark" | "system" =>
-  theme === "light" || theme === "dark" || theme === "system";
-
-const getSystemTheme = () =>
+const systemPrefersDark = () =>
   typeof window !== "undefined" &&
-  window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  window.matchMedia("(prefers-color-scheme: dark)").matches;
 
 const applyDocumentTheme = (theme: "light" | "dark" | "system") => {
   if (typeof document === "undefined") {
     return;
   }
 
-  document.documentElement.classList.toggle(
-    "dark",
-    theme === "dark" || (theme === "system" && getSystemTheme() === "dark"),
+  applyResolvedTheme(
+    document.documentElement,
+    resolveTheme(theme, systemPrefersDark()),
   );
 };
 
@@ -88,7 +87,7 @@ export const ThemeProvider = ({ children, ...props }: ThemeProviderProps) => {
       return initialTheme;
     }
 
-    return hasDesktopApi() ? null : "dark";
+    return hasDesktopApi() ? null : DEFAULT_THEME_PREFERENCES.theme;
   });
 
   useEffect(() => {
@@ -108,7 +107,7 @@ export const ThemeProvider = ({ children, ...props }: ThemeProviderProps) => {
       .then((preferences) => {
         const theme = isThemePreference(preferences?.theme)
           ? preferences.theme
-          : "dark";
+          : DEFAULT_THEME_PREFERENCES.theme;
         if (cancelled) {
           return;
         }
@@ -119,7 +118,7 @@ export const ThemeProvider = ({ children, ...props }: ThemeProviderProps) => {
       })
       .catch(() => {
         if (!cancelled) {
-          setDesktopInitialTheme("dark");
+          setDesktopInitialTheme(DEFAULT_THEME_PREFERENCES.theme);
         }
       });
 

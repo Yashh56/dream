@@ -29,6 +29,11 @@ import {
 } from "./app-screenshot.js";
 import { createBrowserAgentBridge } from "./browser-agent-bridge.js";
 import { createBrowserSessionManager } from "./browser-sessions.js";
+import {
+  createDesktopHandlers,
+  isHttpUrl,
+  registerDesktopHandlers,
+} from "./desktop-handlers.js";
 import { createDevLogger, publishDevSession } from "./dev-inspection.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import { getHelloUrl } from "./hello.js";
@@ -42,9 +47,19 @@ import {
   themePreferenceConfigValue,
 } from "./persisted-state.js";
 import { createRendererServerManager } from "./renderer-server.js";
+import {
+  createRendererUnloadGuard,
+  getReloadShortcutOptions,
+} from "./renderer-unload-guard.js";
+import {
+  DESKTOP_SYNC_CHANNELS,
+  desktopChannel,
+} from "./shared/desktop-channels.js";
 import { DEV_RUNTIME_VERSION } from "./ssh/host-install.js";
+import { createSshPromptBroker } from "./ssh/prompt-broker.js";
 import { createSshHostManager } from "./ssh/ssh-hosts.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
+import { createThemeStore } from "./theme-store.js";
 import { initializeAutoUpdater } from "./updater.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -108,20 +123,6 @@ const APP_SESSION_DATA_PATH = path.join(
   APP_USER_DATA_DIR_NAME,
   `session-${process.pid}`,
 );
-const LIGHT_WINDOW_BACKGROUND = "#ffffff";
-const DARK_WINDOW_BACKGROUNDS = {
-  neutral: "#0a0a0a",
-  slate: "#020617",
-  gray: "#030712",
-  zinc: "#09090b",
-  stone: "#0c0a09",
-};
-const DEFAULT_THEME_PREFERENCES = {
-  accentColor: "green",
-  baseColor: "zinc",
-  theme: "dark",
-};
-
 app.setName(APP_NAME);
 if (process.platform === "win32") {
   app.setAppUserModelId(APP_ID);
@@ -157,76 +158,21 @@ let updateManager = null;
 let installId = null;
 let helloView = null;
 
-function normalizeThemePreference(value) {
-  return value === "light" || value === "dark" || value === "system"
-    ? value
-    : "dark";
-}
+// The saved theme preferences (theme-store.js), and the window's
+// background painted from them.
+const themes = createThemeStore({
+  load: loadPersistedThemePreference,
+  save: (preferences) => {
+    getStateSaveQueue()
+      .saveConfigValue(themePreferenceConfigValue(preferences))
+      .catch((error) => {
+        console.error("Failed to save theme preference:", error);
+      });
+  },
+});
 
-// Read from the database once, then kept here: this process is the only
-// one that changes them, and a change is written by the save worker, so
-// the main thread never waits on SQLite for them again.
-let themePreferences = null;
-
-function loadThemePreference() {
-  if (themePreferences) {
-    return themePreferences;
-  }
-
-  try {
-    const parsed = loadPersistedThemePreference();
-    themePreferences = {
-      accentColor: parsed?.accentColor ?? DEFAULT_THEME_PREFERENCES.accentColor,
-      theme: normalizeThemePreference(parsed?.theme),
-      baseColor: parsed?.baseColor ?? DEFAULT_THEME_PREFERENCES.baseColor,
-    };
-    return themePreferences;
-  } catch {
-    return DEFAULT_THEME_PREFERENCES;
-  }
-}
-
-function saveThemePreference(theme, baseColor, accentColor) {
-  const existing = loadThemePreference();
-  themePreferences = {
-    accentColor: accentColor ?? existing.accentColor,
-    theme: normalizeThemePreference(theme ?? existing.theme),
-    baseColor: baseColor ?? existing.baseColor,
-  };
-  getStateSaveQueue()
-    .saveConfigValue(themePreferenceConfigValue(themePreferences))
-    .catch((error) => {
-      console.error("Failed to save theme preference:", error);
-    });
-}
-
-function getResolvedThemePreference(theme) {
-  const normalizedTheme = normalizeThemePreference(
-    theme ?? loadThemePreference().theme,
-  );
-  if (normalizedTheme === "system") {
-    return nativeTheme.shouldUseDarkColors ? "dark" : "light";
-  }
-
-  return normalizedTheme;
-}
-
-function getWindowBackground(theme, baseColor) {
-  const prefs = loadThemePreference();
-  const resolvedTheme = getResolvedThemePreference(theme ?? prefs.theme);
-  if (resolvedTheme === "light") {
-    return LIGHT_WINDOW_BACKGROUND;
-  }
-  const color = baseColor ?? prefs.baseColor ?? "zinc";
-  return DARK_WINDOW_BACKGROUNDS[color] ?? DARK_WINDOW_BACKGROUNDS.zinc;
-}
-
-function applyWindowThemeBackground(theme, baseColor) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  mainWindow.setBackgroundColor(getWindowBackground(theme, baseColor));
+function getAliveMainWindow() {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
 }
 
 function sendToRenderer(channel, payload) {
@@ -252,40 +198,18 @@ const processSessionManager = host.processSessions;
 // Connections to SSH hosts' daemons, opened by the renderer (hosts:connect)
 // for its projects on those hosts. ssh's prompts (passwords, 2FA, unknown
 // host keys) are asked in the window and answered back (hosts:prompt).
-const SSH_PROMPT_TIMEOUT_MS = 5 * 60_000;
-const pendingSshPrompts = new Map();
-let nextSshPromptId = 1;
+const sshPrompts = createSshPromptBroker({
+  canAsk: () => getAliveMainWindow() !== null,
+  send: (prompt) => sendToRenderer(desktopChannel("onHostPrompt"), prompt),
+});
 
 const sshHosts = createSshHostManager({
-  onPrompt: ({ hostId, kind, message, target }) =>
-    new Promise((resolve) => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        resolve(null);
-        return;
-      }
-      const promptId = nextSshPromptId++;
-      const timer = setTimeout(() => {
-        pendingSshPrompts.delete(promptId);
-        resolve(null);
-      }, SSH_PROMPT_TIMEOUT_MS);
-      pendingSshPrompts.set(promptId, (answer) => {
-        clearTimeout(timer);
-        pendingSshPrompts.delete(promptId);
-        resolve(typeof answer === "string" ? answer : null);
-      });
-      sendToRenderer("hosts:prompt", {
-        hostId,
-        kind,
-        message,
-        promptId,
-        target,
-      });
-    }),
+  onPrompt: (prompt) => sshPrompts.ask(prompt),
   onStatus: (status) => {
     console.log(
       `[ssh] ${status.hostId}: ${status.state}${status.error ? ` (${status.error})` : ""}`,
     );
-    sendToRenderer("hosts:status", {
+    sendToRenderer(desktopChannel("onHostStatus"), {
       error: status.error ?? null,
       hostId: status.hostId,
       state: status.state,
@@ -297,60 +221,6 @@ const sshHosts = createSshHostManager({
   // development build has nothing published: its runtime is built on the
   // host from the working tree (pnpm host:install-dev <target>).
   runtimeVersion: app.isPackaged ? dreamVersion : DEV_RUNTIME_VERSION,
-});
-
-ipcMain.handle(
-  "hosts:connect",
-  async (_event, { hostId, hostCommand, target } = {}) => {
-    if (
-      typeof hostId !== "string" ||
-      typeof target !== "string" ||
-      !target.trim()
-    ) {
-      throw new Error("A host needs an id and an SSH target.");
-    }
-    const endpoint = await sshHosts.connect({
-      hostCommand:
-        typeof hostCommand === "string" && hostCommand.trim()
-          ? hostCommand.trim()
-          : undefined,
-      hostId,
-      target: target.trim(),
-    });
-    // The token stays in this process; the renderer goes through the proxy.
-    return {
-      hostProtocolVersion: endpoint.hostProtocolVersion,
-      version: endpoint.version ?? null,
-    };
-  },
-);
-
-ipcMain.handle("hosts:disconnect", (_event, { hostId } = {}) => {
-  if (typeof hostId === "string") sshHosts.disconnect(hostId);
-  return true;
-});
-
-ipcMain.handle("hosts:state", (_event, { hostId } = {}) =>
-  typeof hostId === "string" ? sshHosts.getState(hostId) : "idle",
-);
-
-// A port on an SSH host (its dev server) forwarded here, for the browser
-// panel; resolves with the local port.
-ipcMain.handle("hosts:forward-port", (_event, { hostId, port } = {}) => {
-  const remotePort = Number(port);
-  if (
-    typeof hostId !== "string" ||
-    !Number.isInteger(remotePort) ||
-    remotePort < 1 ||
-    remotePort > 65_535
-  ) {
-    throw new Error("A host and a port are needed.");
-  }
-  return sshHosts.forwardPort(hostId, remotePort);
-});
-
-ipcMain.on("hosts:prompt-answer", (_event, { answer, promptId } = {}) => {
-  pendingSshPrompts.get(promptId)?.(answer);
 });
 
 let rendererServerManager = null;
@@ -372,126 +242,16 @@ function isDevToolsShortcut(input) {
   );
 }
 
-// Returns reload options when the keystroke is a page-reload shortcut, else null.
-// F5 / Ctrl+F5 and Ctrl/Cmd(+Shift)+R must be handled in the main process so we
-// can stop terminal/run sessions before the renderer tears down.
-function getReloadShortcutOptions(input) {
-  if (input?.type !== "keyDown") {
-    return null;
-  }
+// Terminal and run processes stop before the page that owns them unloads
+// (renderer-unload-guard.js).
+const rendererUnloadGuard = createRendererUnloadGuard({
+  processes: processSessionManager,
+});
 
-  const key = typeof input.key === "string" ? input.key.toLowerCase() : "";
-
-  if (key === "f5" && !input.alt && !input.meta) {
-    return { ignoreCache: Boolean(input.control) };
-  }
-
-  if (
-    key === "r" &&
-    (input.control || input.meta) &&
-    !input.alt &&
-    !input.isAutoRepeat
-  ) {
-    return { ignoreCache: Boolean(input.shift) };
-  }
-
-  return null;
-}
-
-let rendererUnloadStopPromise = null;
-
-function stopProcessesForRendererUnload() {
-  if (!rendererUnloadStopPromise) {
-    rendererUnloadStopPromise = processSessionManager
-      .stopAllProcesses()
-      .catch((error) => {
-        console.error(
-          "Failed to stop managed processes before renderer unload:",
-          error,
-        );
-      })
-      .finally(() => {
-        rendererUnloadStopPromise = null;
-      });
-  }
-
-  return rendererUnloadStopPromise;
-}
-
-let reloadMainWindowPromise = null;
-
-async function reloadMainWindow(browserWindow, { ignoreCache = false } = {}) {
-  if (reloadMainWindowPromise) {
-    return reloadMainWindowPromise;
-  }
-
-  reloadMainWindowPromise = (async () => {
-    const targetWindow =
-      browserWindow && !browserWindow.isDestroyed()
-        ? browserWindow
-        : mainWindow;
-    const webContents = targetWindow?.webContents;
-    if (!webContents || webContents.isDestroyed()) {
-      return;
-    }
-
-    await stopProcessesForRendererUnload();
-
-    if (webContents.isDestroyed()) {
-      return;
-    }
-
-    if (ignoreCache) {
-      webContents.reloadIgnoringCache();
-    } else {
-      webContents.reload();
-    }
-  })().finally(() => {
-    reloadMainWindowPromise = null;
-  });
-
-  return reloadMainWindowPromise;
-}
-
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-
-function isPngBytes(bytes) {
-  return (
-    bytes instanceof Uint8Array &&
-    bytes.length > PNG_SIGNATURE.length &&
-    PNG_SIGNATURE.every((value, index) => bytes[index] === value)
-  );
-}
-
-// Electron 44 removed clipboard.writeImage; images go through the
-// W3C-style clipboard.write([ClipboardItem]) API instead.
-function writePngToClipboard(png) {
-  return clipboard.write([
-    new ClipboardItem({
-      "image/png": new Blob([png], { type: "image/png" }),
-    }),
-  ]);
-}
-
-// Folder of the last saved screenshot, so the next Save dialog opens there.
-// Starts in the user's Pictures folder; not persisted across launches.
-let lastAppScreenshotDirectory = null;
-// Paths saved this session; "Show in folder" only reveals these.
-const savedAppScreenshotPaths = new Set();
-
-async function chooseAppScreenshotSavePath(defaultFileName) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return null;
-  }
-
-  const directory = lastAppScreenshotDirectory ?? app.getPath("pictures");
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: path.join(directory, defaultFileName),
-    filters: [{ extensions: ["png"], name: "PNG image" }],
-    title: "Save screenshot",
-  });
-
-  return result.canceled || !result.filePath ? null : result.filePath;
+function reloadMainWindow(browserWindow, options) {
+  const targetWindow =
+    browserWindow && !browserWindow.isDestroyed() ? browserWindow : mainWindow;
+  return rendererUnloadGuard.reload(targetWindow?.webContents, options);
 }
 
 // True for the main renderer and for <webview> guests embedded in it (the
@@ -511,7 +271,7 @@ function belongsToMainWindow(contents) {
 // The renderer runs the capture (via app:capture-screenshot) so it can first
 // hide its own screenshot toast and keep it out of the image.
 function requestAppScreenshot() {
-  sendToRenderer("app:screenshot-requested");
+  sendToRenderer(desktopChannel("onAppScreenshotRequested"));
 }
 
 function configureDetachedDevToolsShortcuts() {
@@ -598,10 +358,6 @@ async function createStartupRendererServerManager() {
   });
 }
 
-function isHttpUrl(value) {
-  return /^https?:\/\//i.test(value.trim());
-}
-
 function getUrlOrigin(value) {
   try {
     return new URL(value).origin;
@@ -642,26 +398,9 @@ async function configureRendererProxy(webContents) {
   }
 }
 
-async function pickDirectory() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return null;
-  }
-
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openDirectory"],
-    title: "Select project folder",
-  });
-
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  return result.filePaths[0] ?? null;
-}
-
 async function createMainWindow() {
   mainWindow = new BrowserWindow({
-    backgroundColor: getWindowBackground(),
+    backgroundColor: themes.windowBackground(nativeTheme.shouldUseDarkColors),
     height: 1080,
     minHeight: 720,
     minWidth: 1180,
@@ -703,21 +442,17 @@ async function createMainWindow() {
 
       // Interrupt in-app navigations/reloads long enough to tear down PTYs
       // first; otherwise shell processes keep running after the renderer dies.
-      if (processSessionManager.hasActiveSessions()) {
-        event.preventDefault();
-        void stopProcessesForRendererUnload().then(() => {
-          if (!mainWindow || mainWindow.isDestroyed()) {
-            return;
-          }
-
-          mainWindow.loadURL(url).catch((error) => {
+      const held = rendererUnloadGuard.holdNavigation(() => {
+        getAliveMainWindow()
+          ?.loadURL(url)
+          .catch((error) => {
             console.error(
               "Failed to load renderer after stopping processes:",
               error,
             );
           });
-        });
-      }
+      });
+      if (held) event.preventDefault();
       return;
     }
 
@@ -738,13 +473,13 @@ async function createMainWindow() {
       browserSessionManager.hideForRendererNavigation();
       // Safety net for reload paths that skip will-navigate (e.g. DevTools
       // reload, webContents.reload after cleanup, some Chromium reload paths).
-      void stopProcessesForRendererUnload();
+      void rendererUnloadGuard.stopProcesses();
     },
   );
 
   mainWindow.webContents.on("render-process-gone", () => {
     browserSessionManager.hideForRendererNavigation();
-    void stopProcessesForRendererUnload();
+    void rendererUnloadGuard.stopProcesses();
   });
 
   // Throttle embedded-view layout during interactive resize. Windows fires
@@ -808,12 +543,7 @@ async function createMainWindow() {
   });
 }
 
-ipcMain.handle("projects:pick-directory", pickDirectory);
-// Read by the save worker, after every write queued before it: a refreshed
-// renderer sees what the old document saved, and the main thread never
-// waits on SQLite.
-ipcMain.handle("state:load", () => getStateSaveQueue().loadWorkspace());
-ipcMain.on("api:get-session-token", (event) => {
+ipcMain.on(DESKTOP_SYNC_CHANNELS.apiSessionToken, (event) => {
   const apiSessionToken = rendererServerManager?.getApiSessionToken();
   if (!apiSessionToken) {
     console.error(
@@ -836,207 +566,39 @@ const getStateSaveQueue = () =>
     databasePath: resolveStateDatabasePath(),
   }));
 
-ipcMain.handle("state:save-workspace", (_event, changes) =>
-  getStateSaveQueue().saveWorkspaceChanges(changes),
-);
-
-ipcMain.handle("theme:set", (_event, { theme } = {}) => {
-  const normalizedTheme = normalizeThemePreference(theme);
-  saveThemePreference(normalizedTheme);
-  applyWindowThemeBackground(normalizedTheme);
-  return true;
+ipcMain.on(DESKTOP_SYNC_CHANNELS.initialThemePreferences, (event) => {
+  event.returnValue = themes.get();
 });
 
-ipcMain.handle("theme:get-preferences", () => loadThemePreference());
-
-ipcMain.on("theme:get-initial-preferences", (event) => {
-  event.returnValue = loadThemePreference();
+// Every desktop method the renderer calls (desktop-handlers.js), on its
+// channel (shared/desktop-channels.js).
+const desktop = createDesktopHandlers({
+  browserSessions: browserSessionManager,
+  captureAppScreenshot,
+  editors: { detect: detectAvailableEditors, open: openProjectInEditor },
+  electron: { ClipboardItem, clipboard, dialog, Notification, shell },
+  files: {
+    exists: existsSync,
+    writeFile: (filePath, contents) => writeFile(filePath, contents, "utf8"),
+  },
+  getPath: (name) => app.getPath(name),
+  getWindow: getAliveMainWindow,
+  sendToRenderer,
+  sshHosts,
+  sshPrompts,
+  state: {
+    loadWorkspace: () => getStateSaveQueue().loadWorkspace(),
+    saveWorkspaceChanges: (changes) =>
+      getStateSaveQueue().saveWorkspaceChanges(changes),
+  },
+  systemPrefersDark: () => nativeTheme.shouldUseDarkColors,
+  themes,
 });
-
-ipcMain.handle("theme:set-base-color", (_event, { baseColor } = {}) => {
-  saveThemePreference(null, baseColor);
-  applyWindowThemeBackground(null, baseColor);
-  return true;
-});
-
-ipcMain.handle("theme:set-accent-color", (_event, { accentColor } = {}) => {
-  saveThemePreference(null, null, accentColor);
-  return true;
-});
+registerDesktopHandlers(ipcMain, desktop.handlers);
 
 nativeTheme.on("updated", () => {
-  applyWindowThemeBackground();
+  desktop.paintWindowBackground();
 });
-
-// Window controls (Windows/Linux frameless window)
-ipcMain.handle("window:minimize", () => {
-  mainWindow?.minimize();
-});
-ipcMain.handle("window:maximize", () => {
-  if (mainWindow?.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow?.maximize();
-  }
-});
-ipcMain.handle("window:close", () => {
-  mainWindow?.close();
-});
-
-// Desktop notifications for chat activity. Shown ones are held until they
-// close: a collected notification never delivers its click.
-const shownNotifications = new Set();
-ipcMain.handle("notifications:show", (_event, payload = {}) => {
-  const { body, chatId, silent, title } = payload;
-  if (
-    typeof title !== "string" ||
-    !title.trim() ||
-    !Notification.isSupported()
-  ) {
-    return false;
-  }
-
-  const notification = new Notification({
-    body: typeof body === "string" ? body.slice(0, 500) : "",
-    silent: silent === true,
-    title: title.slice(0, 200),
-  });
-  const release = () => shownNotifications.delete(notification);
-  notification.on("click", () => {
-    release();
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.show();
-    mainWindow.focus();
-    if (typeof chatId === "string" && chatId) {
-      sendToRenderer("notifications:clicked", { chatId });
-    }
-  });
-  notification.on("close", release);
-  notification.on("failed", release);
-  shownNotifications.add(notification);
-  notification.show();
-  return true;
-});
-
-ipcMain.handle("shell:open-external", (_event, { url }) => {
-  if (!url || typeof url !== "string" || !isHttpUrl(url)) {
-    return false;
-  }
-
-  shell.openExternal(url);
-  return true;
-});
-
-ipcMain.handle("shell:open-path", async (_event, { path: targetPath }) => {
-  if (
-    !targetPath ||
-    typeof targetPath !== "string" ||
-    !path.isAbsolute(targetPath)
-  ) {
-    return false;
-  }
-
-  const errorMessage = await shell.openPath(targetPath);
-  return errorMessage === "";
-});
-
-ipcMain.handle("app:capture-screenshot", async () => {
-  const result = await captureAppScreenshot({
-    chooseSavePath: chooseAppScreenshotSavePath,
-    copyPng: writePngToClipboard,
-    webContents: mainWindow?.webContents,
-  });
-
-  if (result.status === "saved") {
-    savedAppScreenshotPaths.add(result.filePath);
-    lastAppScreenshotDirectory = path.dirname(result.filePath);
-  }
-
-  return result;
-});
-
-ipcMain.handle(
-  "app:show-screenshot-in-folder",
-  (_event, { path: targetPath }) => {
-    if (!savedAppScreenshotPaths.has(targetPath) || !existsSync(targetPath)) {
-      return false;
-    }
-
-    shell.showItemInFolder(targetPath);
-    return true;
-  },
-);
-
-ipcMain.handle("clipboard:write-text", (_event, { text }) => {
-  if (typeof text !== "string") {
-    return false;
-  }
-
-  clipboard.writeText(text);
-  return true;
-});
-
-ipcMain.handle("clipboard:write-image", async (_event, { png }) => {
-  if (!isPngBytes(png)) {
-    return false;
-  }
-
-  try {
-    await writePngToClipboard(png);
-    return true;
-  } catch (error) {
-    console.error("Failed to copy image to clipboard:", error);
-    return false;
-  }
-});
-
-ipcMain.handle(
-  "files:save-text",
-  async (_event, { contents, defaultPath, title = "Save file" }) => {
-    if (typeof contents !== "string") {
-      return false;
-    }
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      defaultPath:
-        typeof defaultPath === "string" && defaultPath.trim()
-          ? defaultPath.trim()
-          : undefined,
-      title,
-    });
-
-    if (result.canceled || !result.filePath) {
-      return false;
-    }
-
-    await writeFile(result.filePath, contents, "utf8");
-    return true;
-  },
-);
-
-ipcMain.handle("editors:detect", () => {
-  return detectAvailableEditors();
-});
-
-ipcMain.handle(
-  "editors:open",
-  (_event, { projectPath, editorId, sshTarget }) => {
-    return openProjectInEditor({ editorId, projectPath, sshTarget });
-  },
-);
-
-ipcMain.on("browser:update", (_event, payload) => {
-  browserSessionManager.update(payload);
-});
-
-ipcMain.handle("browser:capture-page", (_event, payload) =>
-  browserSessionManager.capturePage(payload),
-);
 
 app.whenReady().then(async () => {
   const projectRoot = path.resolve(__dirname, "..");

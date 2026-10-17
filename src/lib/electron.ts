@@ -1,4 +1,21 @@
 import type { DesktopApi } from "@/types/ide";
+import type { DesktopMethod } from "../../electron/shared/desktop-channels.js";
+
+// `DesktopApi` and the channel table (shared/desktop-channels.js) name the
+// same methods: a method in one and not the other does not compile.
+type DesktopApiMethod = Exclude<
+  keyof DesktopApi,
+  "apiSessionToken" | "initialThemePreferences" | "isElectron"
+>;
+type SameKeys<A, B> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : false
+  : false;
+type Assert<T extends true> = T;
+export type DesktopMethodsMatchTheChannelTable = Assert<
+  SameKeys<DesktopApiMethod, DesktopMethod>
+>;
 
 let developmentApi: DesktopApi | null = null;
 

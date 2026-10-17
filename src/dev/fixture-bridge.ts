@@ -1,58 +1,79 @@
 import { setFixtureDesktopApi } from "@/lib/electron";
 import type { DesktopApi } from "@/types/ide";
+import {
+  createDesktopMethods,
+  DESKTOP_METHODS,
+  type DesktopMethod,
+} from "../../electron/shared/desktop-channels.js";
 
 // This bridge is installed before importing any feature modules. It replaces
-// even a real Electron preload on the fixture page and never calls IPC.
+// even a real Electron preload on the fixture page and never calls IPC: it
+// is the same `window.dream` the preload builds (shared/desktop-channels.js),
+// over a transport that answers the few methods fixtures use.
 const screenshots = new Set<() => void>();
 const calls: { operation: string; value: unknown }[] = [];
 const preferences = { theme: "dark" as "dark" | "light" | "system" };
-const supported = {
-  isElectron: true,
+
+const answers: Partial<
+  Record<DesktopMethod, (payload: Record<string, unknown>) => unknown>
+> = {
+  captureAppScreenshot: async () => ({
+    filePath: "/fixture/screenshot.png",
+    status: "saved",
+  }),
+  getThemePreferences: async () => ({ ...preferences }),
+  setThemePreference: async ({ theme }) => {
+    preferences.theme = theme as typeof preferences.theme;
+    return true;
+  },
+  showScreenshotInFolder: async ({ path }) => {
+    calls.push({ operation: "showScreenshotInFolder", value: path });
+    return true;
+  },
+};
+
+const methodOfChannel = new Map(
+  Object.entries(DESKTOP_METHODS).map(([method, spec]) => [
+    spec.channel,
+    method as DesktopMethod,
+  ]),
+);
+
+// Unsupported desktop methods deliberately throw when called.
+const unavailable = (channel: string): never => {
+  throw new Error(
+    `Desktop operation ${methodOfChannel.get(channel) ?? channel} is unavailable in fixtures.`,
+  );
+};
+
+const fixtureApi = {
   apiSessionToken: "fixture-no-api-access",
   initialThemePreferences: preferences,
-  getThemePreferences: async () => ({ ...preferences }),
-  setThemePreference: async (theme) => {
-    preferences.theme = theme;
-    return true;
-  },
-  captureAppScreenshot: async () => ({
-    status: "saved",
-    filePath: "/fixture/screenshot.png",
+  isElectron: true,
+  ...createDesktopMethods({
+    invoke: (channel, payload) => {
+      const method = methodOfChannel.get(channel);
+      const answer = method ? answers[method] : undefined;
+      return answer
+        ? answer((payload ?? {}) as Record<string, unknown>)
+        : unavailable(channel);
+    },
+    send: (channel) => unavailable(channel),
+    subscribe: (channel, listener) => {
+      if (channel !== DESKTOP_METHODS.onAppScreenshotRequested.channel) {
+        return unavailable(channel);
+      }
+      const onScreenshot = () => listener(undefined);
+      screenshots.add(onScreenshot);
+      return () => {
+        screenshots.delete(onScreenshot);
+      };
+    },
   }),
-  showScreenshotInFolder: async (value) => {
-    calls.push({ operation: "showScreenshotInFolder", value });
-    return true;
-  },
-  onAppScreenshotRequested: (listener) => {
-    screenshots.add(listener);
-    return () => {
-      screenshots.delete(listener);
-    };
-  },
-} satisfies Pick<
-  DesktopApi,
-  | "isElectron"
-  | "apiSessionToken"
-  | "initialThemePreferences"
-  | "getThemePreferences"
-  | "setThemePreference"
-  | "captureAppScreenshot"
-  | "showScreenshotInFolder"
-  | "onAppScreenshotRequested"
->;
+} as unknown as DesktopApi;
 
 export const installFixtureBridge = () => {
-  // Unsupported DesktopApi methods deliberately throw through the proxy.
-  setFixtureDesktopApi(
-    new Proxy(supported as DesktopApi, {
-      get(target, property) {
-        if (Reflect.has(target, property)) return Reflect.get(target, property);
-        throw new Error(
-          `Desktop operation ${String(property)} is unavailable in fixtures.`,
-        );
-      },
-    }),
-  );
+  setFixtureDesktopApi(fixtureApi);
   const originalFetch = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const url = new URL(

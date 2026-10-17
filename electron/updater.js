@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import electronUpdater from "electron-updater";
+import { desktopChannel } from "./shared/desktop-channels.js";
 
 const require = createRequire(import.meta.url);
 const updaterRequire = createRequire(require.resolve("electron-updater"));
@@ -169,7 +170,7 @@ export function initializeAutoUpdater({
       return;
     }
 
-    mainWindow.webContents.send("updates:status", status);
+    mainWindow.webContents.send(desktopChannel("onUpdateStatus"), status);
   };
 
   const checkForUpdates = async ({ manual = false } = {}) => {
@@ -218,9 +219,11 @@ export function initializeAutoUpdater({
     return status;
   };
 
-  ipcMain.handle("updates:get-status", () => status);
-  ipcMain.handle("updates:check", () => checkForUpdates({ manual: true }));
-  ipcMain.handle("updates:install", () => {
+  ipcMain.handle(desktopChannel("getUpdateStatus"), () => status);
+  ipcMain.handle(desktopChannel("checkForUpdates"), () =>
+    checkForUpdates({ manual: true }),
+  );
+  ipcMain.handle(desktopChannel("installUpdate"), () => {
     if (status.state !== "downloaded") {
       return false;
     }

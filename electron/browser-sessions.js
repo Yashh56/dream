@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { dialog, webContents } from "electron";
+import { desktopChannel } from "./shared/desktop-channels.js";
 
 function getSafeScreenshotName(value) {
   const base =
@@ -17,7 +18,7 @@ function getSafeScreenshotName(value) {
 
 export function createBrowserSessionManager({ getMainWindow, sendToRenderer }) {
   function sendBrowserActionError(payload, code, description) {
-    sendToRenderer("browser:error", {
+    sendToRenderer(desktopChannel("onBrowserError"), {
       code,
       description,
       projectId: payload?.projectId,

@@ -1,39 +1,23 @@
 import { create } from "zustand";
 import { getDesktopApi } from "@/lib/electron";
 import type { AccentColor, BaseColor } from "@/types/ide";
+import {
+  ACCENT_COLORS,
+  applyAccentColor as applyDocumentAccentColor,
+  applyBaseColor as applyDocumentBaseColor,
+  BASE_COLORS,
+  DEFAULT_THEME_PREFERENCES,
+  isAccentColor,
+  isBaseColor,
+} from "../../electron/shared/theme-preferences.js";
 
 const UI_STORAGE_KEY = "dream-ui-preferences";
-const DEFAULT_BASE_COLOR: BaseColor = "zinc";
-const DEFAULT_ACCENT_COLOR: AccentColor = "green";
+const DEFAULT_BASE_COLOR = DEFAULT_THEME_PREFERENCES.baseColor;
+const DEFAULT_ACCENT_COLOR = DEFAULT_THEME_PREFERENCES.accentColor;
 
-export const BASE_COLORS = [
-  "neutral",
-  "slate",
-  "gray",
-  "zinc",
-  "stone",
-] as const satisfies readonly BaseColor[];
-
-export const ACCENT_COLORS = [
-  "black-white",
-  "red",
-  "orange",
-  "amber",
-  "yellow",
-  "lime",
-  "green",
-  "emerald",
-  "teal",
-  "cyan",
-  "sky",
-  "blue",
-  "indigo",
-  "violet",
-  "purple",
-  "fuchsia",
-  "pink",
-  "rose",
-] as const satisfies readonly AccentColor[];
+// The color lists and their rules are shared with the main process and the
+// preload (electron/shared/theme-preferences.js).
+export { ACCENT_COLORS, BASE_COLORS };
 
 interface UiState {
   accentColor: AccentColor;
@@ -43,32 +27,16 @@ interface UiState {
   hydrateUi: () => Promise<void>;
 }
 
-const isBaseColor = (value: unknown): value is BaseColor =>
-  typeof value === "string" &&
-  (BASE_COLORS as readonly string[]).includes(value);
-
-const isAccentColor = (value: unknown): value is AccentColor =>
-  typeof value === "string" &&
-  (ACCENT_COLORS as readonly string[]).includes(value);
-
 function applyBaseColor(color: BaseColor) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  if (color === "neutral") {
-    document.documentElement.removeAttribute("data-base-color");
-  } else {
-    document.documentElement.setAttribute("data-base-color", color);
+  if (typeof document !== "undefined") {
+    applyDocumentBaseColor(document.documentElement, color);
   }
 }
 
 function applyAccentColor(color: AccentColor) {
-  if (typeof document === "undefined") {
-    return;
+  if (typeof document !== "undefined") {
+    applyDocumentAccentColor(document.documentElement, color);
   }
-
-  document.documentElement.setAttribute("data-accent-color", color);
 }
 
 function persistUiPreferences(preferences: {

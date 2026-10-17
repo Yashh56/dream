@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/desktop-bridge.md` tracks DSK-01 from the October 16 review: a
+  shared channel table, desktop handlers with injected Electron parts, and
+  the SSH prompt broker, unload guard and theme rules out of `main.js`.
 - `tasks/model-selection-settle.md` tracks MSS-01 from the October 16
   review: models settled by a pure function in settings actions, driven by
   the provider capability rows.

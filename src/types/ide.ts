@@ -425,12 +425,6 @@ export interface BrowserErrorEvent {
   description: string;
 }
 
-export interface BrowserStatusEvent {
-  loading: boolean;
-  projectId: string;
-  tabId?: string;
-}
-
 export interface BrowserTabState {
   canGoBack: boolean;
   canGoForward: boolean;
@@ -438,16 +432,6 @@ export interface BrowserTabState {
   title: string;
   url: string;
   zoomFactor?: number;
-}
-
-export interface BrowserPageStateEvent {
-  canGoBack: boolean;
-  canGoForward: boolean;
-  projectId: string;
-  tabId: string;
-  title: string;
-  url: string;
-  zoomFactor: number;
 }
 
 /** Renderer -> main: a `<webview>` guest is mounted for a browser tab. */
@@ -937,12 +921,6 @@ export interface DesktopApi {
     payload: BrowserCapturePayload,
   ) => Promise<BrowserCaptureResult | null>;
   onBrowserError: (listener: (event: BrowserErrorEvent) => void) => () => void;
-  onBrowserPageState: (
-    listener: (event: BrowserPageStateEvent) => void,
-  ) => () => void;
-  onBrowserStatus: (
-    listener: (event: BrowserStatusEvent) => void,
-  ) => () => void;
   reportBrowserGuestAttached: (payload: BrowserGuestPayload) => void;
   reportBrowserGuestDetached: (payload: BrowserGuestPayload) => void;
   onBrowserCommand: (
