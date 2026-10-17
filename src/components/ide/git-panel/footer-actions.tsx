@@ -1,7 +1,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  ChevronDown,
   Download,
   ExternalLink,
   FolderX,
@@ -9,14 +8,12 @@ import {
   GitMerge,
   GitPullRequest,
   History,
-  type LucideIcon,
   UploadCloud,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +37,6 @@ import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { getPullRequestBranchError } from "../git-actions/branch-utils";
 import { CreatePrDialog } from "../git-actions/create-pr-dialog";
 import { ActionError } from "../git-actions/dialog-layout";
-import { type GitNextStep, getGitNextStep } from "../git-actions/next-step";
 import { getStatusFileCount, hasPushableCommits } from "../git-actions/utils";
 import {
   WorktreeActionDialog,
@@ -52,16 +48,6 @@ import { SourceControlIcon } from "../source-control-icon";
 import { useShowGitPanel } from "./show-git-panel";
 
 type WorktreeProject = ProjectConfig & { worktree: ProjectWorktreeInfo };
-
-const STEP_ICONS: Record<GitNextStep["kind"], LucideIcon> = {
-  commit: GitCommitHorizontal,
-  "create-pr": GitPullRequest,
-  "merge-worktree": GitMerge,
-  publish: UploadCloud,
-  push: UploadCloud,
-  "remove-worktree": FolderX,
-  "view-pr": GitPullRequest,
-};
 
 /** How far the branch is from its upstream, when it is anywhere but level. */
 const UpstreamSync = ({
@@ -101,9 +87,8 @@ const UpstreamSync = ({
 };
 
 /**
- * The chat footer's git controls: how far the branch is from its upstream,
- * the one action that moves it along next (commit, push, open or follow a
- * pull request, finish a worktree) and a menu with the rest.
+ * The chat footer's git controls: how far the branch is from its upstream
+ * and a git menu (commit, push, sync, pull requests, finish a worktree).
  */
 const GitFooterActionsImpl = ({
   active,
@@ -158,11 +143,6 @@ const GitFooterActionsImpl = ({
   const pullRequest = pullRequestContext
     ? pullRequestContext.current
     : undefined;
-  const worktreeBaseBranch = worktreeProject
-    ? (worktreeProject.worktree.baseRef ?? null)
-    : undefined;
-  const nextStep = getGitNextStep({ pullRequest, status, worktreeBaseBranch });
-
   const hasChanges = getStatusFileCount(status) > 0;
   const canPush = hasPushableCommits(status);
   const gitBusy = pushing || syncing !== null;
@@ -252,32 +232,6 @@ const GitFooterActionsImpl = ({
     setWorktreeDialogOpen(true);
   }, []);
 
-  const handleNextStep = useCallback(() => {
-    switch (nextStep?.kind) {
-      case "commit":
-        showGitPanel("changes", { focusCommitMessage: true });
-        return;
-      case "publish":
-      case "push":
-        void handlePush();
-        return;
-      case "create-pr":
-        setCreatePrOpen(true);
-        return;
-      case "view-pr":
-        showGitPanel("pull-request");
-        return;
-      case "merge-worktree":
-        openWorktreeDialog("merge");
-        return;
-      case "remove-worktree":
-        openWorktreeDialog("remove");
-        return;
-      default:
-        return;
-    }
-  }, [handlePush, nextStep?.kind, openWorktreeDialog, showGitPanel]);
-
   const handlePrCompleted = useCallback(
     (url: string | null, shouldOpen: boolean) => {
       bumpProjectGitRefreshKey(projectId);
@@ -291,30 +245,6 @@ const GitFooterActionsImpl = ({
   if (!status?.isRepo) {
     return null;
   }
-
-  const getStepLabel = (step: GitNextStep) => {
-    switch (step.kind) {
-      case "commit":
-        return gitT("commitFiles", { count: step.fileCount });
-      case "publish":
-        return gitT("publishBranch");
-      case "push":
-        return gitT("push");
-      case "create-pr":
-        return gitT("createPr");
-      case "view-pr":
-        return gitT("viewPullRequest", { number: step.pullRequest.number });
-      case "merge-worktree":
-        return step.baseBranch
-          ? worktreeT("mergeInto", { base: step.baseBranch })
-          : worktreeT("merge");
-      case "remove-worktree":
-        return worktreeT("removeWorktree");
-    }
-  };
-
-  const StepIcon = nextStep ? STEP_ICONS[nextStep.kind] : null;
-  const stepBusy = gitBusy;
 
   const menu = (
     <DropdownMenuContent align="end" className="w-56" side="top">
@@ -419,60 +349,26 @@ const GitFooterActionsImpl = ({
         behindCount={status.upstreamBranch ? status.behindCount : 0}
       />
 
-      {nextStep && StepIcon ? (
-        <ButtonGroup className="min-w-0 shrink">
-          <Button
-            className="min-w-0"
-            disabled={stepBusy}
-            onClick={handleNextStep}
-            size="sm"
-            variant="outline"
-          >
-            {stepBusy ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <StepIcon className="size-3.5" />
-            )}
-            <span className="truncate">{getStepLabel(nextStep)}</span>
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  aria-label={gitT("gitActions")}
-                  size="icon-sm"
-                  title={gitT("gitActions")}
-                  variant="outline"
-                />
-              }
-            >
-              <ChevronDown className="size-3.5" />
-            </DropdownMenuTrigger>
-            {menu}
-          </DropdownMenu>
-        </ButtonGroup>
-      ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                aria-label={gitT("gitActions")}
-                className="text-muted-foreground"
-                size="icon-sm"
-                title={gitT("gitActions")}
-                variant="ghost"
-              />
-            }
-          >
-            {gitBusy ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <SourceControlIcon className="size-3.5" />
-            )}
-          </DropdownMenuTrigger>
-          {menu}
-        </DropdownMenu>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              aria-label={gitT("gitActions")}
+              className="text-muted-foreground"
+              size="icon-sm"
+              title={gitT("gitActions")}
+              variant="ghost"
+            />
+          }
+        >
+          {gitBusy ? (
+            <Spinner className="size-3.5" />
+          ) : (
+            <SourceControlIcon className="size-3.5" />
+          )}
+        </DropdownMenuTrigger>
+        {menu}
+      </DropdownMenu>
 
       <Dialog
         open={pullOpen}

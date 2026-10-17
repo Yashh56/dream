@@ -181,6 +181,28 @@ volatile read; remembered facts catch up when they expire.
 A shell process attached to a project (`__project_terminal__:<projectId>:…`)
 or to the browser panel. Not related to a chat's provider session.
 
+## Project resources
+
+What a client reads about one project on one host (git status, branches,
+worktrees, log, a file's diff, pull request context, the file list), held
+in one cache (`src/lib/project-resource-cache.ts`, the kinds in
+`src/components/ide/project-resources.ts`). A resource belongs to a
+**group** (git or files) whose **version** is the store's refresh key; a
+bump makes that project's group stale, and what is being shown is read
+again at once. Reads at one version share, one resource can answer another
+(a summary status from a full one), and a kind can be read only a few at a
+time (`maxConcurrentLoads`: diffs). Panels read them with
+`useProjectResource`; no panel reads a refresh key to decide when to fetch.
+
+## Changes view
+
+What the Git panel's Changes tab shows beyond the git status
+(`src/components/ide/changes/changes-view.ts`): expanded rows, large diffs
+rendered anyway, and files hidden by a revert. A reverted file hides at
+once, shows again if the revert fails, and otherwise waits for the first
+status read after it. Each expanded row reads its diff as a project
+resource.
+
 ## Persisted state
 
 Everything that survives a restart: projects, closed projects, chats and

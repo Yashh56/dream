@@ -28,6 +28,8 @@ import {
 } from "@/lib/project-resource-cache";
 import type {
   ProjectGitBranchesResponse,
+  ProjectGitChangeStatus,
+  ProjectGitDiffResponse,
   ProjectGitLogResponse,
   ProjectGitStatusEntry,
   ProjectGitStatusResponse,
@@ -95,6 +97,25 @@ const specs = {
         hostOptions(key),
       ),
   } satisfies ResourceSpec<ProjectGitWorktreesResponse>,
+  gitDiff: {
+    group: "git",
+    // A panel asks for one per expanded file; each is a git process on the
+    // host, so expanding many files at once reads them a few at a time.
+    maxConcurrentLoads: 4,
+    load: (key) =>
+      apiClient.gitDiff(
+        {
+          filePath: String(key.params?.filePath),
+          previousPath:
+            typeof key.params?.previousPath === "string"
+              ? key.params.previousPath
+              : null,
+          projectPath: key.projectPath,
+          status: key.params?.status as ProjectGitChangeStatus,
+        },
+        hostOptions(key),
+      ),
+  } satisfies ResourceSpec<ProjectGitDiffResponse>,
   gitLog: {
     group: "git",
     load: (key) =>
@@ -217,6 +238,24 @@ export const projectResourceKey = <Kind extends ProjectResourceKind>(
   params,
   projectPath,
 });
+
+/**
+ * The key of one changed file's diff, as the git status reported the file:
+ * its path, its status, and the path it had before a rename or copy.
+ */
+export const gitDiffResourceKey = (
+  projectPath: string,
+  change: Pick<ProjectGitStatusEntry, "path" | "previousPath" | "status">,
+  options: { hostId?: string } = {},
+) =>
+  projectResourceKey("gitDiff", projectPath, {
+    ...options,
+    params: {
+      filePath: change.path,
+      status: change.status,
+      ...(change.previousPath ? { previousPath: change.previousPath } : {}),
+    },
+  });
 
 /** Reads a resource outside React (shared and cached like the hook). */
 export const readProjectResource = <Kind extends ProjectResourceKind>(

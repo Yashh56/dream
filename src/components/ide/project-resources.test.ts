@@ -8,6 +8,7 @@ import type { ProjectGitStatusResponse } from "@/types/ide";
 
 const api = vi.hoisted(() => ({
   gitBranches: vi.fn(),
+  gitDiff: vi.fn(),
   gitStatus: vi.fn(),
   projectFiles: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/lib/api-client", async (importOriginal) => {
 
 const { useIdeStore } = await import("./ide-store");
 const {
+  gitDiffResourceKey,
   narrowGitStatusToSummary,
   projectResourceKey,
   projectResources,
@@ -167,4 +169,42 @@ test("a summary is the full status as the host would have narrowed it", () => {
   assert.equal(summary.upstreamBranch, null);
   assert.equal(summary.aheadCount, 0);
   assert.equal(summary.branch, "main");
+});
+
+test("a file's diff is read as the status named it, once per refresh, and again after a bump", async () => {
+  api.gitDiff.mockImplementation(async ({ filePath }) => ({
+    diff: `diff of ${filePath}`,
+    filePath,
+  }));
+  const renamed = gitDiffResourceKey(PROJECT_PATH, {
+    path: "src/new.ts",
+    previousPath: "src/old.ts",
+    status: "renamed",
+  });
+
+  await Promise.all([
+    readProjectResource(renamed),
+    readProjectResource(renamed),
+  ]);
+  assert.equal(api.gitDiff.mock.calls.length, 1);
+  assert.deepEqual(api.gitDiff.mock.calls[0]?.[0], {
+    filePath: "src/new.ts",
+    previousPath: "src/old.ts",
+    projectPath: PROJECT_PATH,
+    status: "renamed",
+  });
+
+  // A file without a previous path asks with none.
+  await readProjectResource(
+    gitDiffResourceKey(PROJECT_PATH, {
+      path: "src/app.ts",
+      previousPath: null,
+      status: "modified",
+    }),
+  );
+  assert.equal(api.gitDiff.mock.calls[1]?.[0].previousPath, null);
+
+  useIdeStore.getState().bumpProjectGitRefreshKey(projectId);
+  await readProjectResource(renamed);
+  assert.equal(api.gitDiff.mock.calls.length, 3);
 });

@@ -11,7 +11,7 @@ import {
 } from "@/components/ai-elements/code-block";
 import type { ToolPart } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
-import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type {
   ProjectGitChangeStatus,
@@ -29,6 +29,7 @@ import {
 import { IdeDiffViewer } from "../../diff-viewer";
 import { MaterialFileIcon } from "../../material-file-icon";
 import {
+  gitDiffResourceKey,
   projectResourceKey,
   readProjectResource,
 } from "../../project-resources";
@@ -476,15 +477,18 @@ export const WriteFileChip = ({
           matchingChange?.status ?? inferProjectGitStatus(changeStatus);
         const previousPath = matchingChange?.previousPath ?? null;
 
-        const payload = await apiClient.gitDiff(
-          {
-            filePath: matchingChange?.path ?? projectRelativeFilePath,
+        // Shared with the Changes tab, and read a few at a time when a
+        // transcript shows many chips.
+        const payload = await readProjectResource(
+          gitDiffResourceKey(projectPath, {
+            path: matchingChange?.path ?? projectRelativeFilePath,
             previousPath,
-            projectPath,
             status: diffStatus,
-          },
-          { signal: abortController.signal },
+          }),
         );
+        if (abortController.signal.aborted) {
+          return;
+        }
 
         setGitDiff({
           diff: payload.diff,

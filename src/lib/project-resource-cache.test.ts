@@ -223,3 +223,68 @@ test("a failed load is kept as an error and read again after a bump", async () =
 
   assert.deepEqual(await cache.read(key), ["main"]);
 });
+
+test("a kind with a load limit runs that many at once, then the rest in order", async () => {
+  const started: string[] = [];
+  const finish = new Map<string, () => void>();
+  const diff: ResourceSpec<string> = {
+    group: "git",
+    load: (key) => {
+      const path = String(key.params?.path);
+      started.push(path);
+      return new Promise<string>((resolve) => {
+        finish.set(path, () => resolve(path));
+      });
+    },
+    maxConcurrentLoads: 2,
+  };
+  const cache = createProjectResourceCache({
+    getVersion: () => 0,
+    specs: { diff },
+  });
+  const read = (path: string) =>
+    cache.read<string>({ ...SCOPE, kind: "diff", params: { path } });
+
+  const reads = ["a", "b", "c", "d"].map(read);
+  assert.deepEqual(started, ["a", "b"]);
+
+  // A finished load hands its place on once it has settled.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  finish.get("b")?.();
+  await settle();
+  assert.deepEqual(started, ["a", "b", "c"]);
+
+  finish.get("a")?.();
+  await settle();
+  assert.deepEqual(started, ["a", "b", "c", "d"]);
+  finish.get("c")?.();
+  finish.get("d")?.();
+  assert.deepEqual(await Promise.all(reads), ["a", "b", "c", "d"]);
+});
+
+test("a failed load frees its place for the next one", async () => {
+  const started: string[] = [];
+  const diff: ResourceSpec<string> = {
+    group: "git",
+    load: (key) => {
+      const path = String(key.params?.path);
+      started.push(path);
+      return path === "bad"
+        ? Promise.reject(new Error("no diff"))
+        : Promise.resolve(path);
+    },
+    maxConcurrentLoads: 1,
+  };
+  const cache = createProjectResourceCache({
+    getVersion: () => 0,
+    specs: { diff },
+  });
+  const read = (path: string) =>
+    cache.read<string>({ ...SCOPE, kind: "diff", params: { path } });
+
+  const bad = read("bad");
+  const good = read("good");
+  await assert.rejects(bad);
+  assert.equal(await good, "good");
+  assert.deepEqual(started, ["bad", "good"]);
+});

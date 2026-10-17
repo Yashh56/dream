@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiClient, getApiErrorMessage } from "@/lib/api-client";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type { ProjectGitStatusResponse } from "@/types/ide";
+import { GitChangesDeltaSummary } from "../git-actions/summary";
 import { hasPushDestination } from "../git-actions/utils";
 import {
   generateCachedProjectCommitMessage,
@@ -286,8 +287,10 @@ const GitCommitBoxImpl = ({
 
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center gap-2">
+        {hasChanges ? <GitChangesDeltaSummary changes={commitChanges} /> : null}
         <Button
+          className="ml-auto"
           disabled={!canCommit}
           onClick={() => {
             void handleCommit("commit");

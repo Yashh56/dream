@@ -51,6 +51,12 @@ export interface ResourceSpec<Data = unknown> {
    * resources a version bump rarely changes (pull request context).
    */
   minAgeMs?: number;
+  /**
+   * At most this many loads of this kind run at once; the rest wait their
+   * turn, first come first served. For resources a panel may ask for in
+   * bulk (a diff per file) that each cost the host a process.
+   */
+  maxConcurrentLoads?: number;
 }
 
 export interface ResourceSnapshot<Data = unknown> {
@@ -99,8 +105,37 @@ export const createProjectResourceCache = <Kind extends string>({
   specs: Record<Kind, ResourceSpec>;
 }) => {
   const entries = new Map<string, Entry>();
+  /** Per kind with a limit: loads running, and loads waiting to start. */
+  const lanes = new Map<string, { running: number; waiting: (() => void)[] }>();
 
   const specOf = (key: ResourceKey): ResourceSpec => specs[key.kind as Kind];
+
+  /** Starts a load now, or when its kind has room (`maxConcurrentLoads`). */
+  const load = (key: ResourceKey): Promise<unknown> => {
+    const spec = specOf(key);
+    const limit = spec.maxConcurrentLoads;
+    if (!limit) return spec.load(key);
+    let lane = lanes.get(key.kind);
+    if (!lane) {
+      lane = { running: 0, waiting: [] };
+      lanes.set(key.kind, lane);
+    }
+    const kindLane = lane;
+    return new Promise((resolve, reject) => {
+      const start = () => {
+        kindLane.running += 1;
+        spec
+          .load(key)
+          .then(resolve, reject)
+          .finally(() => {
+            kindLane.running -= 1;
+            kindLane.waiting.shift()?.();
+          });
+      };
+      if (kindLane.running < limit) start();
+      else kindLane.waiting.push(start);
+    });
+  };
 
   const currentVersion = (key: ResourceKey) =>
     getVersion(key, specOf(key).group);
@@ -202,9 +237,7 @@ export const createProjectResourceCache = <Kind extends string>({
     if (!force && entry.pending?.version === version) {
       return entry.pending.promise;
     }
-    const promise =
-      (!force && findSource(entry, version)) ||
-      specOf(entry.key).load(entry.key);
+    const promise = (!force && findSource(entry, version)) || load(entry.key);
     const pending = { promise, version };
     entry.pending = pending;
     publish(entry);

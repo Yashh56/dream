@@ -9,7 +9,14 @@ import {
   Undo2,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,21 +30,18 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useProjectGitStatus } from "@/hooks/use-project-git-status";
 import { apiClient } from "@/lib/api-client";
-import type {
-  ProjectGitDiffResponse,
-  ProjectGitStatusEntry,
-} from "@/types/ide";
+import type { ProjectGitStatusEntry } from "@/types/ide";
 import { ChangesRow, type DiffViewMode } from "../changes";
-import { toggleExpandedPathForProject } from "../changes/expansion-state";
+import {
+  changesViewReducer,
+  EMPTY_CHANGES_VIEW,
+  visibleChanges as listVisibleChanges,
+} from "../changes/changes-view";
 import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
+import { gitDiffResourceKey, useProjectResource } from "../project-resources";
 import { GitCommitBox } from "./commit-box";
 import { GitPanelHeaderActions } from "./header-actions";
-
-type DiffLoadRequest = {
-  filePath: string;
-  refreshKey: number;
-};
 
 export interface GitChangesProps {
   /** Whether this tab is the one shown in a visible Git panel. */
@@ -45,20 +49,56 @@ export interface GitChangesProps {
   projectId: string;
 }
 
-const getExpandedPaths = (
-  expandedPathsByProject: Record<string, string[]>,
-  projectId: string | null,
-) => {
-  if (!projectId) {
-    return [];
-  }
+type ChangesRowProps = Parameters<typeof ChangesRow>[0];
 
-  return expandedPathsByProject[projectId] ?? [];
-};
+/**
+ * One changed file, reading its diff (a project resource, shared with any
+ * other reader of it) while it is expanded. `readDiff` says whether to read
+ * it now: only while the tab shows a current status.
+ */
+const ChangeWithDiff = memo(
+  ({
+    change,
+    expanded,
+    hostId,
+    projectPath,
+    readDiff,
+    ...rowProps
+  }: Omit<ChangesRowProps, "diff" | "diffError" | "diffLoading"> & {
+    hostId: string | undefined;
+    readDiff: boolean;
+  }) => {
+    const panelsT = useTranslations("panels");
+    const { data, error, loading } = useProjectResource(
+      expanded ? gitDiffResourceKey(projectPath, change, { hostId }) : null,
+      { active: readDiff },
+    );
+    return (
+      <ChangesRow
+        {...rowProps}
+        change={change}
+        diff={data ?? null}
+        diffError={
+          error === undefined
+            ? null
+            : error instanceof Error && error.message
+              ? error.message
+              : panelsT("failedToLoadDiff")
+        }
+        diffLoading={loading}
+        expanded={expanded}
+        projectPath={projectPath}
+      />
+    );
+  },
+);
+ChangeWithDiff.displayName = "ChangeWithDiff";
 
 /**
  * The Git panel's changes tab: the commit composer over the working tree's
- * changed files, each with its diff, and the actions to revert them.
+ * changed files, each with its diff, and the actions to revert them. Which
+ * rows are expanded and which are hidden by a revert is the changes view
+ * (changes/changes-view.ts); each diff is a project resource.
  */
 const GitChangesImpl = ({
   active,
@@ -70,46 +110,12 @@ const GitChangesImpl = ({
     (s) =>
       s.projects.find((project) => project.id === requestedProjectId) ?? null,
   );
-  const diffLoadInFlightPathsRef = useRef(new Map<string, number>());
-  const diffLoadQueueRef = useRef<DiffLoadRequest[]>([]);
-  const diffLoadQueuedPathsRef = useRef(new Map<string, number>());
-  const diffLoadProcessingRef = useRef(false);
-  const projectDiffErrorsRef = useRef<Record<string, string>>({});
-  const projectDiffLoadingRef = useRef<Record<string, boolean>>({});
-  const projectDiffRefreshKeysRef = useRef<Record<string, number>>({});
-  const projectDiffsRef = useRef<Record<string, ProjectGitDiffResponse>>({});
-  const queuedProjectIdRef = useRef<string | null>(null);
-  const latestGitRefreshKeyRef = useRef(0);
-  const changesByPathRef = useRef(new Map<string, ProjectGitStatusEntry>());
-
-  const [expandedPathsByProject, setExpandedPathsByProject] = useState<
-    Record<string, string[]>
-  >({});
-  const [diffsByProject, setDiffsByProject] = useState<
-    Record<string, Record<string, ProjectGitDiffResponse>>
-  >({});
-  const [diffViewModeByProject, setDiffViewModeByProject] = useState<
-    Record<string, DiffViewMode>
-  >({});
-  const [diffErrorsByProject, setDiffErrorsByProject] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [diffLoadingByProject, setDiffLoadingByProject] = useState<
-    Record<string, Record<string, boolean>>
-  >({});
-  const [diffRefreshKeysByProject, setDiffRefreshKeysByProject] = useState<
-    Record<string, Record<string, number>>
-  >({});
-  const [forcedRenderedDiffsByProject, setForcedRenderedDiffsByProject] =
-    useState<Record<string, string[]>>({});
-  const [revertingPathsByProject, setRevertingPathsByProject] = useState<
-    Record<string, Record<string, boolean>>
-  >({});
-  const [hiddenRevertedPathsByProject, setHiddenRevertedPathsByProject] =
-    useState<Record<string, string[]>>({});
+  const [view, dispatch] = useReducer(changesViewReducer, EMPTY_CHANGES_VIEW);
+  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("unified");
 
   const projectId = activeProject?.id ?? null;
   const projectPath = activeProject?.path ?? null;
+  const hostId = activeProject?.hostId;
   const wordWrapEnabled = activeProject?.ui.changesDiffWordWrap ?? false;
   const gitRefreshKey = useIdeStore((s) =>
     projectId ? (s.projectGitRefreshKeys[projectId] ?? 0) : 0,
@@ -126,57 +132,30 @@ const GitChangesImpl = ({
     statusRefreshToken,
   } = useProjectGitStatus(projectPath, {
     detail: active ? "full" : "summary",
-    hostId: activeProject?.hostId,
+    hostId,
   });
   const hasStaleGitStatus = statusLoading && gitStatus !== null;
   const hasFreshGitStatus = statusRefreshToken === gitRefreshKey;
+  // Diffs are read against a status of the current version, so a diff and
+  // the row describing it agree.
+  const statusCurrent = !statusLoading && hasFreshGitStatus;
 
-  const expandedPaths = getExpandedPaths(expandedPathsByProject, projectId);
-  const changesByPath = useMemo(
-    () => new Map(changes.map((change) => [change.path, change])),
-    [changes],
-  );
-  const diffViewMode = projectId
-    ? (diffViewModeByProject[projectId] ?? "unified")
-    : "unified";
-  const projectDiffs = projectId ? (diffsByProject[projectId] ?? {}) : {};
-  const projectDiffErrors = projectId
-    ? (diffErrorsByProject[projectId] ?? {})
-    : {};
-  const projectDiffLoading = projectId
-    ? (diffLoadingByProject[projectId] ?? {})
-    : {};
-  const projectDiffRefreshKeys = projectId
-    ? (diffRefreshKeysByProject[projectId] ?? {})
-    : {};
-  const forcedRenderedDiffs = projectId
-    ? (forcedRenderedDiffsByProject[projectId] ?? [])
-    : [];
-  const revertingPaths = projectId
-    ? (revertingPathsByProject[projectId] ?? {})
-    : {};
-  const hiddenRevertedPaths = projectId
-    ? (hiddenRevertedPathsByProject[projectId] ?? [])
-    : [];
-  const hiddenRevertedPathSet = useMemo(
-    () => new Set(hiddenRevertedPaths),
-    [hiddenRevertedPaths],
-  );
   const visibleChanges = useMemo(
-    () => changes.filter((change) => !hiddenRevertedPathSet.has(change.path)),
-    [changes, hiddenRevertedPathSet],
+    () => listVisibleChanges(view, changes),
+    [changes, view],
   );
   const visibleChangePaths = useMemo(
     () => visibleChanges.map((change) => change.path),
     [visibleChanges],
   );
   const expandedPathSet = useMemo(
-    () => new Set(expandedPaths),
-    [expandedPaths],
+    () => new Set(view.expanded),
+    [view.expanded],
   );
-  const forcedRenderedDiffPathSet = useMemo(
-    () => new Set(forcedRenderedDiffs),
-    [forcedRenderedDiffs],
+  const forcedPathSet = useMemo(() => new Set(view.forced), [view.forced]);
+  const revertingPathSet = useMemo(
+    () => new Set(view.reverting),
+    [view.reverting],
   );
   const allExpanded =
     visibleChangePaths.length > 0 &&
@@ -184,332 +163,32 @@ const GitChangesImpl = ({
   const expandAllTitle = allExpanded
     ? panelsT("collapseAll")
     : panelsT("expandAll");
-  const shouldDeferDiffLoads = useCallback(() => {
-    if (!projectId) {
-      return true;
-    }
-
-    return statusLoading || !hasFreshGitStatus;
-  }, [hasFreshGitStatus, projectId, statusLoading]);
 
   useEffect(() => {
-    queuedProjectIdRef.current = projectId;
-    diffLoadQueueRef.current = [];
-    diffLoadQueuedPathsRef.current.clear();
-    diffLoadInFlightPathsRef.current.clear();
-    diffLoadProcessingRef.current = false;
-  }, [projectId]);
-
-  useEffect(() => {
-    projectDiffsRef.current = projectDiffs;
-    projectDiffErrorsRef.current = projectDiffErrors;
-    projectDiffLoadingRef.current = projectDiffLoading;
-    projectDiffRefreshKeysRef.current = projectDiffRefreshKeys;
-  }, [
-    projectDiffErrors,
-    projectDiffLoading,
-    projectDiffRefreshKeys,
-    projectDiffs,
-  ]);
-
-  useEffect(() => {
-    latestGitRefreshKeyRef.current = gitRefreshKey;
-  }, [gitRefreshKey]);
-
-  useEffect(() => {
-    changesByPathRef.current = changesByPath;
-  }, [changesByPath]);
-
-  useEffect(() => {
-    if (!projectId || hiddenRevertedPaths.length === 0) {
-      return;
-    }
-
-    const remainingHiddenPaths = hiddenRevertedPaths.filter((path) =>
-      changesByPath.has(path),
-    );
-    if (remainingHiddenPaths.length === hiddenRevertedPaths.length) {
-      return;
-    }
-
-    setHiddenRevertedPathsByProject((current) => ({
-      ...current,
-      [projectId]: remainingHiddenPaths,
-    }));
-  }, [changesByPath, hiddenRevertedPaths, projectId]);
-
-  const processQueuedDiffLoads = useCallback(async () => {
-    if (
-      diffLoadProcessingRef.current ||
-      !projectId ||
-      !projectPath ||
-      diffLoadQueueRef.current.length === 0
-    ) {
-      return;
-    }
-
-    const nextRequest = diffLoadQueueRef.current.shift();
-    if (!nextRequest) {
-      return;
-    }
-    const { filePath: nextFilePath, refreshKey: requestRefreshKey } =
-      nextRequest;
-
-    diffLoadProcessingRef.current = true;
-    if (
-      diffLoadQueuedPathsRef.current.get(nextFilePath) === requestRefreshKey
-    ) {
-      diffLoadQueuedPathsRef.current.delete(nextFilePath);
-    }
-    diffLoadInFlightPathsRef.current.set(nextFilePath, requestRefreshKey);
-
-    try {
-      const change = changesByPathRef.current.get(nextFilePath);
-      if (!change) {
-        throw new Error(panelsT("noDiffOutput"));
-      }
-
-      const payload = await apiClient.gitDiff({
-        filePath: nextFilePath,
-        previousPath: change.previousPath,
-        projectPath,
-        status: change.status,
+    if (statusCurrent && statusRefreshToken !== null) {
+      dispatch({
+        paths: changes.map((change) => change.path),
+        type: "status",
+        version: statusRefreshToken,
       });
-      if (queuedProjectIdRef.current !== projectId) {
-        return;
-      }
-      const currentPayloadRefreshKey =
-        projectDiffRefreshKeysRef.current[nextFilePath] ?? -1;
-      if (
-        requestRefreshKey < latestGitRefreshKeyRef.current ||
-        requestRefreshKey < currentPayloadRefreshKey
-      ) {
-        return;
-      }
-
-      setDiffsByProject((current) => ({
-        ...current,
-        [projectId]: {
-          ...(current[projectId] ?? {}),
-          [nextFilePath]: payload,
-          [payload.filePath]: payload,
-        },
-      }));
-      setDiffRefreshKeysByProject((current) => ({
-        ...current,
-        [projectId]: {
-          ...(current[projectId] ?? {}),
-          [nextFilePath]: requestRefreshKey,
-          [payload.filePath]: requestRefreshKey,
-        },
-      }));
-      setDiffErrorsByProject((current) => {
-        const nextProjectErrors = { ...(current[projectId] ?? {}) };
-        delete nextProjectErrors[nextFilePath];
-
-        return {
-          ...current,
-          [projectId]: nextProjectErrors,
-        };
-      });
-    } catch (error) {
-      if (queuedProjectIdRef.current !== projectId) {
-        return;
-      }
-      if (requestRefreshKey < latestGitRefreshKeyRef.current) {
-        return;
-      }
-
-      setDiffErrorsByProject((current) => ({
-        ...current,
-        [projectId]: {
-          ...(current[projectId] ?? {}),
-          [nextFilePath]:
-            error instanceof Error
-              ? error.message
-              : panelsT("failedToLoadDiff"),
-        },
-      }));
-    } finally {
-      if (
-        diffLoadInFlightPathsRef.current.get(nextFilePath) === requestRefreshKey
-      ) {
-        diffLoadInFlightPathsRef.current.delete(nextFilePath);
-      }
-
-      if (queuedProjectIdRef.current === projectId) {
-        const stillLoading =
-          diffLoadQueuedPathsRef.current.has(nextFilePath) ||
-          diffLoadInFlightPathsRef.current.has(nextFilePath);
-        projectDiffLoadingRef.current = {
-          ...projectDiffLoadingRef.current,
-          [nextFilePath]: stillLoading,
-        };
-        setDiffLoadingByProject((current) => ({
-          ...current,
-          [projectId]: {
-            ...(current[projectId] ?? {}),
-            [nextFilePath]: stillLoading,
-          },
-        }));
-      }
-
-      diffLoadProcessingRef.current = false;
-
-      if (
-        queuedProjectIdRef.current === projectId &&
-        diffLoadQueueRef.current.length > 0
-      ) {
-        void processQueuedDiffLoads();
-      }
     }
-  }, [panelsT, projectId, projectPath]);
+  }, [changes, statusCurrent, statusRefreshToken]);
 
-  const queueDiffLoad = useCallback(
-    (filePath: string, priority = false, force = false) => {
-      if (!projectId || !projectPath) {
-        return;
-      }
-
-      const loadedRefreshKey = projectDiffRefreshKeysRef.current[filePath];
-      const queuedRefreshKey = diffLoadQueuedPathsRef.current.get(filePath);
-      const inFlightRefreshKey = diffLoadInFlightPathsRef.current.get(filePath);
-
-      if (
-        (!force &&
-          loadedRefreshKey === gitRefreshKey &&
-          (projectDiffsRef.current[filePath] ||
-            projectDiffErrorsRef.current[filePath])) ||
-        (typeof queuedRefreshKey === "number" &&
-          queuedRefreshKey >= gitRefreshKey) ||
-        (typeof inFlightRefreshKey === "number" &&
-          inFlightRefreshKey >= gitRefreshKey)
-      ) {
-        return;
-      }
-
-      diffLoadQueueRef.current = diffLoadQueueRef.current.filter(
-        (request) => request.filePath !== filePath,
-      );
-      diffLoadQueuedPathsRef.current.set(filePath, gitRefreshKey);
-      projectDiffLoadingRef.current = {
-        ...projectDiffLoadingRef.current,
-        [filePath]: true,
-      };
-      const request = { filePath, refreshKey: gitRefreshKey };
-      if (priority) {
-        diffLoadQueueRef.current.unshift(request);
-      } else {
-        diffLoadQueueRef.current.push(request);
-      }
-
-      setDiffLoadingByProject((current) => ({
-        ...current,
-        [projectId]: {
-          ...(current[projectId] ?? {}),
-          [filePath]: true,
-        },
-      }));
-
-      void processQueuedDiffLoads();
-    },
-    [gitRefreshKey, processQueuedDiffLoads, projectId, projectPath],
-  );
-
-  useEffect(() => {
-    if (!projectId) {
-      return;
-    }
-
-    if (statusLoading || shouldDeferDiffLoads()) {
-      return;
-    }
-
-    for (const filePath of expandedPaths) {
-      if (changesByPath.has(filePath)) {
-        queueDiffLoad(
-          filePath,
-          false,
-          projectDiffRefreshKeys[filePath] !== gitRefreshKey,
-        );
-      }
-    }
-  }, [
-    changesByPath,
-    expandedPaths,
-    gitRefreshKey,
-    projectId,
-    projectDiffRefreshKeys,
-    queueDiffLoad,
-    shouldDeferDiffLoads,
-    statusLoading,
-  ]);
-
-  useEffect(() => {
-    if (!projectId || statusLoading || shouldDeferDiffLoads()) {
-      return;
-    }
-
-    setExpandedPathsByProject((current) => {
-      const currentPaths = current[projectId] ?? [];
-      const nextPaths = currentPaths.filter((path) => changesByPath.has(path));
-      if (nextPaths.length === currentPaths.length) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [projectId]: nextPaths,
-      };
-    });
-  }, [changesByPath, projectId, shouldDeferDiffLoads, statusLoading]);
-
-  const handleTogglePath = useCallback(
-    (filePath: string) => {
-      if (!projectId) {
-        return;
-      }
-
-      setExpandedPathsByProject((current) =>
-        toggleExpandedPathForProject(current, projectId, filePath),
-      );
-    },
-    [projectId],
-  );
+  const handleTogglePath = useCallback((filePath: string) => {
+    dispatch({ path: filePath, type: "toggle" });
+  }, []);
 
   const handleToggleExpandAll = useCallback(() => {
-    if (!projectId) {
-      return;
-    }
+    dispatch(
+      allExpanded
+        ? { type: "collapse-all" }
+        : { paths: visibleChangePaths, type: "expand-all" },
+    );
+  }, [allExpanded, visibleChangePaths]);
 
-    if (allExpanded) {
-      setExpandedPathsByProject((current) => ({
-        ...current,
-        [projectId]: [],
-      }));
-      return;
-    }
-
-    const nextPaths = visibleChangePaths;
-    setExpandedPathsByProject((current) => ({
-      ...current,
-      [projectId]: nextPaths,
-    }));
-  }, [allExpanded, projectId, visibleChangePaths]);
-
-  const handleSetDiffViewMode = useCallback(
-    (nextMode: DiffViewMode) => {
-      if (!projectId) {
-        return;
-      }
-
-      setDiffViewModeByProject((current) => ({
-        ...current,
-        [projectId]: nextMode,
-      }));
-    },
-    [projectId],
-  );
+  const handleForceRenderDiff = useCallback((filePath: string) => {
+    dispatch({ path: filePath, type: "force-render" });
+  }, []);
 
   const handleRefreshChanges = useCallback(() => {
     if (!projectId) {
@@ -535,196 +214,73 @@ const GitChangesImpl = ({
     [projectId],
   );
 
-  const clearCachedDiffForPath = useCallback(
-    (filePath: string) => {
+  /**
+   * Runs a revert of `paths`: hidden at once, then shown again if it fails,
+   * or left to the next status if it succeeds.
+   */
+  const runRevert = useCallback(
+    async (paths: string[], revert: () => Promise<unknown>) => {
       if (!projectId) {
         return;
       }
-
-      diffLoadQueueRef.current = diffLoadQueueRef.current.filter(
-        (request) => request.filePath !== filePath,
-      );
-      diffLoadQueuedPathsRef.current.delete(filePath);
-      diffLoadInFlightPathsRef.current.delete(filePath);
-
-      setDiffsByProject((current) => {
-        const nextProjectDiffs = { ...(current[projectId] ?? {}) };
-        delete nextProjectDiffs[filePath];
-        return { ...current, [projectId]: nextProjectDiffs };
+      dispatch({ paths, type: "revert-started" });
+      let succeeded = false;
+      try {
+        await revert();
+        succeeded = true;
+      } catch (error) {
+        console.error("[changes] Failed to revert", error);
+      }
+      bumpProjectGitRefreshKey(projectId);
+      dispatch({
+        paths,
+        succeeded,
+        type: "revert-finished",
+        version: useIdeStore.getState().projectGitRefreshKeys[projectId] ?? 0,
       });
-      setDiffErrorsByProject((current) => {
-        const nextProjectErrors = { ...(current[projectId] ?? {}) };
-        delete nextProjectErrors[filePath];
-        return { ...current, [projectId]: nextProjectErrors };
-      });
-      setDiffLoadingByProject((current) => {
-        const nextProjectLoading = { ...(current[projectId] ?? {}) };
-        delete nextProjectLoading[filePath];
-        return { ...current, [projectId]: nextProjectLoading };
-      });
-      setDiffRefreshKeysByProject((current) => {
-        const nextProjectRefreshKeys = { ...(current[projectId] ?? {}) };
-        delete nextProjectRefreshKeys[filePath];
-        return { ...current, [projectId]: nextProjectRefreshKeys };
-      });
-      setForcedRenderedDiffsByProject((current) => ({
-        ...current,
-        [projectId]: (current[projectId] ?? []).filter(
-          (path) => path !== filePath,
-        ),
-      }));
-      setExpandedPathsByProject((current) => ({
-        ...current,
-        [projectId]: (current[projectId] ?? []).filter(
-          (path) => path !== filePath,
-        ),
-      }));
     },
-    [projectId],
+    [bumpProjectGitRefreshKey, projectId],
   );
 
   const handleRevertFile = useCallback(
-    async (change: ProjectGitStatusEntry) => {
+    (change: ProjectGitStatusEntry) => {
       if (
-        !projectId ||
         !projectPath ||
-        revertingPaths[change.path] ||
-        hiddenRevertedPathSet.has(change.path)
+        revertingPathSet.has(change.path) ||
+        change.path in view.hidden
       ) {
         return;
       }
-
-      clearCachedDiffForPath(change.path);
-      setHiddenRevertedPathsByProject((current) => ({
-        ...current,
-        [projectId]: [...new Set([...(current[projectId] ?? []), change.path])],
-      }));
-      setRevertingPathsByProject((current) => ({
-        ...current,
-        [projectId]: {
-          ...(current[projectId] ?? {}),
-          [change.path]: true,
-        },
-      }));
-
-      try {
-        await apiClient.gitRevertFile({
+      void runRevert([change.path], () =>
+        apiClient.gitRevertFile({
           filePath: change.path,
           previousPath: change.previousPath,
           projectPath,
           status: change.status,
-        });
-
-        bumpProjectGitRefreshKey(projectId);
-      } catch (error) {
-        console.error("[changes] Failed to revert file", error);
-        bumpProjectGitRefreshKey(projectId);
-      } finally {
-        setRevertingPathsByProject((current) => {
-          const nextProjectReverting = { ...(current[projectId] ?? {}) };
-          delete nextProjectReverting[change.path];
-          return { ...current, [projectId]: nextProjectReverting };
-        });
-      }
+        }),
+      );
     },
-    [
-      bumpProjectGitRefreshKey,
-      clearCachedDiffForPath,
-      hiddenRevertedPathSet,
-      projectId,
-      projectPath,
-      revertingPaths,
-    ],
+    [projectPath, revertingPathSet, runRevert, view.hidden],
   );
 
-  const handleRevertAllChanges = useCallback(async () => {
+  const handleRevertAllChanges = useCallback(() => {
     if (
-      !projectId ||
       !projectPath ||
       visibleChanges.length === 0 ||
-      Object.keys(revertingPaths).length > 0
+      view.reverting.length > 0
     ) {
       return;
     }
-
-    const paths = visibleChanges.map((change) => change.path);
-    const pathSet = new Set(paths);
-
-    diffLoadQueueRef.current = diffLoadQueueRef.current.filter(
-      (request) => !pathSet.has(request.filePath),
+    void runRevert(visibleChangePaths, () =>
+      apiClient.gitRevertAll({ projectPath }),
     );
-    for (const path of paths) {
-      diffLoadQueuedPathsRef.current.delete(path);
-      diffLoadInFlightPathsRef.current.delete(path);
-    }
-    const clearRecord = <T,>(
-      current: Record<string, Record<string, T>>,
-    ): Record<string, Record<string, T>> => ({ ...current, [projectId]: {} });
-    const clearList = (
-      current: Record<string, string[]>,
-    ): Record<string, string[]> => ({ ...current, [projectId]: [] });
-    setDiffsByProject(clearRecord);
-    setDiffErrorsByProject(clearRecord);
-    setDiffLoadingByProject(clearRecord);
-    setDiffRefreshKeysByProject(clearRecord);
-    setForcedRenderedDiffsByProject(clearList);
-    setExpandedPathsByProject(clearList);
-
-    setHiddenRevertedPathsByProject((current) => ({
-      ...current,
-      [projectId]: [...new Set([...(current[projectId] ?? []), ...paths])],
-    }));
-    setRevertingPathsByProject((current) => ({
-      ...current,
-      [projectId]: Object.fromEntries(paths.map((path) => [path, true])),
-    }));
-
-    try {
-      await apiClient.gitRevertAll({ projectPath });
-    } catch (error) {
-      console.error("[changes] Failed to revert all changes", error);
-      // Show the files again so the user can see what's still changed.
-      setHiddenRevertedPathsByProject((current) => ({
-        ...current,
-        [projectId]: (current[projectId] ?? []).filter(
-          (path) => !pathSet.has(path),
-        ),
-      }));
-    } finally {
-      setRevertingPathsByProject((current) => ({
-        ...current,
-        [projectId]: {},
-      }));
-      bumpProjectGitRefreshKey(projectId);
-    }
   }, [
-    bumpProjectGitRefreshKey,
-    projectId,
     projectPath,
-    revertingPaths,
-    visibleChanges,
+    runRevert,
+    view.reverting.length,
+    visibleChangePaths,
+    visibleChanges.length,
   ]);
-
-  const handleForceRenderDiff = useCallback(
-    (filePath: string) => {
-      if (!projectId) {
-        return;
-      }
-
-      setForcedRenderedDiffsByProject((current) => {
-        const currentPaths = current[projectId] ?? [];
-        if (currentPaths.includes(filePath)) {
-          return current;
-        }
-
-        return {
-          ...current,
-          [projectId]: [...currentPaths, filePath],
-        };
-      });
-    },
-    [projectId],
-  );
 
   if (!activeProject) {
     return null;
@@ -737,7 +293,7 @@ const GitChangesImpl = ({
           value={diffViewMode}
           onValueChange={(value) => {
             if (value === "unified" || value === "split") {
-              handleSetDiffViewMode(value);
+              setDiffViewMode(value);
             }
           }}
         >
@@ -807,8 +363,7 @@ const GitChangesImpl = ({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={
-                visibleChanges.length === 0 ||
-                Object.keys(revertingPaths).length > 0
+                visibleChanges.length === 0 || view.reverting.length > 0
               }
               onClick={handleRevertAllChanges}
               variant="destructive"
@@ -826,7 +381,7 @@ const GitChangesImpl = ({
           projectId={activeProject.id}
           projectPath={activeProject.path}
           status={gitStatus}
-          statusReady={!statusLoading && hasFreshGitStatus}
+          statusReady={statusCurrent}
         />
       ) : null}
 
@@ -862,13 +417,11 @@ const GitChangesImpl = ({
         {!statusError && visibleChanges.length > 0 ? (
           <div className="-mx-3 -mb-3">
             {visibleChanges.map((change) => (
-              <ChangesRow
+              <ChangeWithDiff
                 change={change}
-                diff={projectDiffs[change.path] ?? null}
-                diffError={projectDiffErrors[change.path] ?? null}
-                diffLoading={projectDiffLoading[change.path] ?? false}
                 expanded={expandedPathSet.has(change.path)}
-                forceRenderDiff={forcedRenderedDiffPathSet.has(change.path)}
+                forceRenderDiff={forcedPathSet.has(change.path)}
+                hostId={hostId}
                 key={`${activeProject.id}:${change.path}`}
                 mode={diffViewMode}
                 onForceRenderDiff={() => handleForceRenderDiff(change.path)}
@@ -876,7 +429,8 @@ const GitChangesImpl = ({
                 onToggle={() => handleTogglePath(change.path)}
                 projectId={activeProject.id}
                 projectPath={activeProject.path}
-                reverting={revertingPaths[change.path] ?? false}
+                readDiff={active && statusCurrent}
+                reverting={revertingPathSet.has(change.path)}
                 wordWrap={wordWrapEnabled}
               />
             ))}
@@ -887,5 +441,8 @@ const GitChangesImpl = ({
   );
 };
 
-export const GitChanges = memo(GitChangesImpl);
+/** One instance per project: the view state belongs to its project. */
+export const GitChanges = memo((props: GitChangesProps) => (
+  <GitChangesImpl key={props.projectId} {...props} />
+));
 GitChanges.displayName = "GitChanges";

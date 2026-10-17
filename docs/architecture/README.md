@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/changes-diffs-as-resources.md` tracks CDR-01 from the October 16
+  review: per-file diffs as project resources, the Changes tab's view as
+  one reducer.
 - `tasks/project-file-tree.md` tracks PFT-01 from the October 16 review:
   the file tree's loader, path index and model glue in one tested module.
 - `tasks/right-panel-navigation.md` tracks RPN-01 from the October 16
