@@ -1,8 +1,9 @@
 // Worker thread that owns all persisted-state WRITES.
 //
-// Metadata snapshots and dirty-chat message upserts use synchronous SQLite
-// transactions. Running them here keeps the Electron main thread free even
-// when a completed transcript contains large tool payloads.
+// Workspace change sets, transcript saves, host catalog changes and single
+// config values use synchronous SQLite transactions. Running them here keeps
+// the Electron main thread free even when a completed transcript contains
+// large tool payloads.
 //
 // The parent passes the resolved database path in workerData so persisted-state.js
 // never needs the (unavailable) "electron" module.
@@ -13,10 +14,8 @@ import {
   closePersistedStateDatabase,
   getPersistedStateDatabase,
   loadPersistedState,
-  savePersistedActiveProject,
   savePersistedChatMessages,
   savePersistedConfigValue,
-  savePersistedState,
   savePersistedWorkspaceChanges,
 } from "./persisted-state.js";
 
@@ -26,6 +25,34 @@ if (!parentPort) {
 
 const databasePath =
   typeof workerData?.databasePath === "string" ? workerData.databasePath : null;
+const options = { databasePath };
+
+/**
+ * Every operation the save queue (state-save-queue.js) sends, by message
+ * type. A new write is one row here and one method on the queue.
+ */
+const operations = {
+  // Opens (creating and migrating) the database, so readers on other
+  // threads can open it after.
+  open: () => {
+    getPersistedStateDatabase(options);
+    return true;
+  },
+  "save-config": (payload) => savePersistedConfigValue(payload, options),
+  "save-chat-messages": (payload) =>
+    savePersistedChatMessages(payload, options),
+  "save-workspace-changes": (payload) =>
+    savePersistedWorkspaceChanges(payload, options),
+  "catalog-changes": (payload) =>
+    applyPersistedCatalogChanges(payload, options),
+  // A read, run here so the main thread never waits on SQLite, and in turn
+  // with the writes queued before it.
+  "load-workspace": () => loadPersistedState(options),
+  close: () => {
+    closePersistedStateDatabase();
+    return true;
+  },
+};
 
 parentPort.on("message", (message) => {
   if (!message || typeof message !== "object") {
@@ -33,80 +60,21 @@ parentPort.on("message", (message) => {
   }
 
   const { id, type } = message;
-
-  try {
-    // Opens (creating and migrating) the database, so readers on other
-    // threads can open it after.
-    if (type === "open") {
-      getPersistedStateDatabase({ databasePath });
-      parentPort.postMessage({ id, ok: true, result: true });
-      return;
-    }
-
-    if (type === "save-config") {
-      const result = savePersistedConfigValue(message.payload, {
-        databasePath,
-      });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "save") {
-      const result = savePersistedState(message.state, { databasePath });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "save-active-project") {
-      const result = savePersistedActiveProject(message.payload, {
-        databasePath,
-      });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "save-chat-messages") {
-      const result = savePersistedChatMessages(message.payload, {
-        databasePath,
-      });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "save-workspace-changes") {
-      const result = savePersistedWorkspaceChanges(message.payload, {
-        databasePath,
-      });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    // A read, run here so the main thread never waits on SQLite, and in
-    // turn with the writes queued before it.
-    if (type === "load-workspace") {
-      const result = loadPersistedState({ databasePath });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "catalog-changes") {
-      const result = applyPersistedCatalogChanges(message.payload, {
-        databasePath,
-      });
-      parentPort.postMessage({ id, ok: true, result });
-      return;
-    }
-
-    if (type === "close") {
-      closePersistedStateDatabase();
-      parentPort.postMessage({ id, ok: true, result: true });
-      return;
-    }
-
+  const operation = Object.hasOwn(operations, type) ? operations[type] : null;
+  if (!operation) {
     parentPort.postMessage({
       id,
       ok: false,
       error: `Unknown message type: ${String(type)}`,
+    });
+    return;
+  }
+
+  try {
+    parentPort.postMessage({
+      id,
+      ok: true,
+      result: operation(message.payload),
     });
   } catch (error) {
     parentPort.postMessage({

@@ -16,7 +16,6 @@ import type {
 import {
   closePersistedStateDatabase,
   loadPersistedState,
-  savePersistedState,
   savePersistedWorkspaceChanges,
 } from "../../../../electron/persisted-state.js";
 import { encodePersistedState } from "../../../../electron/shared/persisted-state-codec.js";
@@ -44,8 +43,17 @@ const open = async () => {
     apply: (changes: unknown) =>
       savePersistedWorkspaceChanges(changes, { databasePath }),
     load: () => loadPersistedState({ databasePath }) as PersistedWorkspace,
-    saveWhole: (state: PersistedIdeState) =>
-      savePersistedState(state, { databasePath }),
+    // A whole workspace into whatever is stored, as one change set.
+    saveWhole: (state: PersistedIdeState) => {
+      const changes = takeWorkspaceChanges(
+        recordLoadedWorkspace(
+          loadPersistedState({ databasePath }) as PersistedWorkspace,
+        ),
+        recordWorkspace(state, { rows: true }),
+        LOCAL,
+      );
+      if (changes) savePersistedWorkspaceChanges(changes, { databasePath });
+    },
   };
 };
 

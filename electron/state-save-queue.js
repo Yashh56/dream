@@ -1,11 +1,10 @@
 // Coalescing queue in front of the persisted-state save worker.
 //
-// Workspace saves, transcripts, active-project updates, host catalog
-// changes and single config values (theme, install id) share one worker:
-// it holds the only connection that writes the database, so their order is
-// deterministic and no thread that serves the UI waits on a write lock. Adjacent
-// operations of the same kind are coalesced to the latest value, except
-// catalog changes, which are deltas.
+// Workspace change sets, transcripts, host catalog changes and single config
+// values (theme, install id) share one worker: it holds the only connection
+// that writes the database, so their order is deterministic and no thread
+// that serves the UI waits on a write lock. Adjacent transcript saves of one
+// chat are merged into one; everything else is a delta and runs as sent.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -13,36 +12,6 @@ import { Worker } from "node:worker_threads";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_PATH = path.join(__dirname, "persisted-state-worker.js");
 const FLUSH_TIMEOUT_MS = 5000;
-
-const mergeActiveProjectIntoState = (state, payload) => {
-  if (!state || typeof state !== "object") {
-    return state;
-  }
-
-  const activeProjectId =
-    typeof payload?.activeProjectId === "string"
-      ? payload.activeProjectId
-      : null;
-  const lastUsedAt =
-    typeof payload?.lastUsedAt === "string" ? payload.lastUsedAt : null;
-  const projects =
-    activeProjectId && lastUsedAt && Array.isArray(state.projects)
-      ? state.projects.map((project) =>
-          project?.id === activeProjectId
-            ? {
-                ...project,
-                lastUsedAt,
-              }
-            : project,
-        )
-      : state.projects;
-
-  return {
-    ...state,
-    activeProjectId,
-    projects,
-  };
-};
 
 const saveStartIndex = (payload) =>
   Number.isInteger(payload?.fromIndex) && payload.fromIndex > 0
@@ -84,7 +53,7 @@ export function createStateSaveQueue({ databasePath }) {
   let closed = false;
   /** @type {Map<number, { resolve: (value: unknown) => void, reject: (error: Error) => void }>} */
   const inFlight = new Map();
-  /** @type {Array<{ type: "save", state: any, resolvers: Array<{ resolve: (value: unknown) => void, reject: (error: Error) => void }> } | { type: "save-active-project" | "save-chat-messages", payload: any, resolvers: Array<{ resolve: (value: unknown) => void, reject: (error: Error) => void }> }>} */
+  /** @type {Array<{ type: string, payload: any, resolvers: Array<{ resolve: (value: unknown) => void, reject: (error: Error) => void }> }>} */
   let pending = [];
 
   const failAll = (error) => {
@@ -165,11 +134,11 @@ export function createStateSaveQueue({ databasePath }) {
     });
 
     try {
-      ensureWorker().postMessage(
-        operation.type === "save"
-          ? { id, type: operation.type, state: operation.state }
-          : { id, type: operation.type, payload: operation.payload },
-      );
+      ensureWorker().postMessage({
+        id,
+        type: operation.type,
+        payload: operation.payload,
+      });
     } catch (error) {
       inFlight.delete(id);
       busy = false;
@@ -178,59 +147,6 @@ export function createStateSaveQueue({ databasePath }) {
         resolver.reject(failure);
       }
     }
-  };
-
-  const save = (state) => {
-    if (closed) {
-      return Promise.reject(new Error("State save queue is closed."));
-    }
-
-    return new Promise((resolve, reject) => {
-      const latest = pending.at(-1);
-      if (latest?.type === "save") {
-        // Supersede the queued snapshot; all waiters settle with the result
-        // of the write that actually persists their (newer) data.
-        latest.state = state;
-        latest.resolvers.push({ resolve, reject });
-      } else if (latest?.type === "save-active-project") {
-        pending[pending.length - 1] = {
-          type: "save",
-          state,
-          resolvers: [...latest.resolvers, { resolve, reject }],
-        };
-      } else {
-        pending.push({
-          type: "save",
-          state,
-          resolvers: [{ resolve, reject }],
-        });
-      }
-      drain();
-    });
-  };
-
-  const saveActiveProject = (payload) => {
-    if (closed) {
-      return Promise.reject(new Error("State save queue is closed."));
-    }
-
-    return new Promise((resolve, reject) => {
-      const latest = pending.at(-1);
-      if (latest?.type === "save") {
-        latest.state = mergeActiveProjectIntoState(latest.state, payload);
-        latest.resolvers.push({ resolve, reject });
-      } else if (latest?.type === "save-active-project") {
-        latest.payload = payload;
-        latest.resolvers.push({ resolve, reject });
-      } else {
-        pending.push({
-          type: "save-active-project",
-          payload,
-          resolvers: [{ resolve, reject }],
-        });
-      }
-      drain();
-    });
   };
 
   const saveChatMessages = (payload) => {
@@ -327,8 +243,6 @@ export function createStateSaveQueue({ databasePath }) {
   };
 
   return {
-    save,
-    saveActiveProject,
     saveChatMessages,
     applyCatalogChanges,
     saveWorkspaceChanges,

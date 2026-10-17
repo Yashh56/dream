@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "vitest";
+import {
+  recordLoadedWorkspace,
+  recordWorkspace,
+  takeWorkspaceChanges,
+} from "../src/components/ide/store/workspace-save.ts";
 import {
   applyPersistedCatalogChanges,
   closePersistedStateDatabase,
@@ -10,9 +16,8 @@ import {
   loadPersistedCatalog,
   loadPersistedChatMessages,
   loadPersistedState,
-  savePersistedActiveProject,
   savePersistedChatMessages,
-  savePersistedState as savePersistedWorkspace,
+  savePersistedWorkspaceChanges,
 } from "./persisted-state.js";
 import {
   createChatConfig,
@@ -22,10 +27,25 @@ import {
   mergeWorkspaceAndCatalog,
 } from "./shared/persisted-state-codec.js";
 
-// One database, two owners: the workspace (saved whole) and the local
+/**
+ * Saves `state` as the workspace the way the app does: the renderer's
+ * change set (workspace-save.ts) from what is stored to `state`, applied by
+ * the main process. Hosts in `state.describedHostIds` (the local host by
+ * default) are described completely; others only have their rows moved.
+ */
+const savePersistedWorkspace = (state, options) => {
+  const changes = takeWorkspaceChanges(
+    recordLoadedWorkspace(loadPersistedState(options)),
+    recordWorkspace(state, { rows: true }),
+    new Set(state.describedHostIds ?? ["local"]),
+  );
+  return changes ? savePersistedWorkspaceChanges(changes, options) : true;
+};
+
+// One database, two owners: the workspace (saved as a change set) and the local
 // host's catalog (applied as changes). These save a full state to both and
 // load it back merged, the way the renderer does.
-const savePersistedState = (state, options) => {
+const saveWholeState = (state, options) => {
   savePersistedWorkspace(state, options);
   applyPersistedCatalogChanges(
     {
@@ -82,61 +102,6 @@ const createProject = (id, lastUsedAt) => ({
   worktree: null,
 });
 
-test("active-project persistence updates only selection metadata", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "dream-state-test-"));
-  const databasePath = path.join(directory, "state.db");
-  const firstLastUsedAt = "2026-07-19T12:00:00.000Z";
-  const secondLastUsedAt = "2026-07-19T12:01:00.000Z";
-
-  try {
-    savePersistedState(
-      {
-        activeBrowserTabIdByProject: {},
-        activeProjectId: "project-one",
-        browserTabsByProject: {},
-        chats: [],
-        chatSort: "recent",
-        closedProjects: [],
-        messagesByChatId: {},
-        projects: [
-          createProject("project-one", firstLastUsedAt),
-          createProject("project-two", firstLastUsedAt),
-        ],
-        settings: {},
-      },
-      { databasePath },
-    );
-
-    assert.equal(
-      savePersistedActiveProject(
-        {
-          activeProjectId: "project-two",
-          lastUsedAt: secondLastUsedAt,
-        },
-        { databasePath },
-      ),
-      true,
-    );
-
-    const updated = loadPersistedFullState({ databasePath });
-    assert.equal(updated.activeProjectId, "project-two");
-    assert.equal(updated.projects.length, 2);
-    assert.equal(
-      updated.projects.find((project) => project.id === "project-two")
-        ?.lastUsedAt,
-      secondLastUsedAt,
-    );
-    assert.equal(
-      updated.projects.find((project) => project.id === "project-one")
-        ?.lastUsedAt,
-      firstLastUsedAt,
-    );
-  } finally {
-    closePersistedStateDatabase();
-    await rm(directory, { force: true, recursive: true });
-  }
-});
-
 test("stash items survive a relational persistence round trip", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "dream-state-test-"));
   const databasePath = path.join(directory, "state.db");
@@ -160,7 +125,7 @@ test("stash items survive a relational persistence round trip", async () => {
   ];
 
   try {
-    savePersistedState(
+    saveWholeState(
       {
         activeBrowserTabIdByProject: {},
         activeProjectId: project.id,
@@ -197,7 +162,7 @@ test("chat branch lineage survives a relational persistence round trip", async (
   project.ui.openChatIds = ["branch-chat"];
 
   try {
-    savePersistedState(
+    saveWholeState(
       {
         activeBrowserTabIdByProject: {},
         activeProjectId: project.id,
@@ -262,7 +227,7 @@ test("chat branch lineage survives a relational persistence round trip", async (
       ],
     );
 
-    savePersistedState(
+    saveWholeState(
       {
         activeBrowserTabIdByProject: {},
         activeProjectId: project.id,
@@ -305,7 +270,7 @@ test("MCP servers and project overrides survive a persistence round trip", async
   };
 
   try {
-    savePersistedState(
+    saveWholeState(
       {
         activeBrowserTabIdByProject: {},
         activeProjectId: "project-one",
@@ -385,7 +350,7 @@ test("the retired Tasks workspace loads as Code", async () => {
 
   try {
     for (const appView of ["tasks", "pipeline", "not-a-view"]) {
-      savePersistedState(createState(project, { appView }), { databasePath });
+      saveWholeState(createState(project, { appView }), { databasePath });
       assert.equal(loadPersistedFullState({ databasePath }).appView, "code");
     }
   } finally {
@@ -409,7 +374,7 @@ test("saved prompts survive a relational persistence round trip, app-wide and in
   ];
 
   try {
-    savePersistedState(createState(project, { savedPrompts }), {
+    saveWholeState(createState(project, { savedPrompts }), {
       databasePath,
     });
     assert.deepEqual(
@@ -418,7 +383,7 @@ test("saved prompts survive a relational persistence round trip, app-wide and in
     );
 
     // Saved prompts belong to no project, so they outlive every project.
-    savePersistedState(
+    saveWholeState(
       createState(project, {
         activeProjectId: null,
         projects: [],
@@ -432,18 +397,15 @@ test("saved prompts survive a relational persistence round trip, app-wide and in
     );
 
     // Deleting and reordering is a save of the new list.
-    savePersistedState(
-      createState(project, { savedPrompts: [savedPrompts[1]] }),
-      {
-        databasePath,
-      },
-    );
+    saveWholeState(createState(project, { savedPrompts: [savedPrompts[1]] }), {
+      databasePath,
+    });
     assert.deepEqual(loadPersistedFullState({ databasePath }).savedPrompts, [
       savedPrompts[1],
     ]);
 
     // A state that says nothing about saved prompts leaves them alone.
-    savePersistedState(createState(project), { databasePath });
+    saveWholeState(createState(project), { databasePath });
     assert.deepEqual(loadPersistedFullState({ databasePath }).savedPrompts, [
       savedPrompts[1],
     ]);
@@ -461,7 +423,7 @@ test("saved prompts without a prompt or with a duplicate id are not saved", asyn
   const valid = createStoredSavedPrompt("prompt-one", timestamp);
 
   try {
-    savePersistedState(
+    saveWholeState(
       createState(project, {
         savedPrompts: [
           valid,
@@ -506,7 +468,7 @@ test("task pipeline data carried on projects is dropped on save", async () => {
   };
 
   try {
-    savePersistedState(createState(project), { databasePath });
+    saveWholeState(createState(project), { databasePath });
 
     const loaded = loadPersistedFullState({ databasePath });
     assert.deepEqual(loaded.savedPrompts, []);
@@ -588,7 +550,7 @@ test("a v0.21.0 database drops the task pipeline on upgrade", async () => {
   const project = createProject("project-one", timestamp);
 
   try {
-    savePersistedState(createState(project), { databasePath });
+    saveWholeState(createState(project), { databasePath });
     const database = rewindSavedPromptsMigration(
       databasePath,
       `
@@ -637,7 +599,7 @@ test("saved tasks from a pre-release build carry over as saved prompts", async (
   const timestamp = "2026-09-01T12:00:00.000Z";
 
   try {
-    savePersistedState(createState(createProject("project-one", timestamp)), {
+    saveWholeState(createState(createProject("project-one", timestamp)), {
       databasePath,
     });
     const database = rewindSavedPromptsMigration(
@@ -691,7 +653,7 @@ test("a chat that moves to another project keeps its transcript", async () => {
   };
 
   try {
-    savePersistedState(
+    saveWholeState(
       createState(project, {
         chats: [createStoredChat("moved-chat", worktree.id, timestamp)],
         messagesByChatId: { "moved-chat": [message] },
@@ -702,7 +664,7 @@ test("a chat that moves to another project keeps its transcript", async () => {
 
     // The chat moves and its old project is dropped in the same save. The
     // transcript is not loaded, so this save carries no messages for it.
-    savePersistedState(
+    saveWholeState(
       createState(project, {
         chats: [createStoredChat("moved-chat", project.id, timestamp)],
       }),
@@ -723,7 +685,7 @@ test("a chat that moves to another project keeps its transcript", async () => {
     // The same holds when the chat's new project is first saved in the very
     // save that drops its old one.
     const successor = createProject("project-two", timestamp);
-    savePersistedState(
+    saveWholeState(
       createState(successor, {
         chats: [createStoredChat("moved-chat", successor.id, timestamp)],
         projects: [successor],
@@ -746,7 +708,7 @@ test("new-chat and text generation settings survive a persistence round trip", a
 
   try {
     const project = createProject("project-one", "2026-07-19T12:00:00.000Z");
-    savePersistedState(
+    saveWholeState(
       {
         ...createState(project),
         settings: {
@@ -965,7 +927,7 @@ test("every persisted field survives a relational round trip", async () => {
   ];
 
   try {
-    savePersistedState(
+    saveWholeState(
       {
         activeBrowserTabIdByProject: { [FULL_PROJECT.id]: "tab-two" },
         activeProjectId: FULL_PROJECT.id,
@@ -1186,6 +1148,72 @@ test("a project of a host not loaded this session still gets a row when it has n
     assert.equal(row?.hostId, "devbox");
     assert.equal(row?.status, "open");
     assert.equal(row?.snapshot.name, "App on devbox");
+  } finally {
+    closePersistedStateDatabase();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("a pre-relational database is imported: catalog, transcripts and workspace rows", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "dream-state-test-"));
+  const databasePath = path.join(directory, "state.db");
+  const timestamp = "2026-01-02T12:00:00.000Z";
+  const open = createProject("project-open", timestamp);
+  const closed = createProject("project-closed", timestamp);
+  open.ui.activeChatId = "chat-one";
+  open.ui.openChatIds = ["chat-one"];
+  const savedPrompt = createStoredSavedPrompt("prompt-one", timestamp);
+
+  // What a build before the relational tables left behind: one JSON blob.
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(
+    "CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  );
+  legacy
+    .prepare("INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)")
+    .run(
+      "ide-state",
+      JSON.stringify(
+        createState(open, {
+          chats: [createStoredChat("chat-one", open.id, timestamp)],
+          closedProjects: [closed],
+          messagesByChatId: {
+            "chat-one": [{ id: "message-one", parts: [], role: "user" }],
+          },
+          savedPrompts: [savedPrompt],
+        }),
+      ),
+      timestamp,
+    );
+  legacy.close();
+
+  try {
+    const workspace = loadPersistedState({ databasePath });
+    assert.deepEqual(
+      workspace.workspaceProjects.map((row) => [
+        row.projectId,
+        row.status,
+        row.sortOrder,
+      ]),
+      [
+        [open.id, "open", 0],
+        [closed.id, "closed", 1],
+      ],
+    );
+    assert.equal(workspace.activeProjectId, open.id);
+    assert.deepEqual(
+      workspace.savedPrompts.map((prompt) => prompt.id),
+      [savedPrompt.id],
+    );
+
+    const loaded = loadPersistedFullState({ databasePath });
+    assert.equal(loaded.projects[0]?.ui.activeChatId, "chat-one");
+    assert.deepEqual(
+      loadPersistedChatMessages("chat-one", { databasePath }).map(
+        (message) => message.id,
+      ),
+      ["message-one"],
+    );
   } finally {
     closePersistedStateDatabase();
     await rm(directory, { force: true, recursive: true });

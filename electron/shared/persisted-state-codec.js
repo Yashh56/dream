@@ -1457,6 +1457,45 @@ export const projectToWorkspaceRow = (project, status, sortOrder) => {
 };
 
 /**
+ * The workspace rows a state describes: its open projects, then its closed
+ * ones, numbered in that order, each project once. The one rule for which
+ * row a project gets and where it sits; the renderer diffs these rows
+ * against what is stored (store/workspace-save.ts), and the legacy import
+ * writes them for a database that has none.
+ * @param {{ projects?: unknown, closedProjects?: unknown }} state
+ * @returns {ProjectWorkspaceRow[]}
+ */
+export const workspaceRowsOf = (state) => {
+  /** @type {ProjectWorkspaceRow[]} */
+  const rows = [];
+  const seen = new Set();
+  for (const [status, projects] of /** @type {const} */ ([
+    ["open", state.projects],
+    ["closed", state.closedProjects],
+  ])) {
+    for (const project of Array.isArray(projects) ? projects : []) {
+      if (
+        !isRecord(project) ||
+        typeof project.id !== "string" ||
+        !project.id.trim() ||
+        seen.has(project.id)
+      ) {
+        continue;
+      }
+      seen.add(project.id);
+      rows.push(
+        projectToWorkspaceRow(
+          /** @type {ProjectConfig} */ (/** @type {unknown} */ (project)),
+          status,
+          rows.length,
+        ),
+      );
+    }
+  }
+  return rows;
+};
+
+/**
  * The raw project a catalog row describes, for decodePersistedState. The
  * workspace fields (`ui`, `lastUsedAt`) come from the client's workspace
  * row when there is one; rows written before the split carry them in

@@ -24,9 +24,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import {
   applyCatalogChanges,
   loadCatalog,
-  loadChat,
   loadChatMessages,
-  resolveProjectPath,
   saveChatMessages,
   searchChatMessages,
 } from "./host/catalog-store.js";
@@ -34,10 +32,9 @@ import { requireHostDataDirectory } from "./host/host-paths.js";
 import {
   decodePersistedState,
   encodePersistedState,
-  LOCAL_HOST_ID,
-  projectToWorkspaceRow,
   stateFromConfig,
   stateToConfig,
+  workspaceRowsOf,
 } from "./shared/persisted-state-codec.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -414,98 +411,6 @@ function saveWorkspaceChangesToRelationalDatabase(database, changes) {
 }
 
 /**
- * Saves the client's workspace from the renderer's (encoded) state: config,
- * saved prompts, and a workspace row per open and closed project, on
- * whichever host. The catalog rows are the hosts' and are not touched.
- *
- * `state.describedHostIds` are the hosts whose projects the state describes
- * completely (by default the local host). A project of another host (an SSH
- * host not loaded this session, shown from its snapshot) only moves: its
- * status and place are saved, while its UI and snapshot stay as last saved
- * by a window that had its chats. One with no row yet gets a whole one.
- */
-function saveStateToRelationalDatabase(database, state) {
-  if (!isRecord(state)) {
-    return false;
-  }
-
-  const now = new Date().toISOString();
-
-  return runInTransaction(database, () => {
-    for (const [key, value] of Object.entries(stateToConfig(state))) {
-      writeConfig(database, key, value, now);
-    }
-
-    // A state that says nothing about saved prompts leaves them alone.
-    if (Array.isArray(state.savedPrompts)) {
-      saveSavedPromptsToRelationalDatabase(database, state.savedPrompts, now);
-    }
-
-    const describedHostIds = Array.isArray(state.describedHostIds)
-      ? state.describedHostIds.filter((id) => typeof id === "string")
-      : [LOCAL_HOST_ID];
-    const described = new Set(describedHostIds);
-
-    const rows = [];
-    const seen = new Set();
-    for (const [status, projects] of [
-      ["open", Array.isArray(state.projects) ? state.projects : []],
-      [
-        "closed",
-        Array.isArray(state.closedProjects) ? state.closedProjects : [],
-      ],
-    ]) {
-      for (const project of projects) {
-        if (
-          !isRecord(project) ||
-          typeof project.id !== "string" ||
-          !project.id.trim() ||
-          seen.has(project.id)
-        ) {
-          continue;
-        }
-        seen.add(project.id);
-        rows.push(projectToWorkspaceRow(project, status, rows.length));
-      }
-    }
-
-    const { move, upsert } = workspaceRowWriters(database, now);
-    for (const row of rows) {
-      if (described.has(row.hostId)) upsert(row);
-      else move(row);
-    }
-
-    // This save describes the projects of these hosts completely; a host it
-    // says nothing about (one not connected this session) keeps its rows.
-    for (const hostId of describedHostIds) {
-      const kept = rows
-        .filter((row) => row.hostId === hostId)
-        .map((row) => row.projectId);
-      const keptClause =
-        kept.length > 0
-          ? ` AND project_id NOT IN (${kept.map(() => "?").join(", ")})`
-          : "";
-      database
-        .prepare(
-          `DELETE FROM workspace_projects WHERE host_id = ?${keptClause}`,
-        )
-        .run(hostId, ...kept);
-    }
-
-    database
-      .prepare(
-        `
-          INSERT INTO schema_migrations (version, applied_at)
-          VALUES (?, ?)
-          ON CONFLICT(version) DO NOTHING
-        `,
-      )
-      .run(RELATIONAL_SCHEMA_VERSION, now);
-    return true;
-  });
-}
-
-/**
  * The client's workspace: the top-level state from config, saved prompts,
  * and every workspace row (of every host). The renderer merges it with each
  * host's catalog (codec mergeWorkspaceAndCatalog).
@@ -680,12 +585,15 @@ function importLegacyState(database, legacyState) {
       saveChatMessages(database, chatId, messages, now);
     }
   });
-  saveStateToRelationalDatabase(
-    database,
-    Array.isArray(legacyState.savedPrompts)
-      ? encoded
-      : { ...encoded, savedPrompts: undefined },
-  );
+  // The workspace goes in as one change set over an empty workspace, the
+  // same writer and row rule every later save uses.
+  saveWorkspaceChangesToRelationalDatabase(database, {
+    config: stateToConfig(encoded),
+    ...(Array.isArray(legacyState.savedPrompts)
+      ? { savedPrompts: encoded.savedPrompts }
+      : {}),
+    upsertRows: workspaceRowsOf(encoded),
+  });
 }
 
 function getStateDatabase(databasePath = resolveStateDatabasePath()) {
@@ -777,11 +685,6 @@ export function savePersistedConfigValue(
   return true;
 }
 
-export function savePersistedState(state, { databasePath } = {}) {
-  const database = getStateDatabase(databasePath);
-  return saveStateToRelationalDatabase(database, state);
-}
-
 /** Saves what changed in the workspace; see the function it calls. */
 export function savePersistedWorkspaceChanges(changes, { databasePath } = {}) {
   const database = getStateDatabase(databasePath);
@@ -805,11 +708,6 @@ export function loadPersistedCatalog({ databasePath } = {}) {
   return loadCatalog(getStateDatabase(databasePath));
 }
 
-/** One catalog chat, raw, or null. */
-export function loadPersistedChat(chatId, { databasePath } = {}) {
-  return loadChat(getStateDatabase(databasePath), chatId);
-}
-
 /** Applies one catalog change set; see host/catalog-store.js. */
 export function applyPersistedCatalogChanges(changes, { databasePath } = {}) {
   const database = getStateDatabase(databasePath);
@@ -820,42 +718,6 @@ export function applyPersistedCatalogChanges(changes, { databasePath } = {}) {
       new Date().toISOString(),
     ),
   );
-}
-
-export function savePersistedActiveProject(
-  { activeProjectId, lastUsedAt } = {},
-  { databasePath } = {},
-) {
-  const database = getStateDatabase(databasePath);
-  const normalizedActiveProjectId =
-    typeof activeProjectId === "string" && activeProjectId.trim()
-      ? activeProjectId.trim()
-      : null;
-  const normalizedLastUsedAt =
-    typeof lastUsedAt === "string" && Number.isFinite(Date.parse(lastUsedAt))
-      ? lastUsedAt
-      : null;
-  const now = new Date().toISOString();
-
-  return runInTransaction(database, () => {
-    writeConfig(database, "activeProjectId", normalizedActiveProjectId, now);
-
-    if (!normalizedActiveProjectId || !normalizedLastUsedAt) {
-      return true;
-    }
-
-    database
-      .prepare(
-        `
-          UPDATE workspace_projects
-          SET last_used_at = ?, updated_at = ?
-          WHERE host_id = ? AND project_id = ?
-        `,
-      )
-      .run(normalizedLastUsedAt, now, LOCAL_HOST_ID, normalizedActiveProjectId);
-
-    return true;
-  });
 }
 
 /** The client's workspace (see loadWorkspaceFromRelationalDatabase). */
@@ -946,11 +808,6 @@ export const themePreferenceConfigValue = (preferences) =>
   isRecord(preferences)
     ? { key: THEME_PREFERENCES_CONFIG_KEY, value: preferences }
     : null;
-
-/** See resolveProjectPath in host/catalog-store.js. */
-export function resolvePersistedProjectPath(ids = {}, { databasePath } = {}) {
-  return resolveProjectPath(getStateDatabase(databasePath), ids);
-}
 
 export function closePersistedStateDatabase() {
   if (!stateDatabase) {

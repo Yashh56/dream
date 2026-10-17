@@ -249,7 +249,10 @@ prompts and workspace rows that differ, to the main process, and, when
 projects or chats changed, the catalog changes to each host. The main
 process's save worker writes them and also answers the workspace load, in
 order after the writes queued before it, so the main thread never touches
-SQLite for the workspace. The theme and install id are written by the same
+SQLite for the workspace. A change set is the only way the workspace is
+written; the import of a pre-relational database writes one too. Which
+rows a state has, and their order, is the codec's `workspaceRowsOf`; which
+of them to send (whole, moved, removed) is `workspace-save.ts` alone. The theme and install id are written by the same
 worker; Electron main only reads them, once, at startup, on a connection
 that never migrates.
 

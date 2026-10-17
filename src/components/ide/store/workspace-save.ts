@@ -3,10 +3,12 @@
  * last stored (config rows, saved prompts, a row per project) against what
  * the encoded state says now, and the difference as `WorkspaceChanges`.
  *
- * The rows follow the main process's rules (persisted-state.js): a row of
+ * Which rows a state has, and in what order, is the codec's rule
+ * (`workspaceRowsOf`). This module decides what to send for them: a row of
  * a host this window describes (has loaded) is written whole and removed
  * when its project goes; a row of a host it does not describe only moves,
- * and is never removed from here.
+ * and is never removed from here. It is the only workspace save policy;
+ * the main process applies the result (persisted-state.js).
  *
  * Pure: the store's save scheduler calls it (store/save-scheduler.ts).
  */
@@ -17,8 +19,8 @@ import type {
   WorkspaceChanges,
 } from "@/types/ide";
 import {
-  projectToWorkspaceRow,
   stateToConfig,
+  workspaceRowsOf,
 } from "../../../../electron/shared/persisted-state-codec.js";
 
 /** What one save (or the load) holds, comparable value by value. */
@@ -54,29 +56,6 @@ const recordConfig = (config: Record<string, unknown>) =>
     ]),
   );
 
-/** The rows `state` describes, in the main process's order and numbering. */
-const workspaceRows = (state: PersistedIdeState) => {
-  const rows: PersistedWorkspaceProject[] = [];
-  const seen = new Set<string>();
-  for (const [status, projects] of [
-    ["open", state.projects],
-    ["closed", state.closedProjects],
-  ] as const) {
-    for (const project of projects) {
-      if (!project?.id?.trim() || seen.has(project.id)) continue;
-      seen.add(project.id);
-      rows.push(
-        projectToWorkspaceRow(
-          project,
-          status,
-          rows.length,
-        ) as PersistedWorkspaceProject,
-      );
-    }
-  }
-  return rows;
-};
-
 /** What the main process loaded: the baseline the first save is against. */
 export const recordLoadedWorkspace = (
   loaded: PersistedWorkspace,
@@ -103,7 +82,13 @@ export const recordWorkspace = (
   Pick<WorkspaceRecord, "config" | "savedPrompts"> => ({
   config: recordConfig(stateToConfig(encoded)),
   savedPrompts: JSON.stringify(encoded.savedPrompts),
-  ...(rows ? { rows: recordRows(workspaceRows(encoded)) } : {}),
+  ...(rows
+    ? {
+        rows: recordRows(
+          workspaceRowsOf(encoded) as PersistedWorkspaceProject[],
+        ),
+      }
+    : {}),
 });
 
 /**
