@@ -175,12 +175,8 @@ export interface IdeState {
   settingsOpen: boolean;
   settingsSection: SettingsSection;
   modelSearchQuery: string;
-  providerModels: {
-    openai: ProviderModelState;
-    anthropic: ProviderModelState;
-    opencode: ProviderModelState;
-    cursor: ProviderModelState;
-    grok: ProviderModelState;
+  /** What each provider's CLI lists, and when it was last fetched. */
+  providerModels: Record<AiProvider, ProviderModelState> & {
     fetchedAt: string | null;
   };
   /** Newest published release of each installed agent CLI. */

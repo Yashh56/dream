@@ -24,11 +24,11 @@ import { normalizeChatPermissionMode } from "./chat-permissions.js";
 import { normalizeLocalePreference } from "./locales.js";
 import {
   ALL_PROVIDERS,
-  dedupeModels,
+  decodeSelectedModels,
   getDefaultModelSelection,
   getPreferredDefaultModel,
-  normalizeClaudeCodeModelId,
   normalizeDefaultModelSettings,
+  normalizeModelIdFor,
   normalizeModelSpeed,
   normalizeProvider,
   normalizeReasoningEffort,
@@ -68,7 +68,6 @@ export const DEFAULT_APP_VIEW = "code";
 export const DEFAULT_SETTINGS = {
   archiveChatsAfterDays: 30,
   autoCompactContext: true,
-  anthropicSelectedModels: [],
   defaultGitGenerationModel: "",
   defaultGitGenerationModelSpeed: "standard",
   // Commit messages and PR text are short; low effort keeps them fast.
@@ -83,16 +82,14 @@ export const DEFAULT_SETTINGS = {
   chatNotificationSound: false,
   expandToolCalls: false,
   groupToolCalls: false,
-  cursorSelectedModels: [],
-  grokSelectedModels: [],
   keybindings: {},
   locale: "en",
   mcpServers: [],
-  openAiSelectedModels: [],
-  openCodeSelectedModels: [],
   showReasoningSummaries: true,
   shellPath: "",
   sshHosts: [],
+  // Every provider's picked models: none.
+  ...decodeSelectedModels({}),
 };
 
 /** @type {PanelVisibility} */
@@ -186,13 +183,6 @@ const asTimestamp = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed && Number.isFinite(Date.parse(trimmed)) ? trimmed : null;
 };
-
-/**
- * @param {unknown} value
- * @returns {string[]}
- */
-const asStringArray = (value) =>
-  Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 
 /**
  * Unique, trimmed, non-empty strings in first-seen order.
@@ -669,10 +659,7 @@ const normalizeProject = (value, settings) => {
   const path = asString(value.path);
   const provider = normalizeProvider(value.provider);
   const rawModel = asString(value.model);
-  const model =
-    provider === "anthropic"
-      ? normalizeClaudeCodeModelId(rawModel)
-      : rawModel.trim();
+  const model = normalizeModelIdFor(provider, rawModel.trim());
 
   return {
     id,
@@ -718,10 +705,7 @@ const normalizeChat = (value, projectsById, legacyPermissionMode) => {
     asNullableString(value.createdAt) ?? new Date().toISOString();
   const provider = normalizeProvider(value.provider);
   const rawModel = asString(value.model, project.model);
-  const model =
-    provider === "anthropic"
-      ? normalizeClaudeCodeModelId(rawModel)
-      : rawModel.trim();
+  const model = normalizeModelIdFor(provider, rawModel.trim());
   const branchedFrom = asRecord(value.branchedFrom);
   const branchChatId = asNullableString(branchedFrom.chatId);
   const branchMessageId = asNullableString(branchedFrom.messageId);
@@ -864,11 +848,7 @@ const normalizeSettings = (value) => {
       raw.autoCompactContext,
       DEFAULT_SETTINGS.autoCompactContext,
     ),
-    anthropicSelectedModels: dedupeModels(
-      asStringArray(raw.anthropicSelectedModels).map(
-        normalizeClaudeCodeModelId,
-      ),
-    ),
+    ...decodeSelectedModels(raw),
     defaultModel: asString(raw.defaultModel),
     defaultGitGenerationModel: asString(raw.defaultGitGenerationModel),
     defaultGitGenerationModelSpeed: normalizeModelSpeed(
@@ -918,15 +898,9 @@ const normalizeSettings = (value) => {
       raw.groupToolCalls,
       DEFAULT_SETTINGS.groupToolCalls,
     ),
-    cursorSelectedModels: dedupeModels(asStringArray(raw.cursorSelectedModels)),
-    grokSelectedModels: dedupeModels(asStringArray(raw.grokSelectedModels)),
     keybindings: normalizeKeybindings(raw.keybindings),
     locale: normalizeLocalePreference(raw.locale),
     mcpServers: normalizeMcpServerList(raw.mcpServers),
-    openAiSelectedModels: dedupeModels(asStringArray(raw.openAiSelectedModels)),
-    openCodeSelectedModels: dedupeModels(
-      asStringArray(raw.openCodeSelectedModels),
-    ),
     showReasoningSummaries: asBoolean(
       raw.showReasoningSummaries,
       DEFAULT_SETTINGS.showReasoningSummaries,

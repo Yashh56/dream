@@ -49,14 +49,12 @@ export interface ProviderModelFetchResult {
   version?: string | null;
 }
 
-export interface ProviderModelsResponse {
+/** What a model fetch answers: each provider it fetched, and when. */
+export type ProviderModelsResponse = Partial<
+  Record<AiProvider, ProviderModelFetchResult>
+> & {
   fetchedAt: string;
-  openai?: ProviderModelFetchResult;
-  anthropic?: ProviderModelFetchResult;
-  opencode?: ProviderModelFetchResult;
-  cursor?: ProviderModelFetchResult;
-  grok?: ProviderModelFetchResult;
-}
+};
 
 export type CliUpgradeResult =
   /** The updater ran and the CLI now reports the latest version. */

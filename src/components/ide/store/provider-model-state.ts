@@ -1,59 +1,59 @@
+// What the store knows of each provider's models: the models its CLI lists
+// (fetched, loading, failed), and the settings a fetch reconciles. Every
+// function runs over all providers (provider-capabilities.js's ids), so
+// adding a provider adds no line here; only how a provider's listed models
+// are shown (sorted, filtered) is said per provider, in MODEL_OPTION_VIEWS.
 import {
-  normalizeClaudeCodeModelId,
+  ALL_PROVIDERS,
+  getSelectedModels,
   normalizeDefaultModelSettings,
+  withSelectedModels,
 } from "@/lib/ide-defaults";
 import {
   dedupeModelOptions,
   isVisibleOpenAiModelOption,
+  type ModelOption,
   sortCursorModelOptions,
 } from "@/lib/models";
 import type { AiProvider, AppSettings } from "@/types/ide";
-import { dedupeModels, type ProviderModelsResponse } from "../ide-types";
+import type { ProviderModelState, ProviderModelsResponse } from "../ide-types";
 import type { IdeState } from "./ide-store-types";
 
-export const DEFAULT_PROVIDER_MODELS: IdeState["providerModels"] = {
-  anthropic: {
-    error: null,
-    installed: false,
-    loading: false,
-    models: [],
-    source: "unavailable",
-    version: null,
-  },
-  cursor: {
-    error: null,
-    installed: false,
-    loading: false,
-    models: [],
-    source: "unavailable",
-    version: null,
-  },
-  grok: {
-    error: null,
-    installed: false,
-    loading: false,
-    models: [],
-    source: "unavailable",
-    version: null,
-  },
-  fetchedAt: null,
-  openai: {
-    error: null,
-    installed: false,
-    loading: false,
-    models: [],
-    source: "unavailable",
-    version: null,
-  },
-  opencode: {
-    error: null,
-    installed: false,
-    loading: false,
-    models: [],
-    source: "unavailable",
-    version: null,
-  },
+type ProviderModels = IdeState["providerModels"];
+
+/** How a provider's listed models are shown, where not as listed. */
+const MODEL_OPTION_VIEWS: Partial<
+  Record<AiProvider, (options: ModelOption[]) => ModelOption[]>
+> = {
+  cursor: sortCursorModelOptions,
+  openai: (options) => options.filter(isVisibleOpenAiModelOption),
 };
+
+/** `update` applied to each provider's state, `fetchedAt` kept. */
+const mapProviders = (
+  providerModels: Pick<ProviderModels, "fetchedAt">,
+  update: (provider: AiProvider) => ProviderModelState,
+): ProviderModels =>
+  ({
+    ...Object.fromEntries(
+      ALL_PROVIDERS.map((provider) => [provider, update(provider)]),
+    ),
+    fetchedAt: providerModels.fetchedAt,
+  }) as ProviderModels;
+
+const EMPTY_PROVIDER_MODELS: ProviderModelState = {
+  error: null,
+  installed: false,
+  loading: false,
+  models: [],
+  source: "unavailable",
+  version: null,
+};
+
+export const DEFAULT_PROVIDER_MODELS: ProviderModels = mapProviders(
+  { fetchedAt: null },
+  () => EMPTY_PROVIDER_MODELS,
+);
 
 export const toggleProviderModelInSettings = (
   settings: AppSettings,
@@ -61,352 +61,92 @@ export const toggleProviderModelInSettings = (
   model: string,
   enabled?: boolean,
 ): AppSettings => {
-  const updateModels = (models: string[]) => {
-    const current = dedupeModels(models);
-    const shouldEnable = enabled ?? !current.includes(model);
+  const current = getSelectedModels(provider, settings);
+  const shouldEnable = enabled ?? !current.includes(model);
+  const next = shouldEnable
+    ? current.includes(model)
+      ? current
+      : [...current, model]
+    : current.filter((value) => value !== model);
 
-    if (shouldEnable) {
-      return current.includes(model) ? current : [...current, model];
-    }
-
-    return current.filter((value) => value !== model);
-  };
-
-  if (provider === "openai") {
-    const openAiSelectedModels = updateModels(settings.openAiSelectedModels);
-    const nextSettings = {
-      ...settings,
-      openAiSelectedModels,
-    };
-    return normalizeDefaultModelSettings(nextSettings);
-  }
-
-  if (provider === "opencode") {
-    const openCodeSelectedModels = updateModels(
-      settings.openCodeSelectedModels,
-    );
-    const nextSettings = {
-      ...settings,
-      openCodeSelectedModels,
-    };
-    return normalizeDefaultModelSettings(nextSettings);
-  }
-
-  if (provider === "cursor") {
-    const cursorSelectedModels = updateModels(settings.cursorSelectedModels);
-    const nextSettings = {
-      ...settings,
-      cursorSelectedModels,
-    };
-    return normalizeDefaultModelSettings(nextSettings);
-  }
-
-  if (provider === "grok") {
-    const grokSelectedModels = updateModels(settings.grokSelectedModels);
-    return normalizeDefaultModelSettings({
-      ...settings,
-      grokSelectedModels,
-    });
-  }
-
-  const anthropicSelectedModels = updateModels(
-    settings.anthropicSelectedModels,
+  return normalizeDefaultModelSettings(
+    withSelectedModels(settings, provider, next),
   );
-  const nextSettings = {
-    ...settings,
-    anthropicSelectedModels,
-  };
-  return normalizeDefaultModelSettings(nextSettings);
 };
 
+/** One provider (or, without one, every provider) starts loading. */
 export const markProviderModelsLoading = (
-  providerModels: IdeState["providerModels"],
+  providerModels: ProviderModels,
   provider?: AiProvider,
-): IdeState["providerModels"] => ({
-  ...providerModels,
-  anthropic: {
-    ...providerModels.anthropic,
-    error:
-      provider === undefined || provider === "anthropic"
-        ? null
-        : providerModels.anthropic.error,
-    loading:
-      provider === undefined
-        ? true
-        : provider === "anthropic"
-          ? true
-          : providerModels.anthropic.loading,
-  },
-  openai: {
-    ...providerModels.openai,
-    error:
-      provider === undefined || provider === "openai"
-        ? null
-        : providerModels.openai.error,
-    loading:
-      provider === undefined
-        ? true
-        : provider === "openai"
-          ? true
-          : providerModels.openai.loading,
-  },
-  opencode: {
-    ...providerModels.opencode,
-    error:
-      provider === undefined || provider === "opencode"
-        ? null
-        : providerModels.opencode.error,
-    loading:
-      provider === undefined
-        ? true
-        : provider === "opencode"
-          ? true
-          : providerModels.opencode.loading,
-  },
-  cursor: {
-    ...providerModels.cursor,
-    error:
-      provider === undefined || provider === "cursor"
-        ? null
-        : providerModels.cursor.error,
-    loading:
-      provider === undefined
-        ? true
-        : provider === "cursor"
-          ? true
-          : providerModels.cursor.loading,
-  },
-  grok: {
-    ...providerModels.grok,
-    error:
-      provider === undefined || provider === "grok"
-        ? null
-        : providerModels.grok.error,
-    loading:
-      provider === undefined
-        ? true
-        : provider === "grok"
-          ? true
-          : providerModels.grok.loading,
-  },
-});
+): ProviderModels =>
+  mapProviders(providerModels, (item) =>
+    provider === undefined || provider === item
+      ? { ...providerModels[item], error: null, loading: true }
+      : providerModels[item],
+  );
 
 export const getProviderModelsFromResponse = (
   payload: ProviderModelsResponse,
-  previous: IdeState["providerModels"] = DEFAULT_PROVIDER_MODELS,
-): IdeState["providerModels"] => {
-  const anthropic = payload.anthropic
-    ? {
-        error: payload.anthropic.error ?? null,
-        installed: payload.anthropic.installed,
+  previous: ProviderModels = DEFAULT_PROVIDER_MODELS,
+): ProviderModels =>
+  mapProviders(
+    { fetchedAt: payload.fetchedAt ?? new Date().toISOString() },
+    (provider) => {
+      const result = payload[provider];
+      if (!result) return previous[provider];
+      const options = dedupeModelOptions(result.models);
+      return {
+        error: result.error ?? null,
+        installed: result.installed,
         loading: false,
-        models: dedupeModelOptions(payload.anthropic.models),
-        source: payload.anthropic.source,
-        version: payload.anthropic.version ?? null,
-      }
-    : previous.anthropic;
-  const openai = payload.openai
-    ? {
-        error: payload.openai.error ?? null,
-        installed: payload.openai.installed,
-        loading: false,
-        models: dedupeModelOptions(payload.openai.models).filter(
-          isVisibleOpenAiModelOption,
-        ),
-        source: payload.openai.source,
-        version: payload.openai.version ?? null,
-      }
-    : previous.openai;
-  const opencode = payload.opencode
-    ? {
-        error: payload.opencode.error ?? null,
-        installed: payload.opencode.installed,
-        loading: false,
-        models: dedupeModelOptions(payload.opencode.models),
-        source: payload.opencode.source,
-        version: payload.opencode.version ?? null,
-      }
-    : previous.opencode;
-  const cursor = payload.cursor
-    ? {
-        error: payload.cursor.error ?? null,
-        installed: payload.cursor.installed,
-        loading: false,
-        models: sortCursorModelOptions(
-          dedupeModelOptions(payload.cursor.models),
-        ),
-        source: payload.cursor.source,
-        version: payload.cursor.version ?? null,
-      }
-    : previous.cursor;
-  const grok = payload.grok
-    ? {
-        error: payload.grok.error ?? null,
-        installed: payload.grok.installed,
-        loading: false,
-        models: dedupeModelOptions(payload.grok.models),
-        source: payload.grok.source,
-        version: payload.grok.version ?? null,
-      }
-    : previous.grok;
-
-  return {
-    anthropic,
-    cursor,
-    grok,
-    fetchedAt: payload.fetchedAt ?? new Date().toISOString(),
-    openai,
-    opencode,
-  };
-};
-
-const shouldReconcileProviderSelection = (
-  providerModels: IdeState["providerModels"][AiProvider],
-): boolean => {
-  return (
-    providerModels.source === "cli" &&
-    providerModels.error === null &&
-    providerModels.models.length > 0
+        models: MODEL_OPTION_VIEWS[provider]?.(options) ?? options,
+        source: result.source,
+        version: result.version ?? null,
+      };
+    },
   );
-};
 
-const reconcileProviderSelection = (
-  selectedModels: string[],
-  availableModelIds: string[],
-  providerModels: IdeState["providerModels"][AiProvider],
-): string[] => {
-  const selected = dedupeModels(selectedModels);
+/** Whether a provider's listing is authoritative enough to prune picks. */
+const shouldReconcileProviderSelection = (
+  providerModels: ProviderModelState,
+): boolean =>
+  providerModels.source === "cli" &&
+  providerModels.error === null &&
+  providerModels.models.length > 0;
 
-  if (!shouldReconcileProviderSelection(providerModels)) {
-    return selected;
-  }
-
-  return selected.filter((model) => availableModelIds.includes(model));
-};
-
+/**
+ * The settings with each provider's picked models pruned to what its CLI
+ * now lists (where the listing is authoritative), defaults repaired.
+ */
 export const reconcileSettingsWithProviderModels = (
   settings: AppSettings,
-  providerModels: IdeState["providerModels"],
+  providerModels: ProviderModels,
 ): AppSettings => {
-  const openAiModelIds = providerModels.openai.models.map((model) => model.id);
-  const anthropicModelIds = providerModels.anthropic.models.map(
-    (model) => model.id,
-  );
-  const openCodeModelIds = providerModels.opencode.models.map(
-    (model) => model.id,
-  );
-  const cursorModelIds = providerModels.cursor.models.map((model) => model.id);
-  const grokModelIds = providerModels.grok.models.map((model) => model.id);
-  const openAiSelectedModels = reconcileProviderSelection(
-    settings.openAiSelectedModels,
-    openAiModelIds,
-    providerModels.openai,
-  );
-  const anthropicSelectedModels = reconcileProviderSelection(
-    settings.anthropicSelectedModels.map(normalizeClaudeCodeModelId),
-    anthropicModelIds,
-    providerModels.anthropic,
-  );
-  const openCodeSelectedModels = reconcileProviderSelection(
-    settings.openCodeSelectedModels,
-    openCodeModelIds,
-    providerModels.opencode,
-  );
-  const cursorSelectedModels = reconcileProviderSelection(
-    settings.cursorSelectedModels,
-    cursorModelIds,
-    providerModels.cursor,
-  );
-  const grokSelectedModels = reconcileProviderSelection(
-    settings.grokSelectedModels,
-    grokModelIds,
-    providerModels.grok,
-  );
-  const nextSettings = {
-    ...settings,
-    anthropicSelectedModels,
-    cursorSelectedModels,
-    grokSelectedModels,
-    openCodeSelectedModels,
-    openAiSelectedModels,
-  };
+  let next = settings;
+  for (const provider of ALL_PROVIDERS) {
+    const state = providerModels[provider];
+    const selected = getSelectedModels(provider, settings);
+    const available = state.models.map((model) => model.id);
+    next = withSelectedModels(
+      next,
+      provider,
+      shouldReconcileProviderSelection(state)
+        ? selected.filter((model) => available.includes(model))
+        : selected,
+    );
+  }
 
-  return normalizeDefaultModelSettings(nextSettings);
+  return normalizeDefaultModelSettings(next);
 };
 
-export const areSettingsSelectionsEqual = (a: AppSettings, b: AppSettings) =>
-  a.defaultModel === b.defaultModel &&
-  a.defaultGitGenerationModel === b.defaultGitGenerationModel &&
-  a.defaultModelSpeed === b.defaultModelSpeed &&
-  a.defaultReasoningEffort === b.defaultReasoningEffort &&
-  a.openAiSelectedModels.length === b.openAiSelectedModels.length &&
-  a.anthropicSelectedModels.length === b.anthropicSelectedModels.length &&
-  a.openCodeSelectedModels.length === b.openCodeSelectedModels.length &&
-  a.cursorSelectedModels.length === b.cursorSelectedModels.length &&
-  a.grokSelectedModels.length === b.grokSelectedModels.length &&
-  a.openAiSelectedModels.every(
-    (model, index) => b.openAiSelectedModels[index] === model,
-  ) &&
-  a.anthropicSelectedModels.every(
-    (model, index) => b.anthropicSelectedModels[index] === model,
-  ) &&
-  a.openCodeSelectedModels.every(
-    (model, index) => b.openCodeSelectedModels[index] === model,
-  ) &&
-  a.cursorSelectedModels.every(
-    (model, index) => b.cursorSelectedModels[index] === model,
-  ) &&
-  a.grokSelectedModels.every(
-    (model, index) => b.grokSelectedModels[index] === model,
-  );
-
+/** One provider (or, without one, every provider) failed with `message`. */
 export const getProviderModelsErrorState = (
-  providerModels: IdeState["providerModels"],
+  providerModels: ProviderModels,
   message: string,
   provider?: AiProvider,
-): IdeState["providerModels"] => ({
-  anthropic: {
-    ...providerModels.anthropic,
-    error:
-      provider && provider !== "anthropic"
-        ? providerModels.anthropic.error
-        : message,
-    loading:
-      provider && provider !== "anthropic"
-        ? providerModels.anthropic.loading
-        : false,
-  },
-  fetchedAt: providerModels.fetchedAt,
-  openai: {
-    ...providerModels.openai,
-    error:
-      provider && provider !== "openai" ? providerModels.openai.error : message,
-    loading:
-      provider && provider !== "openai" ? providerModels.openai.loading : false,
-  },
-  opencode: {
-    ...providerModels.opencode,
-    error:
-      provider && provider !== "opencode"
-        ? providerModels.opencode.error
-        : message,
-    loading:
-      provider && provider !== "opencode"
-        ? providerModels.opencode.loading
-        : false,
-  },
-  cursor: {
-    ...providerModels.cursor,
-    error:
-      provider && provider !== "cursor" ? providerModels.cursor.error : message,
-    loading:
-      provider && provider !== "cursor" ? providerModels.cursor.loading : false,
-  },
-  grok: {
-    ...providerModels.grok,
-    error:
-      provider && provider !== "grok" ? providerModels.grok.error : message,
-    loading:
-      provider && provider !== "grok" ? providerModels.grok.loading : false,
-  },
-});
+): ProviderModels =>
+  mapProviders(providerModels, (item) =>
+    provider && provider !== item
+      ? providerModels[item]
+      : { ...providerModels[item], error: message, loading: false },
+  );

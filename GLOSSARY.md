@@ -330,8 +330,16 @@ Each has a record in the **provider registry**
 (`electron/api/providers/registry.js`: readiness, stream, one-shot text,
 title model, model and usage fetchers) built on its row in the shared
 **provider capabilities** (`electron/shared/provider-capabilities.js`:
-MCP, skill dispatch style, usage limits, browser-MCP scope), which the
-renderer reads too. Adding a provider is one row and one record.
+MCP, skill dispatch style, usage limits, browser-MCP scope, the setting
+holding its picked models, how its model ids are spelt), which the
+renderer reads too. Adding a provider is one row and one record, plus its
+`AiProvider` member and its `…SelectedModels` setting.
+
+**Settling the model selection** (`settleModelSelection` in
+`electron/shared/model-selection.js`) keeps every open project and its
+chats on a model the settings offer, and the defaults on a picked model.
+It is pure, and runs on every write of settings (`settleSettings` in
+`store/settings-actions.ts`) and on hydration, never in an effect.
 
 ## Provider adapter
 

@@ -19,9 +19,19 @@
  *   | { dispatch: "slash" }} SkillDispatchStyle
  */
 
+/** @typedef {import("../../src/types/ide").AppSettings} AppSettings */
+/**
+ * A setting holding a provider's picked models.
+ * @typedef {Extract<keyof AppSettings, `${string}SelectedModels`>} SelectedModelsSetting
+ */
+
 /**
  * @typedef {object} ProviderCapabilities
  * @property {string} label
+ * @property {SelectedModelsSetting} selectedModelsSetting The setting that
+ *   holds the models the user picked for this provider.
+ * @property {"claude-code" | null} modelAliases How a picked model id is
+ *   normalized: Claude Code's aliases (`opus`, `sonnet[1m]`...) or as is.
  * @property {boolean} mcp Dream-managed MCP servers are passed to the agent.
  * @property {SkillDispatchStyle | null} skills `null` when the CLI loads no skills.
  * @property {boolean} usageLimits The provider reports usage limits.
@@ -44,6 +54,8 @@ export const PROVIDER_IDS = [
 export const PROVIDER_CAPABILITIES = {
   openai: {
     label: "Codex",
+    selectedModelsSetting: "openAiSelectedModels",
+    modelAliases: null,
     mcp: true,
     skills: { dispatch: "native" },
     usageLimits: true,
@@ -51,6 +63,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   anthropic: {
     label: "Claude Code",
+    selectedModelsSetting: "anthropicSelectedModels",
+    modelAliases: "claude-code",
     mcp: true,
     skills: {
       dispatch: "instruction",
@@ -63,6 +77,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   opencode: {
     label: "OpenCode",
+    selectedModelsSetting: "openCodeSelectedModels",
+    modelAliases: null,
     mcp: true,
     skills: {
       dispatch: "instruction",
@@ -74,6 +90,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   cursor: {
     label: "Cursor Agent",
+    selectedModelsSetting: "cursorSelectedModels",
+    modelAliases: null,
     mcp: false,
     skills: { dispatch: "slash" },
     usageLimits: false,
@@ -81,6 +99,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   grok: {
     label: "Grok Build",
+    selectedModelsSetting: "grokSelectedModels",
+    modelAliases: null,
     mcp: true,
     skills: null,
     usageLimits: true,

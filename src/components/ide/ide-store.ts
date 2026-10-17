@@ -38,7 +38,10 @@ import {
   type SaveSlice,
 } from "./store/save-scheduler";
 import { createSavedPromptActions } from "./store/saved-prompt-actions";
-import { createSettingsActions } from "./store/settings-actions";
+import {
+  createSettingsActions,
+  settleSettings,
+} from "./store/settings-actions";
 import { createStashActions } from "./store/stash-actions";
 import { createTerminalActions } from "./store/terminal-actions";
 import { createTranscriptCache } from "./store/transcript-cache";
@@ -199,11 +202,12 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
     set({
       ...restored,
+      // Models the loaded settings no longer offer move on load.
+      ...settleSettings(restored, loaded.settings),
       ...plainPersistedFieldsOf(loaded),
       savedPrompts: loaded.savedPrompts,
       activeBrowserTabIdByProject: loaded.activeBrowserTabIdByProject,
       browserTabsByProject: loaded.browserTabsByProject,
-      settings: loaded.settings,
       hostRunningChatIds: Object.fromEntries(
         getLoadedRunningChatIds().map((chatId) => [chatId, true as const]),
       ),

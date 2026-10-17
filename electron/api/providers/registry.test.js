@@ -28,6 +28,8 @@ test("every provider has a complete record", () => {
         browserMcpScope: provider.browserMcpScope,
         label: provider.label,
         mcp: provider.mcp,
+        modelAliases: provider.modelAliases,
+        selectedModelsSetting: provider.selectedModelsSetting,
         skills: provider.skills,
         usageLimits: provider.usageLimits,
       },

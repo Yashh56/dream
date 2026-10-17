@@ -1,7 +1,11 @@
 import { apiClient } from "@/lib/api-client";
 import { extractCliVersion, isCliUpdateAvailable } from "@/lib/cli-version";
-import { isProviderEnabled } from "@/lib/ide-defaults";
-import type { AiProvider } from "@/types/ide";
+import {
+  areModelSettingsEqual,
+  isProviderEnabled,
+  settleModelSelection,
+} from "@/lib/ide-defaults";
+import type { AiProvider, AppSettings } from "@/types/ide";
 import { ALL_PROVIDERS, type CliUpgradeResult } from "../ide-types";
 import type {
   IdeState,
@@ -11,7 +15,6 @@ import type {
 } from "./ide-store-types";
 import { writeCachedProviderModels } from "./provider-model-cache";
 import {
-  areSettingsSelectionsEqual,
   getProviderModelsErrorState,
   getProviderModelsFromResponse,
   markProviderModelsLoading,
@@ -50,6 +53,31 @@ const hasFreshProviderModels = (
   return Date.now() - fetchedAt < PROVIDER_MODELS_CACHE_TTL_MS;
 };
 
+/**
+ * The store's change for new `settings`: the settings, and every open
+ * project and chat whose model they settle (settleModelSelection in
+ * model-selection.js). Projects and chats appear only when one moved.
+ * Every write of settings goes through here, so no project or chat is left
+ * on a model that is no longer offered.
+ */
+export const settleSettings = (
+  state: Pick<IdeState, "chats" | "projects">,
+  settings: AppSettings,
+): Partial<Pick<IdeState, "chats" | "projects" | "settings">> => {
+  const settled = settleModelSelection({
+    chats: state.chats,
+    projects: state.projects,
+    settings,
+  });
+  return {
+    settings: settled.settings,
+    ...(settled.projects === state.projects
+      ? {}
+      : { projects: settled.projects }),
+    ...(settled.chats === state.chats ? {} : { chats: settled.chats }),
+  };
+};
+
 export const createSettingsActions = (
   set: IdeStoreSet,
   get: IdeStoreGet,
@@ -67,14 +95,12 @@ export const createSettingsActions = (
   | "upgradeCli"
 > => ({
   setSettings: (updater) => {
-    set((state) => {
-      const nextSettings =
-        typeof updater === "function" ? updater(state.settings) : updater;
-
-      return {
-        settings: nextSettings,
-      };
-    });
+    set((state) =>
+      settleSettings(
+        state,
+        typeof updater === "function" ? updater(state.settings) : updater,
+      ),
+    );
   },
 
   setSettingsOpen: (open) => set({ settingsOpen: open }),
@@ -82,16 +108,12 @@ export const createSettingsActions = (
   setModelSearchQuery: (query) => set({ modelSearchQuery: query }),
 
   toggleProviderModel: (provider, model, enabled) => {
-    set((state) => {
-      return {
-        settings: toggleProviderModelInSettings(
-          state.settings,
-          provider,
-          model,
-          enabled,
-        ),
-      };
-    });
+    set((state) =>
+      settleSettings(
+        state,
+        toggleProviderModelInSettings(state.settings, provider, model, enabled),
+      ),
+    );
   },
 
   refreshProviderModels: async ({ force = false, provider } = {}) => {
@@ -133,11 +155,11 @@ export const createSettingsActions = (
             providerModels,
           );
 
-          if (areSettingsSelectionsEqual(nextSettings, state.settings)) {
+          if (areModelSettingsEqual(nextSettings, state.settings)) {
             return state;
           }
 
-          return { settings: nextSettings };
+          return settleSettings(state, nextSettings);
         });
 
         void get().checkCliUpdates({ force, provider });

@@ -12,6 +12,7 @@ import { getProjectHostId } from "../../../../electron/shared/persisted-state-co
 import { forgetLoadedHost, isHostLoaded } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import { applyWorkspaceRemoval } from "./project-runtime-state";
+import { settleSettings } from "./settings-actions";
 import * as workspace from "./workspace-document";
 
 // Electron prefixes errors thrown across ipcRenderer.invoke with where they
@@ -220,18 +221,22 @@ export const createHostActions = (
       forgetLoadedHost(hostId);
       set((state) => {
         const { [hostId]: _removed, ...hosts } = state.hosts;
+        const removed = applyWorkspaceRemoval(
+          state,
+          workspace.removeHostProjects(state, state.settings, hostId),
+        );
         return {
-          ...applyWorkspaceRemoval(
-            state,
-            workspace.removeHostProjects(state, state.settings, hostId),
+          ...removed,
+          ...settleSettings(
+            { ...state, ...removed },
+            {
+              ...state.settings,
+              sshHosts: state.settings.sshHosts.filter(
+                (host) => host.id !== hostId,
+              ),
+            },
           ),
           hosts,
-          settings: {
-            ...state.settings,
-            sshHosts: state.settings.sshHosts.filter(
-              (host) => host.id !== hostId,
-            ),
-          },
         };
       });
       get().persist();

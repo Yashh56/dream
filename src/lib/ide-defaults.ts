@@ -14,18 +14,23 @@ import type {
 } from "@/types/ide";
 import {
   ALL_PROVIDERS,
+  areModelSettingsEqual,
   CLAUDE_CODE_MODEL_IDS,
   DEFAULT_PROVIDER,
   getConnectedProviders,
   getDefaultGitGenerationModelSelection,
+  getDefaultModelForProvider,
   getDefaultModelSelection,
   getModelsForProvider,
   getPreferredDefaultModel,
   getProviderForModel,
+  getSelectedModels,
   isProviderEnabled,
   isReasoningEffort,
   normalizeClaudeCodeModelId,
   normalizeDefaultModelSettings,
+  settleModelSelection,
+  withSelectedModels,
 } from "../../electron/shared/model-selection.js";
 import {
   createChatConfig,
@@ -40,6 +45,7 @@ import {
 // the main process applies the same ones when it decodes persisted state.
 export {
   ALL_PROVIDERS,
+  areModelSettingsEqual,
   CLAUDE_CODE_MODEL_IDS,
   createChatConfig,
   createDefaultChatConfig,
@@ -50,13 +56,17 @@ export {
   DEFAULT_SETTINGS,
   getConnectedProviders,
   getDefaultGitGenerationModelSelection,
+  getDefaultModelForProvider,
   getDefaultModelSelection,
   getModelsForProvider,
   getPreferredDefaultModel,
   getProviderForModel,
+  getSelectedModels,
   isProviderEnabled,
   normalizeClaudeCodeModelId,
   normalizeDefaultModelSettings,
+  settleModelSelection,
+  withSelectedModels,
 };
 
 export const createProjectConfig = (
@@ -136,23 +146,6 @@ export const createSavedPrompt = (
     name: values.name.trim(),
     updatedAt: timestamp,
   };
-};
-
-export const getDefaultModelForProvider = (
-  provider: AiProvider,
-  settings: AppSettings,
-): string => {
-  const providerModels = getModelsForProvider(provider, settings);
-  const defaultSelection = getDefaultModelSelection(settings);
-
-  if (
-    defaultSelection.provider === provider &&
-    providerModels.includes(defaultSelection.model)
-  ) {
-    return defaultSelection.model;
-  }
-
-  return providerModels[0] ?? "";
 };
 
 export const resolveModelSpeedForModel = (

@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/model-selection-settle.md` tracks MSS-01 from the October 16
+  review: models settled by a pure function in settings actions, driven by
+  the provider capability rows.
 - `tasks/persisted-fields-once.md` tracks PFO-01 from the October 16
   review: plain persisted fields declared once in a codec table, and one
   project UI normalizer for loading and saving.

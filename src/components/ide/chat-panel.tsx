@@ -277,14 +277,8 @@ export const ChatPanel = ({
     [messages],
   );
 
-  const modelId =
-    selectedProvider === "anthropic"
-      ? `anthropic:${selectedModel}`
-      : selectedProvider === "opencode"
-        ? `opencode:${selectedModel}`
-        : selectedProvider === "cursor"
-          ? `cursor:${selectedModel}`
-          : `openai:${selectedModel}`;
+  // Priced by provider and model (tokenlens).
+  const modelId = `${selectedProvider}:${selectedModel}`;
 
   const isStreaming = status === "streaming";
   const isProcessing = status === "submitted" || status === "streaming";

@@ -5,14 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
-import {
-  getConnectedProviders,
-  getDefaultModelForProvider,
-  getDefaultModelSelection,
-  getModelsForProvider,
-  normalizeClaudeCodeModelId,
-  normalizeDefaultModelSettings,
-} from "@/lib/ide-defaults";
 import { terminalClient } from "@/lib/terminal-client";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -23,7 +15,6 @@ import { ChatSearchDialog } from "./chat-search-dialog";
 import { EmptyProjectWorkspace } from "./empty-project-workspace";
 import { IdeHeader } from "./ide-header";
 import { useIdeStore } from "./ide-store";
-import { dedupeModels } from "./ide-types";
 import { ProjectWorkspace } from "./project-workspace";
 import { GlobalShortcuts } from "./shortcuts/global-shortcuts";
 import { SshPromptDialog } from "./ssh/ssh-prompt-dialog";
@@ -81,7 +72,6 @@ export const IdeShell = () => {
     projects.some((project) => project.id === deferredActiveProjectId)
       ? deferredActiveProjectId
       : activeProjectId;
-  const settings = useIdeStore((s) => s.settings);
   const settingsOpen = useIdeStore((s) => s.settingsOpen);
   const settingsSection = useIdeStore((s) => s.settingsSection);
 
@@ -335,160 +325,6 @@ export const IdeShell = () => {
     }
     void getDesktopApi()?.checkForUpdates();
   }, [settingsOpen]);
-
-  // Sync settings integrity (dedupe models, fix connected providers)
-  useEffect(() => {
-    const store = useIdeStore.getState();
-    const prev = settings;
-
-    const openAiSelectedModels = dedupeModels(prev.openAiSelectedModels);
-    const anthropicSelectedModels = dedupeModels(
-      prev.anthropicSelectedModels.map(normalizeClaudeCodeModelId),
-    );
-    const openCodeSelectedModels = dedupeModels(prev.openCodeSelectedModels);
-    const cursorSelectedModels = dedupeModels(prev.cursorSelectedModels);
-    const grokSelectedModels = dedupeModels(prev.grokSelectedModels);
-    const nextSettings = {
-      ...prev,
-      anthropicSelectedModels,
-      cursorSelectedModels,
-      grokSelectedModels,
-      openCodeSelectedModels,
-      openAiSelectedModels,
-    };
-    const normalizedDefaultSettings =
-      normalizeDefaultModelSettings(nextSettings);
-    const enabledProviders = getConnectedProviders(nextSettings);
-
-    const changed =
-      normalizedDefaultSettings.defaultModel !== prev.defaultModel ||
-      normalizedDefaultSettings.defaultGitGenerationModel !==
-        prev.defaultGitGenerationModel ||
-      normalizedDefaultSettings.defaultModelSpeed !== prev.defaultModelSpeed ||
-      normalizedDefaultSettings.defaultReasoningEffort !==
-        prev.defaultReasoningEffort ||
-      openAiSelectedModels.length !== prev.openAiSelectedModels.length ||
-      anthropicSelectedModels.length !== prev.anthropicSelectedModels.length ||
-      openCodeSelectedModels.length !== prev.openCodeSelectedModels.length ||
-      cursorSelectedModels.length !== prev.cursorSelectedModels.length ||
-      grokSelectedModels.length !== prev.grokSelectedModels.length ||
-      !openAiSelectedModels.every(
-        (m, i) => prev.openAiSelectedModels[i] === m,
-      ) ||
-      !anthropicSelectedModels.every(
-        (m, i) => prev.anthropicSelectedModels[i] === m,
-      ) ||
-      !openCodeSelectedModels.every(
-        (m, i) => prev.openCodeSelectedModels[i] === m,
-      ) ||
-      !cursorSelectedModels.every(
-        (m, i) => prev.cursorSelectedModels[i] === m,
-      ) ||
-      !grokSelectedModels.every((m, i) => prev.grokSelectedModels[i] === m);
-
-    if (changed) {
-      store.setSettings(normalizedDefaultSettings);
-    }
-
-    // Fix projects whose provider/model is no longer valid.
-    const effectiveSettings = normalizedDefaultSettings;
-    const defaultSelection = getDefaultModelSelection(effectiveSettings);
-    const { chats, projects } = store;
-    let projectsChanged = false;
-    let chatsChanged = false;
-    const nextProjects = projects.map((project) => {
-      let next = project;
-
-      if (
-        !enabledProviders.includes(next.provider) &&
-        enabledProviders.length > 0
-      ) {
-        next = {
-          ...next,
-          model:
-            defaultSelection.model ||
-            getDefaultModelForProvider(
-              defaultSelection.provider,
-              effectiveSettings,
-            ),
-          provider: defaultSelection.provider,
-        };
-        projectsChanged = true;
-      }
-
-      const providerModels = getModelsForProvider(
-        next.provider,
-        effectiveSettings,
-      );
-      const fallbackModel = getDefaultModelForProvider(
-        next.provider,
-        effectiveSettings,
-      );
-
-      if (
-        !providerModels.includes(next.model) &&
-        next.model !== fallbackModel
-      ) {
-        next = { ...next, model: fallbackModel };
-        projectsChanged = true;
-      }
-
-      return next;
-    });
-
-    if (projectsChanged) {
-      store.setProjects(nextProjects);
-    }
-
-    const nextChats = chats.map((chat) => {
-      let next = chat;
-      const project = nextProjects.find((item) => item.id === chat.projectId);
-
-      if (!project) {
-        return next;
-      }
-
-      if (
-        !enabledProviders.includes(next.provider) &&
-        enabledProviders.length > 0
-      ) {
-        next = {
-          ...next,
-          model:
-            defaultSelection.model ||
-            getDefaultModelForProvider(
-              defaultSelection.provider,
-              effectiveSettings,
-            ),
-          provider: defaultSelection.provider,
-        };
-        chatsChanged = true;
-      }
-
-      const providerModels = getModelsForProvider(
-        next.provider,
-        effectiveSettings,
-      );
-      const fallbackModel = getDefaultModelForProvider(
-        next.provider,
-        effectiveSettings,
-      );
-
-      if (
-        !providerModels.includes(next.model) &&
-        next.model !== fallbackModel
-      ) {
-        next = { ...next, model: fallbackModel };
-        chatsChanged = true;
-      }
-
-      return next;
-    });
-
-    if (chatsChanged) {
-      useIdeStore.setState({ chats: nextChats });
-    }
-  }, [settings]);
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
