@@ -194,6 +194,17 @@ again at once. Reads at one version share, one resource can answer another
 time (`maxConcurrentLoads`: diffs). Panels read them with
 `useProjectResource`; no panel reads a refresh key to decide when to fetch.
 
+## GitHub pull requests
+
+What Dream asks GitHub about a project's pull requests, on its host
+(`electron/api/project-git/pull-requests.js`, behind two ports: the `gh` CLI
+through `runGhCommand`, the one way the main process runs it, and git).
+**A branch's pull request** is the one whose head is that branch on the
+repository it pushes to: an open one first; a closed or merged one only
+while the branch has no newer work. The PR panel and the worktree compare
+both ask `branchPullRequest`. A pull request's **checks** come summed up:
+unavailable, none, failed (with a count), pending or passed.
+
 ## Commit draft
 
 A commit being written (`src/components/ide/git-actions/commit-draft.ts`):

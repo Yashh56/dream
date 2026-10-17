@@ -26,6 +26,22 @@ export interface PullRequestContext {
   branch: string | null;
   current: PullRequestSummary | null;
 }
+/** One check's outcome, as the host reads GitHub's check states. */
+export type CheckOutcome = "failed" | "pending" | "passed";
+
+/** A pull request's checks summed up by the host (pull-requests.js). */
+export interface PullRequestChecks {
+  /** Unavailable when GitHub would not say; none when there are none. */
+  outcome: "unavailable" | "none" | CheckOutcome;
+  failedCount: number;
+  items: {
+    key: string;
+    name: string;
+    outcome: CheckOutcome;
+    url: string | null;
+  }[];
+}
+
 export interface PullRequestDetail extends PullRequestSummary {
   body: string;
   head: string;
@@ -37,18 +53,7 @@ export interface PullRequestDetail extends PullRequestSummary {
   additions: number;
   deletions: number;
   changedFiles: number;
-  checks:
-    | {
-        id?: string;
-        name?: string;
-        context?: string;
-        status?: string;
-        conclusion?: string;
-        state?: string;
-        detailsUrl?: string;
-        targetUrl?: string;
-      }[]
-    | null;
+  checks: PullRequestChecks;
 }
 export interface PrComment {
   id: number;

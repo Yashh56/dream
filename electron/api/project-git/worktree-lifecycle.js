@@ -39,6 +39,7 @@ import {
   normalizePath,
   toRepoRelativePath,
 } from "./files.js";
+import { gitHubPullRequests, pullRequestSummary } from "./pull-requests.js";
 
 const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
@@ -582,43 +583,24 @@ const readCompareFiles = async (worktreeRoot, mergeBase) => {
 };
 
 /**
- * The pull request GitHub has for `branch`, newest first, or `null` when
- * there is none or `gh` cannot say (not logged in, no GitHub remote, ...).
+ * The pull request that belongs to `branch` (the same rule as the PR panel,
+ * project-git/pull-requests.js), or `null` when there is none or GitHub
+ * cannot say (not logged in, no GitHub remote, ...).
  */
-const readBranchPullRequest = async (cwd, branch, base = null) => {
-  const result = await runGhCommand(
-    cwd,
-    [
-      "pr",
-      "list",
-      "--head",
-      branch,
-      ...(base ? ["--base", base] : []),
-      "--state",
-      "all",
-      "--limit",
-      "1",
-      "--json",
-      "number,url,state,isDraft,mergedAt",
-    ],
-    { allowFailure: true },
-  );
-  if (!result.ok) {
-    return null;
-  }
+const readBranchPullRequest = async (cwd, branch) => {
   try {
-    const [entry] = JSON.parse(result.stdout);
-    if (!entry || typeof entry.number !== "number") {
+    const pr = await gitHubPullRequests.branchPullRequest(cwd, branch);
+    if (!pr) {
       return null;
     }
-    const state = String(entry.state ?? "").toLowerCase();
+    const { state } = pullRequestSummary(pr);
     return {
-      isDraft: entry.isDraft === true,
-      mergedAt: typeof entry.mergedAt === "string" ? entry.mergedAt : null,
-      number: entry.number,
+      isDraft: pr.draft === true,
+      mergedAt: typeof pr.merged_at === "string" ? pr.merged_at : null,
+      number: pr.number,
       state:
         state === "merged" ? "merged" : state === "closed" ? "closed" : "open",
-      url: typeof entry.url === "string" ? entry.url : "",
+      url: typeof pr.html_url === "string" ? pr.html_url : "",
     };
   } catch {
     return null;

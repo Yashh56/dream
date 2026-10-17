@@ -19,7 +19,7 @@ export { getGitCommandErrorMessage };
 
 const EMPTY_GIT_TREE_HASH = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const GIT_EXEC_MAX_BUFFER = 16 * 1024 * 1024;
-const GH_EXEC_MAX_BUFFER = 8 * 1024 * 1024;
+const GH_EXEC_MAX_BUFFER = 16 * 1024 * 1024;
 
 /** Starts one git process: the context's runner (repository-context.js). */
 const execGitCommand = async (cwd, args, { allowFailure = false } = {}) => {
@@ -63,7 +63,7 @@ export const runGitCommand = (cwd, args, options) =>
 
 const getGhCommandErrorMessage = (error) => {
   if (error?.code === "ENOENT") {
-    return "GitHub CLI is not available on PATH.";
+    return "Install GitHub CLI (gh) to use pull requests.";
   }
 
   const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
@@ -72,16 +72,21 @@ const getGhCommandErrorMessage = (error) => {
   return stderr || stdout || "GitHub CLI command failed.";
 };
 
+/**
+ * The one way the main process runs the GitHub CLI. `timeoutMs` bounds a
+ * call that may hang on the network (the API calls behind pull requests).
+ */
 export const runGhCommand = async (
   cwd,
   args,
-  { allowFailure = false } = {},
+  { allowFailure = false, timeoutMs } = {},
 ) => {
   try {
     const result = await execFileAsync("gh", args, {
       cwd,
       encoding: "utf8",
       maxBuffer: GH_EXEC_MAX_BUFFER,
+      ...(timeoutMs ? { timeout: timeoutMs } : {}),
       windowsHide: true,
     });
     return {

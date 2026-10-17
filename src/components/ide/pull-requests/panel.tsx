@@ -57,6 +57,7 @@ import {
   type PrAction,
   type PrComment,
   type PrFile,
+  type PullRequestChecks,
   type PullRequestDetail,
   type PullRequestSummary,
   prRequest,
@@ -72,67 +73,51 @@ const message = (error: unknown, fallback: string) =>
 const draftKey = (repository: string, number: number, kind: string) =>
   `dream:code-pr:${repository}:${number}:${kind}`;
 
-function checkSummary(
-  checks: PullRequestDetail["checks"],
+/** How a checks outcome looks: its label, colour and icon. */
+function checkPresentation(
+  outcome: PullRequestChecks["outcome"],
   state: PullRequestSummary["state"] = "open",
+  failedCount = 0,
 ): {
   labelKey: keyof Messages["pullRequests"];
   count?: number;
   className: string;
   icon: LucideIcon;
 } {
-  if (checks === null)
-    return {
-      labelKey: "checksUnavailable",
-      className: "text-muted-foreground",
-      icon: Clock3,
-    };
-  if (!checks.length)
-    return {
-      labelKey: "noChecks",
-      className: "text-muted-foreground",
-      icon: CheckCircle2,
-    };
-  const states = checks.map((check) =>
-    (
-      check.conclusion ||
-      check.state ||
-      check.status ||
-      "PENDING"
-    ).toUpperCase(),
-  );
-  const failedCount = states.filter((state) =>
-    [
-      "FAILURE",
-      "ERROR",
-      "TIMED_OUT",
-      "CANCELLED",
-      "ACTION_REQUIRED",
-      "STARTUP_FAILURE",
-      "STALE",
-    ].includes(state),
-  ).length;
-  if (failedCount)
-    return {
-      labelKey: "checksAttention",
-      count: failedCount,
-      className:
-        state === "open" ? "text-destructive" : "text-muted-foreground",
-      icon: CircleX,
-    };
-  if (
-    states.some((state) => !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(state))
-  )
-    return {
-      labelKey: "checksPending",
-      className: "text-amber-700 dark:text-amber-300",
-      icon: Clock3,
-    };
-  return {
-    labelKey: "checksPassed",
-    className: "text-success-foreground",
-    icon: CheckCircle2,
-  };
+  switch (outcome) {
+    case "unavailable":
+      return {
+        className: "text-muted-foreground",
+        icon: Clock3,
+        labelKey: "checksUnavailable",
+      };
+    case "none":
+      return {
+        className: "text-muted-foreground",
+        icon: CheckCircle2,
+        labelKey: "noChecks",
+      };
+    case "failed":
+      return {
+        className:
+          state === "open" ? "text-destructive" : "text-muted-foreground",
+        count: failedCount,
+        icon: CircleX,
+        labelKey: "checksAttention",
+      };
+    case "pending":
+      return {
+        className: "text-amber-700 dark:text-amber-300",
+        icon: Clock3,
+        labelKey: "checksPending",
+      };
+    case "passed":
+      return {
+        className: "text-success-foreground",
+        icon: CheckCircle2,
+        labelKey: "checksPassed",
+      };
+  }
 }
 
 const prMarkdownComponents = {
@@ -1094,7 +1079,9 @@ function Detail({
         save,
       }
     : null;
-  const checks = pr ? checkSummary(pr.checks, pr.state) : null;
+  const checks = pr
+    ? checkPresentation(pr.checks.outcome, pr.state, pr.checks.failedCount)
+    : null;
   return (
     <Tabs
       value={tab}
@@ -1296,24 +1283,25 @@ function Detail({
                   <ChevronDown className="size-3 transition-transform group-aria-expanded:rotate-180" />
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-3 pt-3">
-                  {pr.checks === null ? (
+                  {pr.checks.outcome === "unavailable" ? (
                     <p className="text-xs text-muted-foreground">
                       {t("pullRequests.checksUnavailable")}
                     </p>
-                  ) : !pr.checks.length ? (
+                  ) : !pr.checks.items.length ? (
                     <p className="text-xs text-muted-foreground">
                       {t("pullRequests.noChecks")}
                     </p>
                   ) : (
-                    pr.checks.map((check) => {
-                      const status = checkSummary([check], pr.state);
-                      const url = check.detailsUrl || check.targetUrl;
+                    pr.checks.items.map((check) => {
+                      const status = checkPresentation(
+                        check.outcome,
+                        pr.state,
+                        check.outcome === "failed" ? 1 : 0,
+                      );
+                      const { url } = check;
                       return (
                         <div
-                          key={
-                            check.id ??
-                            `${check.name ?? check.context}:${check.detailsUrl ?? check.targetUrl}`
-                          }
+                          key={check.key}
                           className="flex items-center justify-between gap-3 text-xs"
                         >
                           <span className="flex items-center gap-2">
@@ -1327,11 +1315,11 @@ function Detail({
                                 className="h-auto whitespace-normal p-0 text-inherit"
                                 onClick={() => openExternalUrl(url)}
                               >
-                                {check.name ?? check.context}
+                                {check.name}
                                 <ExternalLink className="size-3 shrink-0" />
                               </Button>
                             ) : (
-                              (check.name ?? check.context)
+                              check.name
                             )}
                           </span>
                           <span className="sr-only">

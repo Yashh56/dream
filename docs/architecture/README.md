@@ -36,6 +36,9 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   cancellable reads for Project text search.
 - `tasks/sqlite-read-pool-write-sink.md` tracks SQL-01 to SQL-03: a derived
   search text table, catalog reads on reader threads, and write-sink changes.
+- `tasks/github-pull-requests.md` tracks GHPR-01 from the October 16
+  review: one host module (and one rule) for pull requests, behind `gh` and
+  git ports.
 - `tasks/commit-draft-and-generated-git-text.md` tracks CDG-01 from the
   October 16 review: one commit draft for both composers, one fingerprint
   and cache for generated git text.
