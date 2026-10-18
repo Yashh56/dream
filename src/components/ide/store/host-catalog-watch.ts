@@ -6,6 +6,7 @@
  * too long) re-reads the host's catalog, after hydration if it comes first.
  */
 import { getCatalogEventsClient } from "@/lib/catalog-events";
+import { refreshChatQueue, useChatQueueStore } from "@/lib/chat-queue";
 import { CLIENT_ID } from "@/lib/client-id";
 import { useIdeStore } from "../ide-store";
 
@@ -14,6 +15,8 @@ export const watchHostCatalog = (hostId: string) => {
 
   let stopWaiting: (() => void) | null = null;
   const reload = () => {
+    for (const chatId of Object.keys(useChatQueueStore.getState().queues))
+      void refreshChatQueue(chatId);
     if (useIdeStore.getState().stateHydrated) {
       void useIdeStore.getState().reloadCatalog(hostId);
       return;
@@ -30,6 +33,10 @@ export const watchHostCatalog = (hostId: string) => {
   const removeEvents = client.onEvent((event) => {
     if (event.origin === CLIENT_ID) return;
     const store = useIdeStore.getState();
+    if (event.kind === "queue" && typeof event.chatId === "string") {
+      void refreshChatQueue(event.chatId);
+      return;
+    }
     if (event.kind === "changes") {
       store.applyCatalogChanges(
         event as Parameters<typeof store.applyCatalogChanges>[0],

@@ -132,7 +132,7 @@ test("runSavedPrompt sends the prompt to the chat as written and keeps the saved
   );
 });
 
-test("runSavedPrompt refuses a chat that is streaming or belongs to another project", () => {
+test("runSavedPrompt queues during streaming but refuses another project", () => {
   const { project, store } = createTestStore();
   const chatId = store.getState().addChat(project.id) as string;
   const promptId = store
@@ -142,7 +142,7 @@ test("runSavedPrompt refuses a chat that is streaming or belongs to another proj
   store.setState({ streamingChatIds: { [chatId]: true } });
   assert.equal(
     store.getState().runSavedPrompt(project.id, promptId, chatId),
-    false,
+    true,
   );
 
   store.setState({ streamingChatIds: {} });

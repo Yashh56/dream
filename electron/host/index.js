@@ -9,7 +9,10 @@ import {
   getBrowserToolRelay,
   setBrowserToolRelay,
 } from "../api/browser-bridge.js";
+import { createDelegationService } from "../api/chat/delegation.js";
+import { createRunScheduler } from "../api/chat/run-scheduler.js";
 import { createTurnRegistry } from "../api/chat/turn-registry.js";
+import { executeChatRequest } from "../api/chat-routes.js";
 import { createHostSocket } from "../api/host-socket/host-socket.js";
 import { createSocketTickets } from "../api/shared/socket-tickets.js";
 import { resolveStateDatabasePath } from "../persisted-state.js";
@@ -79,20 +82,29 @@ export function createHost({
   // Turns run on the host, detached from the requests that start them;
   // every client hears when one starts and ends.
   const turns = createTurnRegistry({
-    onChange: ({ chatId, running }) =>
+    onChange: ({ chatId, running }) => {
       hostSocket.catalog.publish({
         chatId,
         kind: "turn",
         origin: null,
         running,
-      }),
+      });
+      if (!running) scheduler.dispatch(chatId);
+    },
   });
   const catalog = createHostCatalog({
     events: hostSocket.catalog,
     getReader,
-    getRunningChatIds: turns.runningChatIds,
+    getRunningChatIds: turns.streamingChatIds,
     getWriter,
   });
+  const scheduler = createRunScheduler({
+    catalog,
+    turns,
+    execute: executeChatRequest,
+  });
+  const delegation = createDelegationService({ catalog, scheduler });
+  scheduler.setDelegation(delegation);
 
   let requestsInFlight = 0;
   const activity = trackActivity
@@ -145,7 +157,10 @@ export function createHost({
      */
     async listen({ apiToken, port }) {
       if (server) throw new Error("Host is already listening.");
+      await scheduler.initialize();
       server = await startApiServer({
+        delegation,
+        scheduler,
         activity,
         apiToken,
         catalog,
@@ -169,7 +184,7 @@ export function createHost({
      * to flush).
      */
     async close() {
-      turns.stopAll();
+      await scheduler.close();
       if (getBrowserToolRelay() === hostSocket.browser) {
         setBrowserToolRelay(null);
       }

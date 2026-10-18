@@ -88,6 +88,41 @@ export const formatProjectReferencesForPrompt = (projectReferences) => {
   ].join("\n");
 };
 
+export const chatSubmitRequestSchema = chatRequestBodySchema
+  .omit({ messages: true })
+  .extend({
+    chatId: z.string().min(1),
+    requestId: z.string().min(1).max(200),
+    message: z.object({
+      id: z.string().min(1),
+      role: z.literal("user"),
+      parts: z
+        .array(
+          z.discriminatedUnion("type", [
+            z.object({ type: z.literal("text"), text: z.string() }),
+            z.object({
+              type: z.literal("file"),
+              url: z.string(),
+              mediaType: z.string(),
+              filename: z.string().optional(),
+            }),
+          ]),
+        )
+        .min(1),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+    }),
+  });
+export const chatQueueRequestSchema = z.object({ chatId: z.string().min(1) });
+export const chatQueueControlSchema = chatQueueRequestSchema
+  .extend({
+    action: z.enum(["pause", "resume", "cancel", "retry"]),
+    id: z.string().min(1).optional(),
+  })
+  .refine(
+    (input) => !["cancel", "retry"].includes(input.action) || Boolean(input.id),
+    "A run ID is required.",
+  );
+
 export const chatTitleRequestBodySchema = z.object({
   fallbackModel: z.string().min(1).optional(),
   projectPath: z.string().min(1),

@@ -29,10 +29,16 @@ export const catalogChangesRequestSchema = z.object({
 export const catalogTranscriptRequestSchema = z.object({
   chatId: z.string().min(1),
 });
+export const catalogTranscriptPageSchema =
+  catalogTranscriptRequestSchema.extend({
+    before: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(200).optional(),
+  });
 
 export const catalogTranscriptSaveRequestSchema = z.object({
   chatId: z.string().min(1),
   messages: objects,
+  mergeOnly: z.boolean().optional(),
 });
 
 export const catalogSearchRequestSchema = z.object({
@@ -45,6 +51,11 @@ export const catalogSearchRequestSchema = z.object({
  * @param {ReturnType<typeof import("../host/catalog.js").createHostCatalog>} catalog
  */
 export function registerCatalogRoutes(app, catalog) {
+  app.post("/api/catalog/transcript/page", (c) =>
+    handleJsonRoute(c, catalogTranscriptPageSchema, (data) =>
+      catalog.transcriptPage(data),
+    ),
+  );
   const origin = (c) => c.req.header(CLIENT_ID_HEADER) ?? null;
 
   app.post("/api/catalog", (c) =>
@@ -81,8 +92,9 @@ export function registerCatalogRoutes(app, catalog) {
     handleJsonRoute(
       c,
       catalogTranscriptSaveRequestSchema,
-      async ({ chatId, messages }) => ({
+      async ({ chatId, messages, mergeOnly }) => ({
         saved: await catalog.saveTranscript(chatId, messages, {
+          mergeOnly,
           origin: origin(c),
         }),
       }),

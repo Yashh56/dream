@@ -239,7 +239,7 @@ const ChatComposerSubmitButton = ({
           (!isProviderInstalled || selectedModel === "" || !hasPromptContent))
       }
       onStop={onStop}
-      status={status}
+      status={hasPromptContent && isProcessing ? "ready" : status}
     />
   );
 };

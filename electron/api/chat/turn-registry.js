@@ -39,7 +39,8 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
           }
           if (turn.done) {
             if (waiter) turn.waiters.delete(waiter);
-            controller.close();
+            if (turn.failure) controller.error(turn.failure);
+            else controller.close();
           }
         };
         flush();
@@ -69,6 +70,7 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
         for (const waiter of [...turn.waiters]) waiter();
       }
     } catch (error) {
+      turn.failure = error;
       console.warn(`[turns] ${chatId}: the turn's stream failed.`, error);
     } finally {
       turn.done = true;
@@ -84,6 +86,9 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
 
     /** The chats with a turn running now. */
     runningChatIds: () => [...turns.keys()],
+    /** Only streams whose response headers are ready can be reattached. */
+    streamingChatIds: () =>
+      [...turns].filter(([, turn]) => turn.ready).map(([chatId]) => chatId),
 
     /**
      * Starts a turn. `run` receives the turn's own abort signal and returns
@@ -102,6 +107,7 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
         chunks: [],
         controller,
         done: false,
+        ready: false,
         headers: new Headers(),
         status: 200,
         waiters: new Set(),
@@ -122,6 +128,7 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
 
       placeholder.headers = response.headers;
       placeholder.status = response.status;
+      placeholder.ready = true;
       onChange({ chatId, running: true });
       void pump(chatId, placeholder, response.body);
       return subscribe(placeholder);
@@ -130,7 +137,7 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
     /** The running turn's stream from its start, or null when none runs. */
     resume(chatId) {
       const turn = turns.get(chatId);
-      return turn ? subscribe(turn) : null;
+      return turn?.ready ? subscribe(turn) : null;
     },
 
     /** Stops a running turn. False when none runs. */

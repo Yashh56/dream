@@ -174,6 +174,21 @@
     "workspaces": "Aree di lavoro"
   },
   "chat": {
+    "approvalExpired": "Questa approvazione è scaduta. Controlla il turno interrotto prima di riprovare.",
+    "queueTitle": "Coda",
+    "queuePaused": "Coda in pausa",
+    "queueResume": "Riprendi coda",
+    "queuePause": "Pausa coda",
+    "queueCancel": "Annulla",
+    "queueRetry": "Rimetti in coda",
+    "queueAttachment": "Allegato",
+    "queueStatus": {
+      "queued": "In coda",
+      "running": "In esecuzione",
+      "waiting": "In attesa",
+      "interrupted": "Interrotto",
+      "failed": "Non riuscito"
+    },
     "agentMode": "Modalità agente",
     "askAnything": "Chiedi qualsiasi cosa...",
     "build": "Costruisci",

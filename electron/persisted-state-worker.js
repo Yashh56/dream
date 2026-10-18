@@ -8,6 +8,8 @@
 // The parent passes the resolved database path in workerData so persisted-state.js
 // never needs the (unavailable) "electron" module.
 import { parentPort, workerData } from "node:worker_threads";
+import { saveProviderSession } from "./host/provider-session-store.js";
+import { mutateRunQueue } from "./host/run-store.js";
 
 import {
   applyPersistedCatalogChanges,
@@ -32,6 +34,10 @@ const options = { databasePath };
  * type. A new write is one row here and one method on the queue.
  */
 const operations = {
+  "run-queue": (payload) =>
+    mutateRunQueue(getPersistedStateDatabase(options), payload),
+  "save-provider-session": (payload) =>
+    saveProviderSession(getPersistedStateDatabase(options), payload),
   // Opens (creating and migrating) the database, so readers on other
   // threads can open it after.
   open: () => {

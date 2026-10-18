@@ -1,7 +1,10 @@
+import { getProviderCapabilities } from "../../shared/provider-capabilities.js";
+
 const getNonEmptyString = (value) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
 export const shouldResumeProviderSession = ({
+  provider,
   model,
   modelSpeed = "standard",
   projectPath,
@@ -12,8 +15,9 @@ export const shouldResumeProviderSession = ({
 }) =>
   Boolean(
     getNonEmptyString(remoteConversationId) &&
-      remoteConversationModel === model &&
-      (remoteConversationModelSpeed ?? "standard") === modelSpeed &&
+      ((provider && getProviderCapabilities(provider).modelSwitchInSession) ||
+        (remoteConversationModel === model &&
+          (remoteConversationModelSpeed ?? "standard") === modelSpeed)) &&
       remoteConversationProjectPath === projectPath,
   );
 

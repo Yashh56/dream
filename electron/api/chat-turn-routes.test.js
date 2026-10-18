@@ -122,6 +122,14 @@ const setup = async () => {
   const catalog = createHostCatalog({
     events: { publish: (event) => events.push(event) },
     getWriter: () => ({
+      saveProviderSession: async (payload) => {
+        const { saveProviderSession } = await import(
+          "../host/provider-session-store.js"
+        );
+        return trackWrite(() =>
+          saveProviderSession(persisted.getPersistedStateDatabase(), payload),
+        );
+      },
       applyCatalogChanges: (changes) =>
         trackWrite(() => persisted.applyPersistedCatalogChanges(changes)),
       saveChatMessages: (payload) => {

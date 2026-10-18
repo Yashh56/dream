@@ -337,9 +337,14 @@ export const pushPersistedCatalogs = (
 export const savePersistedChatMessages = async (
   chatId: string,
   messages: UIMessage[],
+  mergeOnly = false,
 ) => {
   await getCatalogSync(resolveRequestHost({ chatId })).saveTranscript(
     chatId,
     messages,
+    mergeOnly,
   );
 };
+
+export const ensureHostChat = (project: ProjectConfig, chat: ChatConfig) =>
+  getCatalogSync(getProjectHostId(project)).ensureChat(project, chat);

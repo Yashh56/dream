@@ -71,6 +71,33 @@ export function createHostCatalog({
   const read = (type, payload) => getReader().read(type, payload);
 
   return {
+    runQueue: (chatId) => read("run-queue", { chatId }),
+    delegatedTasks: (chatId) => read("delegated-tasks", { chatId }),
+    transcriptPage: (request) => read("transcript-page", request),
+    providerSession: (chatId, provider) =>
+      read("provider-session", { chatId, provider }),
+    saveProviderSession: (payload) => getWriter().saveProviderSession(payload),
+    async mutateRunQueue(operation) {
+      const result = await getWriter().mutateRunQueue(operation);
+      if (operation.chatId && result)
+        events.publish({
+          kind: "queue",
+          chatId: operation.chatId,
+          origin: "host",
+        });
+      if (operation.type === "delegate" && result && !result.duplicate) {
+        const chat = await read("chat", { chatId: result.childChatId });
+        events.publish({
+          kind: "changes",
+          chats: [chat],
+          projects: [],
+          removedChatIds: [],
+          removedProjectIds: [],
+          origin: "host",
+        });
+      }
+      return result;
+    },
     /** Every project and chat, raw, and the chats with a turn running. */
     list: async () => ({
       ...(await read("catalog")),
@@ -143,24 +170,25 @@ export function createHostCatalog({
      * exist.
      * @param {string} chatId
      * @param {unknown[]} messages
-     * @param {{ fromIndex?: number, origin?: string | null }} [options]
+     * @param {{ fromIndex?: number, mergeOnly?: boolean, origin?: string | null }} [options]
      */
     async saveTranscript(
       chatId,
       messages,
-      { fromIndex = 0, origin = null } = {},
+      { fromIndex = 0, mergeOnly = false, origin = null } = {},
     ) {
       const saved =
         (await getWriter().saveChatMessages({
           chatId,
           fromIndex,
+          mergeOnly,
           messages,
         })) === true;
       if (saved) {
         events.publish({
           chatId,
           kind: "transcript",
-          messageCount: fromIndex + messages.length,
+          ...(mergeOnly ? {} : { messageCount: fromIndex + messages.length }),
           origin,
         });
       }

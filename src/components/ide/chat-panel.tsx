@@ -45,6 +45,7 @@ import {
   useChatSession,
   usePromptHistoryNavigation,
 } from "./chat/chat-panel-hooks";
+import { ChatQueue } from "./chat/chat-queue";
 import {
   dismissChatError,
   respondToToolApproval,
@@ -159,7 +160,8 @@ export const ChatPanel = ({
   const messagesLoaded = useIdeStore((s) =>
     Object.hasOwn(s.messagesByChatId, chat.id),
   );
-  const loadMessagesForChat = useIdeStore((s) => s.loadMessagesForChat);
+  const loadMessagesForChat = useIdeStore((s) => s.loadRecentMessagesForChat);
+  const page = useIdeStore((s) => s.transcriptPageByChatId[chat.id]);
   const isTitleGenerating = useIdeStore(
     (s) => !!s.titleGeneratingChatIds[chat.id],
   );
@@ -346,7 +348,7 @@ export const ChatPanel = ({
     }
     previousMessageCountRef.current = messages.length;
   }, [messages.length]);
-  const handleLoadEarlierMessages = useCallback(() => {
+  const handleLoadEarlierMessages = useCallback(async () => {
     const element = conversationContextRef.current?.scrollRef.current;
     prependScrollSnapshotRef.current = element
       ? {
@@ -355,10 +357,22 @@ export const ChatPanel = ({
           scrollTop: element.scrollTop,
         }
       : null;
-    setTranscriptWindowSize((currentSize) =>
-      Math.min(messages.length, currentSize + CHAT_TRANSCRIPT_WINDOW_SIZE),
-    );
-  }, [conversationContextRef, messages.length]);
+    try {
+      if (transcriptWindow.hiddenMessageCount === 0 && page?.before)
+        await useIdeStore.getState().loadEarlierMessagesForChat(chat.id);
+      setTranscriptWindowSize(
+        (currentSize) => currentSize + CHAT_TRANSCRIPT_WINDOW_SIZE,
+      );
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : String(error));
+    }
+  }, [
+    chat.id,
+    conversationContextRef,
+    page?.before,
+    transcriptWindow.hiddenMessageCount,
+    setLocalError,
+  ]);
 
   useLayoutEffect(() => {
     if (restoredTranscriptWindowSizeRef.current === transcriptWindowSize) {
@@ -397,8 +411,12 @@ export const ChatPanel = ({
       handleActivateChat();
 
       // The runtime validates and sends; this panel only owns the draft.
-      if (!submitChatPrompt(chat.id, prompt)) {
-        return;
+      if (!(await submitChatPrompt(chat.id, prompt))) {
+        // Rejecting keeps the composer's text, references and attachments.
+        throw new Error(
+          useChatRuntimeStore.getState().errorByChatId[chat.id] ||
+            "Unable to submit prompt.",
+        );
       }
 
       resetPromptHistory();
@@ -508,7 +526,7 @@ export const ChatPanel = ({
               </div>
             ) : (
               <>
-                {transcriptWindow.hiddenMessageCount > 0 ? (
+                {transcriptWindow.hiddenMessageCount > 0 || page?.before ? (
                   <div className="flex w-full justify-center pb-4">
                     <Button
                       onClick={handleLoadEarlierMessages}
@@ -517,7 +535,12 @@ export const ChatPanel = ({
                       variant="ghost"
                     >
                       {commonT("open")} {workspaceT("chatHistory")} (
-                      {transcriptWindow.hiddenMessageCount})
+                      {transcriptWindow.hiddenMessageCount +
+                        Math.max(
+                          0,
+                          (page?.total ?? messages.length) - messages.length,
+                        )}
+                      )
                     </Button>
                   </div>
                 ) : null}
@@ -574,6 +597,7 @@ export const ChatPanel = ({
           />
         ) : null}
 
+        {readOnly ? null : <ChatQueue chatId={chat.id} />}
         {readOnly ? null : (
           <ChatComposer
             chatProvider={chat.provider}

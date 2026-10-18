@@ -101,3 +101,24 @@ test("an answer without a stream is passed on and keeps no turn", async () => {
   assert.equal(answer.status, 400);
   assert.equal(turns.isRunning("c1"), false);
 });
+
+test("a turn preparing its response owns the chat but exposes no incomplete stream", async () => {
+  const turns = createTurnRegistry();
+  let release;
+  const starting = turns.start({
+    chatId: "c",
+    run: () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  });
+  assert.equal(turns.isRunning("c"), true);
+  assert.deepEqual(turns.streamingChatIds(), []);
+  assert.equal(turns.resume("c"), null);
+  const turn = controllableResponse();
+  release(turn.response);
+  const response = await starting;
+  assert.deepEqual(turns.streamingChatIds(), ["c"]);
+  turn.end();
+  await response.text();
+});

@@ -290,6 +290,7 @@ export const createAgentTurn = ({
   };
 
   const buildMetadata = (extra = {}) => ({
+    provider,
     ...responseMessageMetadata,
     ...(sessionId
       ? {
@@ -503,7 +504,8 @@ const observeTurn = async (stream, originalMessages, observer) => {
     .pipeThrough(createDeltaJoiner({ maxDelayMs: null }))
     .pipeThrough(
       new TransformStream({
-        transform(chunk, controller) {
+        async transform(chunk, controller) {
+          await observer.onChunk?.(chunk);
           if (chunk?.type === "finish-step") stepEnded = true;
           controller.enqueue(chunk);
         },
@@ -516,6 +518,7 @@ const observeTurn = async (stream, originalMessages, observer) => {
     try {
       await observer.onMessage(latest, { final });
     } catch (error) {
+      observer.onFailure?.(error);
       console.warn("[turn] Saving the turn's messages failed.", error);
     }
   };
@@ -533,9 +536,11 @@ const observeTurn = async (stream, originalMessages, observer) => {
       }
     }
   } catch (error) {
+    observer.onFailure?.(error);
     console.warn("[turn] Following the turn's messages failed.", error);
   } finally {
     await report(true);
+    observer.onEnd?.();
   }
 };
 

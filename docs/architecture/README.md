@@ -70,4 +70,8 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   architecture review: every project removal and host-catalog merge goes
   through the workspace document and drops runtime state in one place.
 
+- `tasks/host-orchestration.md` tracks ORCH-01 through ORCH-05 from the
+  T3 Code V2 comparison: durable host scheduling, provider continuity,
+  transcript pagination, protocol replay tests and delegation.
+
 Module names and current ownership live in ../../GLOSSARY.md.

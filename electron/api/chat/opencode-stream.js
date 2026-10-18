@@ -889,6 +889,7 @@ export const streamOpenCodeResponse = ({
             let resumed = false;
             if (
               shouldResumeProviderSession({
+                provider: "opencode",
                 model,
                 modelSpeed,
                 projectPath,

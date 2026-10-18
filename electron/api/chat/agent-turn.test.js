@@ -400,6 +400,7 @@ test("session identity is stamped once and carried by later metadata", () => {
   assert.equal(chunks.length, 2);
   assert.deepEqual(chunks[0].messageMetadata, {
     createdAt: "t0",
+    provider: "grok",
     model: "grok-4",
     remoteConversationId: "sess-1",
     remoteConversationModel: "grok-4",
@@ -448,7 +449,10 @@ test("streamAgentTurn writes request metadata first, closes parts, and formats e
     "text-start",
     "text-delta",
   ]);
-  assert.deepEqual(chunks[0].messageMetadata, { createdAt: "t0" });
+  assert.deepEqual(chunks[0].messageMetadata, {
+    createdAt: "t0",
+    provider: "opencode",
+  });
   assert.ok(types(chunks).includes("text-end"), "open parts are closed");
   assert.equal(chunks.find((c) => c.type === "error").errorText, "boom");
 });

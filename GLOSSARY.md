@@ -90,6 +90,12 @@ A transcript is **known saved** only when its retained messages match a saved
 snapshot; merging in a local answer can make it unsaved again. Live consumers
 and unsaved messages protect a transcript from eviction.
 
+The chat view loads the latest **transcript page** (40 messages, a soft
+1 MiB byte budget that keeps at least one complete message). Row cursors
+load earlier history. `transcriptPageByChatId` records the loaded boundary;
+branching explicitly loads the full transcript, host dispatch reads full
+history, and saving a partial page merges by message ID on the writer.
+
 ## Workspace document
 
 One client's **workspace**: which projects (on which hosts) are open or
@@ -119,6 +125,14 @@ The provider-side identity of a chat's conversation, used to resume it:
 `remoteConversationModelSpeed`, `remoteConversationProjectPath`. Not a chat.
 Older code and docs call this the _remote session_; "remote" there means the
 provider's side, never another machine (see Host).
+
+The host retains one handle and transcript-coverage fingerprint per chat
+and provider in `provider_sessions`. Returning to a provider resumes only
+an unchanged covered prefix, with missed text and tool results supplied as
+context; invalid coverage reconstructs. Supported adapters keep sessions
+across model changes. A **native fork** creates an independent provider
+session at the source assistant message's recorded native boundary;
+unverified or unsupported boundaries reconstruct from canonical history.
 
 ## Host
 
@@ -282,6 +296,25 @@ row in the codec's `PLAIN_PERSISTED_FIELDS`, its decoder; the empty state,
 decode, encode, the `config` rows, the store's initial state, hydration and
 save, and the save scheduler's config slice all follow that table. Adding
 one is that row, its type, and its setter.
+
+## Chat run
+
+A **chat run** is the durable submission around a turn: its request ID,
+queue position, captured input/model/permissions, and lifecycle state.
+`electron/host/run-store.js` owns its rows; `electron/api/chat/run-scheduler.js`
+dispatches one run per chat, after the preceding transcript has settled.
+Stop pauses pending work, and a host restart marks active work interrupted
+and pauses queues. An interrupted run retries only by explicit action.
+
+## Delegated task
+
+A **delegated task** is a child chat/run linked to its parent in
+`delegated_tasks`. The host creates the child and queued request atomically.
+`electron/api/chat/delegation.js` exposes launch, status/results and cancel
+tools through run-scoped MCP tokens, or Codex thread-scoped dynamic tools.
+Task keys deduplicate within a parent run, permissions are capped by the
+parent, and parent Stop reaches descendants. Child results stay in the
+host catalog after the parent finishes or the host restarts.
 
 ## Agent turn
 

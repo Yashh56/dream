@@ -12,7 +12,12 @@
 import { Chat } from "@ai-sdk/react";
 import { DefaultChatTransport, type FileUIPart, type UIMessage } from "ai";
 import { create } from "zustand";
-import { apiClient } from "@/lib/api-client";
+import { ApiError, apiClient } from "@/lib/api-client";
+import {
+  forgetChatQueue,
+  refreshChatQueue,
+  useChatQueueStore,
+} from "@/lib/chat-queue";
 import { hostApiPath, resolveRequestHost } from "@/lib/host-routing";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import { resolveEffectiveMcpServers } from "@/lib/mcp-servers";
@@ -36,6 +41,7 @@ import {
   scheduleProjectPanelRefresh,
 } from "../project-panel-refresh";
 import { isHostAway } from "../ssh/host-away";
+import { ensureHostChat } from "../store/ide-store-persistence";
 import {
   addAskUserQuestionAnswerToMessages,
   preserveAskUserQuestionAnswers,
@@ -171,6 +177,7 @@ interface InternalChatSession extends ChatSession {
 
 const sessions = new Map<string, InternalChatSession>();
 const draining = new Set<string>();
+const submissions = new Map<string, Promise<boolean>>();
 
 /** A session's `Chat` id is `chat:<chatId>`; the host knows the chat id. */
 const CHAT_ID_PREFIX = "chat:";
@@ -312,7 +319,7 @@ const handleChatFinish = (
   // The `Chat` keeps its own copy of the array, so read it back: that copy is
   // what a later flush compares against.
   session.lastFlushedMessages = chat.messages;
-  void useIdeStore.getState().persistMessagesForChat(chatId, nextMessages);
+  useIdeStore.getState().setMessagesForChat(chatId, nextMessages);
 
   const remoteConversationId = metadata?.remoteConversationId?.trim();
   if (!remoteConversationId) {
@@ -473,14 +480,56 @@ export const getChatSession = (chatId: string): ChatSession => {
  * Follows the host's running turn in this session's chat, unless this
  * session is already the one streaming it.
  */
-const resumeHostTurn = (session: InternalChatSession) => {
+const resuming = new Set<string>();
+const pendingResumes = new Set<string>();
+const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
+  const { chatId } = session;
+  if (newTurn && (isChatProcessing(session.chat) || resuming.has(chatId)))
+    pendingResumes.add(chatId);
   if (
-    !useIdeStore.getState().hostRunningChatIds[session.chatId] ||
-    isChatProcessing(session.chat)
-  ) {
+    !useIdeStore.getState().hostRunningChatIds[chatId] ||
+    isChatProcessing(session.chat) ||
+    resuming.has(chatId)
+  )
     return;
-  }
-  void session.chat.resumeStream();
+  resuming.add(chatId);
+  pendingResumes.delete(chatId);
+  void (async () => {
+    await useIdeStore.getState().applyCatalogTranscript(chatId);
+    const messages = useIdeStore.getState().messagesByChatId[chatId] ?? [];
+    session.chat.messages = mergeChatMessageHistories(
+      session.chat.messages,
+      messages,
+    );
+    useIdeStore.getState().setChatStreaming(chatId, true);
+    await session.chat.resumeStream();
+  })()
+    .catch((error: Error) => handleChatError(chatId, error))
+    .finally(() => {
+      resuming.delete(chatId);
+      useIdeStore.getState().setChatStreaming(chatId, false);
+      const projectId = findChatConfig(chatId)?.projectId;
+      if (projectId) flushProjectPanelRefresh(projectId);
+      const state = useIdeStore.getState();
+      const project = state.projects.find((entry) => entry.id === projectId);
+      if (
+        project &&
+        !state.chats.some(
+          (chat) =>
+            chat.projectId === projectId && state.hostRunningChatIds[chat.id],
+        )
+      ) {
+        void warmProjectCommitMessage({
+          ...getDefaultGitGenerationModelSelection(state.settings),
+          hostId: project.hostId,
+          projectPath: project.path,
+        });
+      }
+      void useIdeStore.getState().applyCatalogTranscript(chatId);
+      void refreshChatQueue(chatId);
+      scheduleEviction(session);
+      if (pendingResumes.delete(chatId)) resumeHostTurn(session);
+    });
 };
 
 /**
@@ -524,7 +573,7 @@ const flushSession = (session: InternalChatSession) => {
   }
 
   session.lastFlushedMessages = messages;
-  void useIdeStore.getState().persistMessagesForChat(session.chatId, messages);
+  useIdeStore.getState().setMessagesForChat(session.chatId, messages);
 };
 
 /** Saves the session's latest messages when they have not been saved yet. */
@@ -544,38 +593,39 @@ export const respondToToolApproval = (
   const session = getChatSession(chatId) as InternalChatSession;
   const { chat } = session;
 
-  const messagesWithAnswer = addAskUserQuestionAnswerToMessages(
-    chat.messages,
-    response,
-  );
-  if (messagesWithAnswer !== chat.messages) {
-    chat.messages = messagesWithAnswer;
-    session.lastFlushedMessages = chat.messages;
-    void useIdeStore
-      .getState()
-      .persistMessagesForChat(chatId, messagesWithAnswer);
-  }
-
-  if (!isAiSdkApproval(response.id)) {
-    void Promise.resolve(
-      chat.addToolApprovalResponse({
-        approved: response.approved,
-        id: response.id,
-        reason: response.reason,
-      }),
-    ).catch((error: unknown) => {
-      console.debug("[tool approval ai-sdk response]", error);
-    });
-  }
-
   apiClient
     .toolApprovalResponse({
+      chatId,
       approved: response.approved,
       id: response.id,
       reason: response.reason ?? null,
       scope: response.scope ?? "once",
     })
+    .then((result) => {
+      if (!result.handled) throw new Error(chatT("approvalExpired"));
+      const messagesWithAnswer = addAskUserQuestionAnswerToMessages(
+        chat.messages,
+        response,
+      );
+      if (messagesWithAnswer !== chat.messages) {
+        chat.messages = messagesWithAnswer;
+        session.lastFlushedMessages = chat.messages;
+        useIdeStore.getState().setMessagesForChat(chatId, messagesWithAnswer);
+      }
+      if (!isAiSdkApproval(response.id)) {
+        void Promise.resolve(
+          chat.addToolApprovalResponse({
+            approved: response.approved,
+            id: response.id,
+            reason: response.reason,
+          }),
+        ).catch((error: unknown) =>
+          console.debug("[tool approval ai-sdk response]", error),
+        );
+      }
+    })
     .catch((error) => {
+      handleChatError(chatId, error);
       console.error("[tool approval response]", error);
     });
 };
@@ -645,13 +695,9 @@ const generateChatTitle = ({
 export const submitChatPrompt = (
   chatId: string,
   prompt: ChatPromptSubmission,
-): boolean => {
+): Promise<boolean> | false => {
   const session = getChatSession(chatId) as InternalChatSession;
   const { chat } = session;
-
-  if (isChatProcessing(chat)) {
-    throw new Error(chatT("alreadyStreaming"));
-  }
 
   setChatError(chatId, null);
   chat.clearError();
@@ -736,97 +782,87 @@ export const submitChatPrompt = (
 
   const storedMessages = state.messagesByChatId[chatId] ?? [];
   const shouldGenerateTitle =
-    storedMessages.length === 0 && config.title === "New chat";
-  const gitGenerationModelSelection =
-    getDefaultGitGenerationModelSelection(settings);
-
-  const submittedAt = new Date().toISOString();
-  session.pendingAssistantMetadata = {
-    createdAt: submittedAt,
-    ...selectionMetadata,
-    startedAt: submittedAt,
-  };
-
-  useIdeStore.getState().setChatStreaming(chatId, true);
+    storedMessages.length === 0 &&
+    !config.messageCount &&
+    config.title === "New chat";
   if (shouldGenerateTitle) {
     generateChatTitle({
       chatId,
       fallbackModel: activeModel,
       projectPath: submittedProjectPath,
       promptText:
-        prompt.text ||
-        `Referenced project paths:\n${formatProjectReferencesForPrompt(projectReferences)}`,
+        prompt.text || formatProjectReferencesForPrompt(projectReferences),
       provider: activeProvider,
       titleBeforeGeneration: config.title,
     });
   }
-
-  const finishStreaming = () => {
-    useIdeStore.getState().setChatStreaming(chatId, false);
-    flushProjectPanelRefresh(submittedProject.id);
-    const currentState = useIdeStore.getState();
-    const isProjectStreaming = currentState.chats.some(
-      (chat) =>
-        chat.projectId === submittedProject.id &&
-        currentState.streamingChatIds[chat.id],
-    );
-    if (!isProjectStreaming) {
-      void warmProjectCommitMessage({
-        hostId: submittedProject.hostId,
-        model: gitGenerationModelSelection.model,
-        modelSpeed: gitGenerationModelSelection.modelSpeed,
-        projectPath: submittedProjectPath,
-        provider: gitGenerationModelSelection.provider,
-        reasoningEffort: gitGenerationModelSelection.reasoningEffort,
-      });
-    }
-    scheduleEviction(session);
+  const requestId = crypto.randomUUID();
+  const message: UIMessage = {
+    id: requestId,
+    role: "user",
+    parts: [
+      ...prompt.files,
+      ...(prompt.text ? [{ type: "text" as const, text: prompt.text }] : []),
+    ],
+    metadata: {
+      createdAt: new Date().toISOString(),
+      ...selectionMetadata,
+      projectReferences,
+      ...(prompt.skills?.length ? { skillMentions: prompt.skills } : {}),
+    },
   };
-
-  try {
-    const sendPromise = chat.sendMessage(
-      {
-        files: prompt.files,
-        metadata: {
-          createdAt: new Date().toISOString(),
-          ...selectionMetadata,
-          projectReferences,
-          ...(prompt.skills && prompt.skills.length > 0
-            ? { skillMentions: prompt.skills }
-            : {}),
-        },
-        text: prompt.text,
-      },
-      {
-        body: {
-          ...selectionMetadata,
-
-          chatId,
-          checkpointsEnabled: settings.changeCheckpoints,
-          mcpServers: getProviderCapabilities(activeProvider).mcp
-            ? resolveEffectiveMcpServers(settings)
-            : [],
-          permissionMode: config.permissionMode,
-          projectId: submittedProject.id,
-          projectPath: submittedProjectPath,
-          projectReferences,
-          provider: activeProvider,
-          remoteConversationId: config.remoteConversationId,
-          remoteConversationModel: config.remoteConversationModel,
-          remoteConversationModelSpeed: config.remoteConversationModelSpeed,
-          remoteConversationProjectPath: config.remoteConversationProjectPath,
-        },
-      },
-    );
-    void sendPromise.finally(finishStreaming).catch(() => {});
-    return true;
-  } catch (error) {
-    useActivityStore
-      .getState()
-      .finish(chatId, "failed", error instanceof Error ? error.message : "");
-    finishStreaming();
-    throw error;
-  }
+  if (!message.parts.length)
+    message.parts.push({
+      type: "text",
+      text: formatProjectReferencesForPrompt(projectReferences),
+    });
+  const sending = (submissions.get(chatId) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      await ensureHostChat(submittedProject, config);
+      const submission = {
+        ...selectionMetadata,
+        chatId,
+        requestId,
+        message: message as Parameters<
+          typeof apiClient.submitChat
+        >[0]["message"],
+        checkpointsEnabled: settings.changeCheckpoints,
+        mcpServers: getProviderCapabilities(activeProvider).mcp
+          ? resolveEffectiveMcpServers(settings)
+          : [],
+        permissionMode: config.permissionMode,
+        projectId: submittedProject.id,
+        projectPath: submittedProjectPath,
+        projectReferences,
+        provider: activeProvider,
+      };
+      try {
+        await apiClient.submitChat(submission);
+      } catch (error) {
+        if (error instanceof ApiError && error.status < 500) throw error;
+        // A lost receipt may hide a committed submission. Retry the exact ID;
+        // the host returns its receipt without dispatching it twice.
+        await apiClient.submitChat(submission);
+      }
+      await refreshChatQueue(chatId);
+      // Very short turns can finish before a stream subscription is established.
+      await useIdeStore.getState().applyCatalogTranscript(chatId);
+      resumeHostTurn(session);
+      return true;
+    })
+    .catch((error: unknown) => {
+      setChatError(
+        chatId,
+        error instanceof Error ? error.message : chatT("unexpectedError"),
+      );
+      throw error;
+    })
+    .finally(() => {
+      if (submissions.get(chatId) === sending) submissions.delete(chatId);
+    });
+  submissions.set(chatId, sending);
+  return sending;
 };
 
 // ── Queued submissions ──────────────────────────────────────────────────
@@ -889,15 +925,10 @@ const drainPendingSubmit = async (chatId: string) => {
 
   draining.add(chatId);
   try {
-    await useIdeStore.getState().loadMessagesForChat(chatId);
+    await useIdeStore.getState().loadRecentMessagesForChat(chatId);
 
     const state = useIdeStore.getState();
     if (!state.pendingChatSubmitByChatId[chatId]) {
-      return;
-    }
-
-    // Still busy: tried again when the chat's streaming flag clears.
-    if (isChatProcessing(getChatSession(chatId).chat)) {
       return;
     }
 
@@ -908,7 +939,7 @@ const drainPendingSubmit = async (chatId: string) => {
 
     try {
       const serialized = await serializeQueuedSubmission(chatId, submission);
-      const submitted = submitChatPrompt(chatId, {
+      const submitted = await submitChatPrompt(chatId, {
         files: submission.files ?? [],
         ...serialized,
       });
@@ -952,6 +983,11 @@ const syncSessionFromStore = (
     storeMessages,
     session.chat.messages,
   );
+  if (!isChatProcessing(session.chat)) {
+    session.chat.messages = storeMessages;
+    session.lastFlushedMessages = session.chat.messages;
+    return;
+  }
   if (merged !== session.chat.messages) {
     session.chat.messages = merged;
   }
@@ -976,7 +1012,7 @@ export const startChatRuntime = () => {
           state.hostRunningChatIds[session.chatId] &&
           !previous.hostRunningChatIds[session.chatId]
         ) {
-          resumeHostTurn(session);
+          resumeHostTurn(session, true);
         }
       }
     }
@@ -995,6 +1031,9 @@ export const startChatRuntime = () => {
 
     if (state.chats !== previous.chats) {
       const chatIds = new Set(state.chats.map((chat) => chat.id));
+      for (const chatId of Object.keys(useChatQueueStore.getState().queues)) {
+        if (!chatIds.has(chatId)) forgetChatQueue(chatId);
+      }
       for (const session of [...sessions.values()]) {
         if (!chatIds.has(session.chatId)) {
           // The chat is gone for good (e.g. its worktree was purged).

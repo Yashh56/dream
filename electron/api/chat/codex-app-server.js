@@ -1,6 +1,7 @@
 // The Codex app-server translator: app-server notifications and requests
 // become calls on the agent turn. Codex names its own items, so text and
 // reasoning parts use item ids and end when their item completes.
+import { z } from "zod";
 import {
   getProjectGitDiff,
   gitRepositories,
@@ -443,6 +444,7 @@ const buildCollabAgentOutput = (item) => {
 };
 
 export const streamCodexAppServerResponse = ({
+  orchestrationTools,
   abortSignal,
   permissionMode,
   mcpServers = [],
@@ -488,10 +490,12 @@ export const streamCodexAppServerResponse = ({
         let appServerClient = null;
         let turnStartPromise = null;
         let unregisterThread = null;
+        let interruptTimeout = null;
 
         const finish = (callback) => {
           if (finished) return;
           finished = true;
+          clearTimeout(interruptTimeout);
           endBrowserTurn();
           abortSignal?.removeEventListener("abort", handleAbort);
           unregisterThread?.();
@@ -679,6 +683,46 @@ export const streamCodexAppServerResponse = ({
           const { id, method, params } = message;
 
           try {
+            if (method === "item/tool/call") {
+              const definition =
+                params?.threadId === rootThreadId &&
+                params?.turnId === rootTurnId &&
+                !abortSignal?.aborted
+                  ? orchestrationTools?.[params.tool]
+                  : null;
+              if (definition)
+                turn.toolStart({
+                  toolCallId: params.callId,
+                  toolName: params.tool,
+                  input: params.arguments,
+                });
+              const output = definition
+                ? await definition.handler(params.arguments)
+                : {
+                    isError: true,
+                    content: [
+                      {
+                        type: "text",
+                        text: "Tool is unavailable for this thread or turn.",
+                      },
+                    ],
+                  };
+              if (definition) {
+                if (output.isError)
+                  turn.toolError(
+                    params.callId,
+                    output.content.map((item) => item.text ?? "").join("\n"),
+                  );
+                else turn.toolOutput(params.callId, output);
+              }
+              sendResponse(id, {
+                success: !output.isError,
+                contentItems: output.content
+                  .filter((item) => item.type === "text")
+                  .map((item) => ({ type: "inputText", text: item.text })),
+              });
+              return;
+            }
             if (method === "item/commandExecution/requestApproval") {
               const toolCallId = params?.itemId ?? `codex-command-${id}`;
               const response = await turn.approval({
@@ -960,6 +1004,7 @@ export const streamCodexAppServerResponse = ({
             }
 
             const turnResult = params.turn;
+            turn.metadata({ nativeTurnId: turnResult.id });
             if (turnResult.status === "failed") {
               const turnError = new Error(
                 turnResult.error?.message ||
@@ -1009,17 +1054,20 @@ export const streamCodexAppServerResponse = ({
               }
             }
             if (appServerClient && rootThreadId && rootTurnId) {
+              interruptTimeout = setTimeout(
+                () =>
+                  finish(() =>
+                    reject(new Error("Codex did not confirm interruption.")),
+                  ),
+                10_000,
+              );
               await appServerClient.sendRequest("turn/interrupt", {
                 threadId: rootThreadId,
                 turnId: rootTurnId,
               });
-            }
+            } else finish(resolve);
           })();
-          void interruptRequest
-            .catch(() => {
-              // The turn may have completed while cancellation was in flight.
-            })
-            .finally(() => finish(resolve));
+          void interruptRequest.catch((error) => finish(() => reject(error)));
         };
 
         if (abortSignal?.aborted) {
@@ -1057,6 +1105,7 @@ export const streamCodexAppServerResponse = ({
             const serviceTier = modelSpeed === "fast" ? "fast" : null;
 
             const shouldResume = shouldResumeProviderSession({
+              provider: "openai",
               model,
               modelSpeed,
               projectPath,
@@ -1121,6 +1170,18 @@ export const streamCodexAppServerResponse = ({
 
             if (!threadResponse) {
               threadResponse = await client.sendRequest("thread/start", {
+                ...(orchestrationTools
+                  ? {
+                      dynamicTools: Object.entries(orchestrationTools).map(
+                        ([name, definition]) => ({
+                          name,
+                          description: definition.description,
+                          inputSchema: z.toJSONSchema(definition.inputSchema),
+                          deferLoading: false,
+                        }),
+                      ),
+                    }
+                  : {}),
                 approvalPolicy,
                 approvalsReviewer: "user",
                 baseInstructions: systemPrompt,
@@ -1151,6 +1212,8 @@ export const streamCodexAppServerResponse = ({
               onMessage: handleMessage,
             });
             turn.session(threadId);
+            if (orchestrationTools)
+              turn.metadata({ orchestrationToolsVersion: 1 });
             if (finished) {
               return;
             }

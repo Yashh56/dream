@@ -692,15 +692,32 @@ export function savePersistedWorkspaceChanges(changes, { databasePath } = {}) {
 }
 
 export function savePersistedChatMessages(
-  { chatId, fromIndex, messages } = {},
+  { chatId, fromIndex, messages, mergeOnly = false } = {},
   { databasePath } = {},
 ) {
   const database = getStateDatabase(databasePath);
-  return runInTransaction(database, () =>
-    saveChatMessages(database, chatId, messages, new Date().toISOString(), {
-      fromIndex,
-    }),
-  );
+  return runInTransaction(database, () => {
+    if (mergeOnly) {
+      const updates = new Map(messages.map((message) => [message.id, message]));
+      const history = loadChatMessages(database, chatId);
+      const ids = new Set(history.map((message) => message.id));
+      if (messages.some((message) => !ids.has(message.id)))
+        throw new Error(
+          "History changed before saving. Reload the conversation.",
+        );
+      messages = history.map((message) => updates.get(message.id) ?? message);
+      fromIndex = 0;
+    }
+    return saveChatMessages(
+      database,
+      chatId,
+      messages,
+      new Date().toISOString(),
+      {
+        fromIndex,
+      },
+    );
+  });
 }
 
 /** The host catalog: every project and chat, raw. */

@@ -19,27 +19,13 @@ import {
 
 const initialState = useIdeStore.getState();
 
-const sseResponse = (chunks: object[]) =>
-  new Response(
-    `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
-    { headers: { "Content-Type": "text/event-stream" } },
-  );
-
-const assistantReply = (text: string) =>
-  sseResponse([
-    { messageId: "assistant-1", type: "start" },
-    { id: "text-1", type: "text-start" },
-    { delta: text, id: "text-1", type: "text-delta" },
-    { id: "text-1", type: "text-end" },
-    { type: "finish" },
-  ]);
-
 interface ChatRequest {
   body: Record<string, unknown>;
   url: string;
 }
 
 let requests: ChatRequest[] = [];
+let hostMessages: unknown[] = [];
 let stopRuntime: () => void = () => {};
 
 const setUp = ({ installed = true }: { installed?: boolean } = {}) => {
@@ -84,6 +70,7 @@ const waitFor = async (condition: () => boolean) => {
 
 beforeEach(() => {
   requests = [];
+  hostMessages = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -91,9 +78,32 @@ beforeEach(() => {
         body: init?.body ? JSON.parse(String(init.body)) : {},
         url: String(url),
       });
-      return String(url) === "/api/chat"
-        ? assistantReply("Done.")
-        : new Response("{}", { status: 404 });
+      const pathname = String(url);
+      const body = requests.at(-1)?.body ?? {};
+      if (pathname === "/api/catalog/changes")
+        return Response.json({
+          projectIds: [],
+          chatIds: [],
+          conflicts: [],
+          removedProjectIds: [],
+          removedChatIds: [],
+        });
+      if (pathname === "/api/chat/submit") {
+        hostMessages = [
+          body.message,
+          {
+            id: "assistant-1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Done." }],
+          },
+        ];
+        return Response.json({ id: body.requestId, duplicate: false });
+      }
+      if (pathname === "/api/chat/queue")
+        return Response.json({ paused: false, runs: [] });
+      if (pathname === "/api/catalog/transcript")
+        return Response.json(hostMessages);
+      return new Response("{}", { status: 404 });
     }),
   );
 });
@@ -116,14 +126,18 @@ test("a queued submission is sent and saved with no chat panel mounted", async (
     true,
   );
 
-  await waitFor(() => requests.some((request) => request.url === "/api/chat"));
-  const request = requests.find((entry) => entry.url === "/api/chat");
+  await waitFor(() =>
+    requests.some((request) => request.url === "/api/chat/submit"),
+  );
+  const request = requests.find((entry) => entry.url === "/api/chat/submit");
   assert.equal(request?.body.chatId, chat.id);
   assert.equal(request?.body.projectPath, project.path);
   assert.equal(request?.body.model, "claude-test");
   assert.equal(request?.body.provider, "anthropic");
 
-  await waitFor(() => !useIdeStore.getState().streamingChatIds[chat.id]);
+  await waitFor(
+    () => useIdeStore.getState().messagesByChatId[chat.id]?.length === 2,
+  );
   const state = useIdeStore.getState();
   assert.equal(state.pendingChatSubmitByChatId[chat.id], undefined);
   assert.deepEqual(
@@ -156,7 +170,7 @@ test("a queued submission that cannot be sent returns to the draft", async () =>
   assert.equal(takeChatDraftRestore(chat.id), "Make this button blue");
   assert.equal(takeChatDraftRestore(chat.id), null);
   assert.equal(
-    requests.some((request) => request.url === "/api/chat"),
+    requests.some((request) => request.url === "/api/chat/submit"),
     false,
   );
 });
@@ -197,4 +211,71 @@ test("a session follows a transcript the store loads later", () => {
   useIdeStore.setState({ messagesByChatId: { [chat.id]: loaded } });
 
   assert.deepEqual(getChatSession(chat.id).chat.messages, loaded);
+});
+
+test("a lost submit receipt retries the same durable request and attachment payload", async () => {
+  const { chat } = setUp();
+  const transport = globalThis.fetch;
+  let submissions = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const response = await transport(url, init);
+      if (String(url) === "/api/chat/submit" && ++submissions === 1)
+        throw new TypeError("Connection lost after acceptance");
+      return response;
+    }),
+  );
+  const file = {
+    type: "file" as const,
+    mediaType: "text/plain",
+    filename: "context.txt",
+    url: "data:text/plain;base64,SGk=",
+  };
+  assert.equal(
+    await submitChatPrompt(chat.id, {
+      files: [file],
+      text: "Use this context",
+    }),
+    true,
+  );
+  const sent = requests.filter((entry) => entry.url === "/api/chat/submit");
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[0].body, sent[1].body);
+  assert.deepEqual(
+    (sent[0].body.message as { parts: unknown[] }).parts[0],
+    file,
+  );
+});
+
+test("busy chats accept ordered follow-ups; failed acceptance rejects without discarding the caller's draft", async () => {
+  const { chat } = setUp();
+  useIdeStore.setState({ streamingChatIds: { [chat.id]: true } });
+  const first = submitChatPrompt(chat.id, { files: [], text: "First" });
+  const second = submitChatPrompt(chat.id, { files: [], text: "Second" });
+  await Promise.all([first, second]);
+  assert.deepEqual(
+    requests
+      .filter((entry) => entry.url === "/api/chat/submit")
+      .map(
+        (entry) =>
+          (entry.body.message as { parts: { text: string }[] }).parts[0].text,
+      ),
+    ["First", "Second"],
+  );
+  const transport = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) =>
+      String(url) === "/api/chat/submit"
+        ? new Response("Cannot accept submission", { status: 400 })
+        : transport(url, init),
+    ),
+  );
+  const prompt = { files: [], text: "Keep this draft" };
+  await assert.rejects(
+    Promise.resolve(submitChatPrompt(chat.id, prompt)),
+    /Cannot accept/,
+  );
+  assert.equal(prompt.text, "Keep this draft");
 });

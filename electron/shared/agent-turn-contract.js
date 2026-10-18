@@ -23,6 +23,11 @@
  * @property {string} [modelLabel]
  * @property {string} [modelSpeed]
  * @property {string} [modelSpeedLabel]
+ * @property {AiProvider} [provider]
+ * @property {string} [nativeMessageId] Inclusive Claude branch boundary.
+ * @property {string} [nativeTurnId] Inclusive Codex branch boundary.
+ * @property {number} [orchestrationToolsVersion] Dynamic tools registered on the native session.
+ * @property {{ strategy: "delta" | "native-fork" | "reconstructed", afterMessageId?: string, sourceMessageId?: string, reason?: string }} [contextTransfer]
  * @property {ProjectReference[]} [projectReferences]
  * @property {string} [reasoningEffort]
  * @property {string} [reasoningLabel]

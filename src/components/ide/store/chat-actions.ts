@@ -84,12 +84,14 @@ export const createChatActions = (
   },
 
   branchChatInWorkspace: ({ chatId, messageId }) => {
+    if (get().transcriptPageByChatId[chatId]?.before)
+      throw new Error("Load the complete transcript before branching.");
     const state = get();
     const sourceChat = state.chats.find((chat) => chat.id === chatId);
     if (!sourceChat || sourceChat.deletedAt !== null) {
       throw new Error("Unable to find the source chat.");
     }
-    if (state.streamingChatIds[chatId]) {
+    if (state.streamingChatIds[chatId] || state.hostRunningChatIds?.[chatId]) {
       throw new Error("Unable to branch a chat while it is streaming.");
     }
 
@@ -131,12 +133,14 @@ export const createChatActions = (
     chatId,
     messageId,
   }) => {
+    if (get().transcriptPageByChatId[chatId]?.before)
+      await get().loadMessagesForChat(chatId);
     const state = get();
     const sourceChat = state.chats.find((chat) => chat.id === chatId);
     if (!sourceChat || sourceChat.deletedAt !== null) {
       throw new Error("Unable to find the source chat.");
     }
-    if (state.streamingChatIds[chatId]) {
+    if (state.streamingChatIds[chatId] || state.hostRunningChatIds?.[chatId]) {
       throw new Error("Unable to branch a chat while it is streaming.");
     }
     if (
@@ -351,7 +355,12 @@ export const createChatActions = (
           item.id === chatId
             ? {
                 ...item,
-                messageCount: mergedMessages.length,
+                messageCount: state.transcriptPageByChatId[chatId]?.before
+                  ? Math.max(
+                      state.transcriptPageByChatId[chatId].total,
+                      mergedMessages.length,
+                    )
+                  : mergedMessages.length,
                 ...(touchUpdatedAt
                   ? { updatedAt: new Date().toISOString() }
                   : {}),

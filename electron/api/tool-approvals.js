@@ -10,6 +10,7 @@ const registerPendingToolApproval = ({ id, provider, request, respond }) => {
 };
 
 export const toolApprovalResponseSchema = z.object({
+  chatId: z.string().min(1).optional(),
   approved: z.boolean(),
   id: z.string().min(1),
   reason: z.string().nullable().optional(),
@@ -62,9 +63,8 @@ export const waitForToolApproval = ({ id, provider, request, signal }) =>
 export const resolveToolApproval = async (payload) => {
   const pendingApproval = pendingToolApprovals.get(payload.id);
   if (!pendingApproval) {
-    // AI SDK-owned approvals, such as the current Anthropic writeFile flow,
-    // are resolved in-process by useChat(). The shared endpoint intentionally
-    // treats unknown approvals as handled so the frontend can use one path.
+    // A saved approval can outlive its provider callback after a restart.
+    // Never tell the renderer that an expired callback was accepted.
     return { handled: false, status: "not-found" };
   }
 

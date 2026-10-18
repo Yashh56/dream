@@ -102,6 +102,10 @@ export interface IdeState {
   chatSort: ChatSortOrder;
   settings: AppSettings;
   messagesByChatId: Record<string, UIMessage[]>;
+  transcriptPageByChatId: Record<
+    string,
+    { before: string | null; total: number }
+  >;
   pendingChatSubmitByChatId: Record<string, PendingChatSubmit>;
 
   // Runtime state
@@ -323,6 +327,8 @@ export interface IdeState {
   setMessagesForChat: (chatId: string, messages: UIMessage[]) => void;
   retainChatTranscript: (chatId: string) => () => void;
   loadMessagesForChat: (chatId: string) => Promise<UIMessage[]>;
+  loadRecentMessagesForChat: (chatId: string) => Promise<UIMessage[]>;
+  loadEarlierMessagesForChat: (chatId: string) => Promise<void>;
   persistMessagesForChat: (
     chatId: string,
     messages?: UIMessage[],

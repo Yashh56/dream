@@ -50,6 +50,7 @@ export const CHAT_KEYED_STATE = [
   "awaitingAnswerChatIds",
   "completedChatIds",
   "messagesByChatId",
+  "transcriptPageByChatId",
   "pendingChatSubmitByChatId",
   "streamingChatIds",
   "titleGeneratingChatIds",

@@ -53,6 +53,7 @@ const createTestStore = (handlers: FakeApiHandlers = {}) => {
     () =>
       ({
         activeProjectId: project.id,
+        transcriptPageByChatId: {},
         chats: [sourceChat],
         chatSort: "recent",
         closedProjects: [],

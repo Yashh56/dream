@@ -149,3 +149,62 @@ export const chatMessageText = sqliteTable("chat_message_text", {
   messageId: text("message_id"),
   text: text("text").notNull(),
 });
+
+export const chatQueues = sqliteTable("chat_queues", {
+  chatId: text("chat_id")
+    .primaryKey()
+    .references(() => chats.id, { onDelete: "cascade" }),
+  paused: integer("paused").notNull().default(0),
+});
+
+export const providerSessions = sqliteTable(
+  "provider_sessions",
+  {
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    payload: text("payload").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chatId, table.provider] }),
+    check("provider_sessions_payload_json", sql`json_valid(${table.payload})`),
+  ],
+);
+
+export const delegatedTasks = sqliteTable(
+  "delegated_tasks",
+  {
+    id: text("id").primaryKey(),
+    parentChatId: text("parent_chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    parentRunId: text("parent_run_id")
+      .notNull()
+      .references(() => chatRuns.id, { onDelete: "cascade" }),
+    childChatId: text("child_chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("idx_delegated_tasks_parent").on(table.parentChatId)],
+);
+
+export const chatRuns = sqliteTable(
+  "chat_runs",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    status: text("status").notNull(),
+    request: text("request").notNull(),
+    error: text("error"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_chat_runs_queue").on(table.chatId, table.status, table.position),
+    check("chat_runs_request_json", sql`json_valid(${table.request})`),
+  ],
+);

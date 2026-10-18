@@ -26,6 +26,7 @@ const saveStartIndex = (payload) =>
  * before that.
  */
 export const mergeChatMessageSaves = (queued, next) => {
+  if (queued?.mergeOnly || next?.mergeOnly) return null;
   if (
     queued?.chatId !== next?.chatId ||
     !Array.isArray(queued?.messages) ||
@@ -243,6 +244,8 @@ export function createStateSaveQueue({ databasePath }) {
   };
 
   return {
+    mutateRunQueue: (payload) => enqueue("run-queue", payload),
+    saveProviderSession: (payload) => enqueue("save-provider-session", payload),
     saveChatMessages,
     applyCatalogChanges,
     saveWorkspaceChanges,

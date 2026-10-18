@@ -182,7 +182,7 @@ test("new chats receive feedback through the regular submission flow", () => {
   );
 });
 
-test("feedback never overwrites a pending submission or sends to a busy or inactive chat", () => {
+test("feedback can queue while busy but never overwrites pending or sends to an inactive chat", () => {
   const { project, store } = createTestStore();
   const chatId = store.getState().addChat(project.id);
   assert.ok(chatId);
@@ -196,7 +196,7 @@ test("feedback never overwrites a pending submission or sends to a busy or inact
   );
   assert.deepEqual(store.getState().takePendingChatSubmit(chatId), first);
   store.setState({ streamingChatIds: { [chatId]: true } });
-  assert.equal(store.getState().queueChatSubmit(chatId, first), false);
+  assert.equal(store.getState().queueChatSubmit(chatId, first), true);
   store.setState({ streamingChatIds: {}, activeProjectId: null });
   assert.equal(store.getState().queueChatSubmit(chatId, first), false);
   assert.equal(store.getState().queueChatSubmit("missing-chat", first), false);

@@ -38,7 +38,6 @@ test("every client route is registered on the API server", async () => {
   const app = new Hono();
   for (const register of [
     registerBrowserToolCallRoutes,
-    registerChatRoutes,
     registerCheckpointRoutes,
     registerCodePullRequestRoutes,
     registerHostDirectoryRoutes,
@@ -55,6 +54,7 @@ test("every client route is registered on the API server", async () => {
     sessions: {} as never,
   });
   registerCatalogRoutes(app, {} as never);
+  registerChatRoutes(app, { scheduler: {} as never });
   registerHostSocketRoutes(app, {
     socket: {} as never,
     tickets: {} as never,

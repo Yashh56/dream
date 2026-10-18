@@ -52,16 +52,20 @@ export const ContinueChatPopover = ({
     }
   }, [isProcessing]);
 
-  const continueInWorkspace = () => {
+  const continueInWorkspace = async () => {
     if (isProcessing || submitting) {
       return;
     }
 
     try {
+      setSubmitting(true);
+      await useIdeStore.getState().loadMessagesForChat(chat.id);
       branchChatInWorkspace({ chatId: chat.id, messageId });
       setOpen(false);
     } catch {
       onError(chatT("unableToCreateBranch"));
+    } finally {
+      setSubmitting(false);
     }
   };
 

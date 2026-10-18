@@ -378,12 +378,18 @@ test("an older database gets the same search text on upgrade", async () => {
   // As a build before the search text left it.
   const database = new DatabaseSync(db.databasePath);
   const searchTextMigrationMillis = database
-    .prepare("SELECT MAX(created_at) AS millis FROM __drizzle_migrations")
+    .prepare(
+      "SELECT created_at AS millis FROM __drizzle_migrations ORDER BY created_at LIMIT 1 OFFSET 3",
+    )
     .get().millis;
   database.exec(`
     DROP TRIGGER chat_messages_text_delete;
     DROP TABLE chat_message_text;
     DELETE FROM __drizzle_migrations WHERE created_at >= ${searchTextMigrationMillis};
+    DROP TABLE delegated_tasks;
+    DROP TABLE chat_runs;
+    DROP TABLE chat_queues;
+    DROP TABLE provider_sessions;
   `);
   database.close();
 

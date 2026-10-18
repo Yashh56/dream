@@ -2,11 +2,19 @@ import { promises as fs } from "node:fs";
 import { z } from "zod";
 import { turnObservers } from "./chat/agent-turn.js";
 import { appendBrowserMcpServer } from "./chat/browser-tools.js";
+import { forkNativeSession } from "./chat/native-fork.js";
 import {
+  chatQueueControlSchema,
+  chatQueueRequestSchema,
   chatRequestBodySchema,
+  chatSubmitRequestSchema,
   chatTitleRequestBodySchema,
   formatProjectReferencesForPrompt,
 } from "./chat/schema.js";
+import {
+  resolveSessionContext,
+  transcriptFingerprint,
+} from "./chat/session-context.js";
 import {
   applySkillDispatchToMessages,
   resolveSkillDispatch,
@@ -59,7 +67,14 @@ export const createTurnRecorder = ({
   projectPath,
   requestMessages,
   saveIntervalMs = TURN_SAVE_INTERVAL_MS,
+  onChunk,
+  provider,
 }) => {
+  let resolveDone;
+  let saveError;
+  const done = new Promise((resolve) => {
+    resolveDone = resolve;
+  });
   const continued = requestMessages.at(-1)?.role === "assistant";
   const before = continued ? requestMessages.slice(0, -1) : requestMessages;
   let beforeSaved = false;
@@ -105,7 +120,21 @@ export const createTurnRecorder = ({
   };
 
   return {
+    done,
+    onChunk,
+    onFailure: (error) => {
+      saveError = error;
+    },
+    onEnd: () => resolveDone(saveError),
     async onMessage(message, { final }) {
+      if (final)
+        message = {
+          ...message,
+          metadata: {
+            ...message.metadata,
+            completedAt: new Date().toISOString(),
+          },
+        };
       if (!final) {
         const wait = lastSaveAt + saveIntervalMs - Date.now();
         if (wait > 0) {
@@ -124,6 +153,24 @@ export const createTurnRecorder = ({
           ? metadata.remoteConversationId.trim()
           : "";
       const chat = sessionId ? await catalog.getChat(chatId) : null;
+      if (chat && provider && catalog.saveProviderSession) {
+        await catalog.saveProviderSession({
+          chatId,
+          provider,
+          session: {
+            remoteConversationId: sessionId,
+            remoteConversationModel:
+              metadata.remoteConversationModel ?? chat.model,
+            remoteConversationModelSpeed:
+              metadata.remoteConversationModelSpeed ?? chat.modelSpeed,
+            remoteConversationProjectPath:
+              metadata.remoteConversationProjectPath ?? projectPath,
+            lastMessageId: message.id,
+            fingerprint: transcriptFingerprint([...before, message]),
+            orchestrationToolsVersion: metadata.orchestrationToolsVersion,
+          },
+        });
+      }
       if (!chat || chat.remoteConversationId === sessionId) return;
       await catalog.applyChanges(
         {
@@ -214,14 +261,32 @@ const validateProjectPath = async (projectPath) => {
  * @param {{
  *   catalog?: ReturnType<typeof import("../host/catalog.js").createHostCatalog>,
  *   turns?: ReturnType<typeof createTurnRegistry>,
+ *   scheduler?: ReturnType<typeof import("./chat/run-scheduler.js").createRunScheduler>,
  * }} [options]
  *   `catalog`: where a turn's transcript is saved as it runs (none in route
  *   tests). `turns`: the host's running turns.
  */
 export const registerChatRoutes = (
   app,
-  { catalog = null, turns = createTurnRegistry() } = {},
+  { catalog = null, turns = createTurnRegistry(), scheduler = null } = {},
 ) => {
+  if (scheduler) {
+    app.post("/api/chat/submit", (c) =>
+      handleJsonRoute(c, chatSubmitRequestSchema, (data) =>
+        scheduler.submit(data),
+      ),
+    );
+    app.post("/api/chat/queue", (c) =>
+      handleJsonRoute(c, chatQueueRequestSchema, ({ chatId }) =>
+        scheduler.list(chatId),
+      ),
+    );
+    app.post("/api/chat/queue/control", (c) =>
+      handleJsonRoute(c, chatQueueControlSchema, (data) =>
+        scheduler.control(data),
+      ),
+    );
+  }
   // A running turn's stream from its start, for a client that reconnects
   // (the AI SDK's resumable stream); 204 when none runs.
   app.get("/api/chat/:chatId/stream", (c) => {
@@ -231,9 +296,13 @@ export const registerChatRoutes = (
 
   // The only way a turn ends early: a dropped request does not stop it.
   app.post("/api/chat/stop", (c) =>
-    handleJsonRoute(c, chatStopRequestSchema, ({ chatId }) => ({
-      stopped: turns.stop(chatId),
-    })),
+    handleJsonRoute(c, chatStopRequestSchema, async ({ chatId }) => {
+      if (scheduler) {
+        await scheduler.control({ chatId, action: "pause" });
+        return { stopped: true };
+      }
+      return { stopped: turns.stop(chatId) };
+    }),
   );
 
   app.post("/api/chat-title", (c) =>
@@ -280,146 +349,243 @@ export const registerChatRoutes = (
       return c.text(parsed.error.message, 400);
     }
 
-    const {
-      chatId,
-      checkpointsEnabled,
-      messages,
-      model,
-      modelLabel,
-      modelSpeed,
-      modelSpeedLabel,
-      projectReferences,
-      projectPath,
-      projectId,
-      permissionMode,
-      provider: providerId,
-      reasoningEffort,
-      reasoningLabel,
-      remoteConversationId,
-      remoteConversationModel,
-      remoteConversationModelSpeed,
-      remoteConversationProjectPath,
-      threadId,
-      mcpServers,
-    } = parsed.data;
-    const provider = getProvider(providerId);
-    const resolvedChatId = chatId ?? threadId;
-    if (resolvedChatId && turns.isRunning(resolvedChatId)) {
-      return c.text(new TurnInProgressError(resolvedChatId).message, 409);
-    }
-    const resolvedProjectPath =
-      (catalog
-        ? await catalog.resolveProjectPath({
-            chatId: resolvedChatId,
-            projectId,
-          })
-        : null) ?? projectPath;
-
-    const projectPathError = await validateProjectPath(resolvedProjectPath);
-    if (projectPathError) {
-      return c.text(projectPathError.message, projectPathError.status);
-    }
-
-    const readyError = await provider.checkReady();
-    if (readyError) {
-      return c.text(readyError.message, readyError.status);
-    }
-
-    const responseMessageMetadata = {
-      createdAt: new Date().toISOString(),
-      model,
-      modelLabel: modelLabel ?? model,
-      modelSpeed,
-      ...(modelSpeedLabel ? { modelSpeedLabel } : {}),
-      ...(reasoningEffort ? { reasoningEffort } : {}),
-      ...(reasoningLabel ? { reasoningLabel } : {}),
-    };
-    const checkpointId = await resolveTurnCheckpointId({
-      chatId: resolvedChatId,
-      checkpointsEnabled,
-      messages,
-      projectPath: resolvedProjectPath,
-    });
-    if (checkpointId) {
-      responseMessageMetadata.checkpointId = checkpointId;
-    }
-
-    // `$skill` mentions in the latest user message become whatever the
-    // provider expands natively (see skill-dispatch.js): nothing, an
-    // instruction part, or a slash prefix on the prompt.
-    const skillDispatch = await resolveSkillDispatch({
-      mcpServers,
-      messages,
-      projectPath: resolvedProjectPath,
-      provider: providerId,
-    });
-
-    const runTurn = async (abortSignal) => {
-      const recorder =
-        catalog && resolvedChatId
-          ? createTurnRecorder({
-              catalog,
-              chatId: resolvedChatId,
-              projectPath: resolvedProjectPath,
-              requestMessages: messages,
-            })
-          : null;
-      const streamTurn = () =>
-        provider.stream({
-          abortSignal,
-          chatId: resolvedChatId,
-          // Dream's browser tools reach the agent over MCP where the provider
-          // takes MCP config per session; Claude gets them in-process instead.
-          mcpServers: provider.browserMcpScope
-            ? appendBrowserMcpServer(mcpServers, {
-                projectId,
-                scope: provider.browserMcpScope,
-              })
-            : mcpServers,
-          messages: applySkillDispatchToMessages(messages, skillDispatch),
-          model,
-          modelSpeed,
-          permissionMode,
-          projectId,
-          projectPath: resolvedProjectPath,
-          projectReferencesPrompt:
-            formatProjectReferencesForPrompt(projectReferences),
-          reasoningEffort,
-          remoteConversationId,
-          remoteConversationModel,
-          remoteConversationModelSpeed,
-          remoteConversationProjectPath,
-          responseMessageMetadata,
-          skillSlashCommand: skillDispatch?.slashCommand,
-        });
-      const streamResponse = recorder
-        ? await turnObservers.run(recorder, streamTurn)
-        : await streamTurn();
-      if (!checkpointId || !(streamResponse instanceof Response)) {
-        return streamResponse;
-      }
-
-      return attachCheckpointFinalizer(streamResponse, abortSignal, () =>
-        finalizeCheckpoint({
-          chatId: resolvedChatId,
-          checkpointId,
-          projectPath: resolvedProjectPath,
-        }),
-      );
-    };
-
-    // Without a chat id there is nothing to resume or stop by: the turn is
-    // simply the request's.
-    if (!resolvedChatId) {
-      return runTurn(c.req.raw.signal);
-    }
+    const resolvedChatId = parsed.data.chatId ?? parsed.data.threadId;
+    const run = (signal) =>
+      executeChatRequest(parsed.data, { catalog, signal });
+    if (!resolvedChatId) return run(c.req.raw.signal);
     try {
-      return await turns.start({ chatId: resolvedChatId, run: runTurn });
+      return await turns.start({ chatId: resolvedChatId, run });
     } catch (error) {
-      if (error instanceof TurnInProgressError) {
+      if (error instanceof TurnInProgressError)
         return c.text(error.message, 409);
-      }
       throw error;
     }
   });
 };
+
+export async function executeChatRequest(
+  data,
+  { catalog, signal, onChunk, orchestration },
+) {
+  const {
+    chatId,
+    checkpointsEnabled,
+    messages,
+    model,
+    modelLabel,
+    modelSpeed,
+    modelSpeedLabel,
+    projectReferences,
+    projectPath,
+    projectId,
+    permissionMode,
+    provider: providerId,
+    reasoningEffort,
+    reasoningLabel,
+    remoteConversationId,
+    remoteConversationModel,
+    remoteConversationModelSpeed,
+    remoteConversationProjectPath,
+    threadId,
+    mcpServers: configuredMcpServers,
+  } = data;
+  const mcpServers = [
+    ...(configuredMcpServers ?? []),
+    ...(orchestration?.mcpServers ?? []),
+  ];
+  const provider = getProvider(providerId);
+  const resolvedChatId = chatId ?? threadId;
+  const resolvedProjectPath =
+    (catalog
+      ? await catalog.resolveProjectPath({
+          chatId: resolvedChatId,
+          projectId,
+        })
+      : null) ?? projectPath;
+
+  const projectPathError = await validateProjectPath(resolvedProjectPath);
+  if (projectPathError) {
+    return new Response(projectPathError.message, {
+      status: projectPathError.status,
+    });
+  }
+
+  const readyError = await provider.checkReady();
+  if (readyError) {
+    return new Response(readyError.message, { status: readyError.status });
+  }
+
+  const startedAt = new Date().toISOString();
+  const responseMessageMetadata = {
+    createdAt: startedAt,
+    startedAt,
+    model,
+    modelLabel: modelLabel ?? model,
+    modelSpeed,
+    ...(modelSpeedLabel ? { modelSpeedLabel } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(reasoningLabel ? { reasoningLabel } : {}),
+  };
+  let sessionContext = null;
+  let handoff = null;
+  if (catalog?.providerSession && resolvedChatId) {
+    const saved = await catalog.providerSession(resolvedChatId, providerId);
+    const needsTools = providerId === "openai" && orchestration?.tools;
+    const resolved =
+      needsTools && saved?.orchestrationToolsVersion !== 1
+        ? null
+        : resolveSessionContext({
+            saved,
+            messages,
+            projectPath: resolvedProjectPath,
+          });
+    sessionContext = resolved?.session ?? {
+      remoteConversationId: null,
+      remoteConversationModel: null,
+      remoteConversationModelSpeed: null,
+      remoteConversationProjectPath: null,
+    };
+    handoff = resolved?.handoff ?? null;
+    const chat = !saved ? await catalog.getChat(resolvedChatId) : null;
+    const source =
+      chat?.branchedFrom &&
+      messages.find((message) => message.id === chat.branchedFrom.messageId);
+    if (
+      !saved &&
+      source?.role === "assistant" &&
+      provider.nativeFork &&
+      (!needsTools || source.metadata?.orchestrationToolsVersion === 1)
+    ) {
+      try {
+        if (signal?.aborted) throw new Error("Turn stopped.");
+        const forkId = await forkNativeSession({
+          provider: providerId,
+          source: source.metadata,
+          projectPath: resolvedProjectPath,
+          model,
+          modelSpeed,
+          permissionMode,
+          mcpServers,
+        });
+        if (forkId) {
+          sessionContext = {
+            remoteConversationId: forkId,
+            remoteConversationModel: model,
+            remoteConversationModelSpeed: modelSpeed,
+            remoteConversationProjectPath: resolvedProjectPath,
+          };
+          responseMessageMetadata.contextTransfer = {
+            strategy: "native-fork",
+            sourceMessageId: source.id,
+          };
+        }
+      } catch (error) {
+        responseMessageMetadata.contextTransfer = {
+          strategy: "reconstructed",
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    if (handoff)
+      responseMessageMetadata.contextTransfer = {
+        strategy: handoff.strategy,
+        afterMessageId: handoff.afterMessageId,
+      };
+    else if (!sessionContext.remoteConversationId && messages.length > 1)
+      responseMessageMetadata.contextTransfer ??= { strategy: "reconstructed" };
+  }
+  const checkpointId = await resolveTurnCheckpointId({
+    chatId: resolvedChatId,
+    checkpointsEnabled,
+    messages,
+    projectPath: resolvedProjectPath,
+  });
+  if (checkpointId) {
+    responseMessageMetadata.checkpointId = checkpointId;
+  }
+
+  // `$skill` mentions in the latest user message become whatever the
+  // provider expands natively (see skill-dispatch.js): nothing, an
+  // instruction part, or a slash prefix on the prompt.
+  const skillDispatch = await resolveSkillDispatch({
+    mcpServers,
+    messages,
+    projectPath: resolvedProjectPath,
+    provider: providerId,
+  });
+
+  const runTurn = async (abortSignal) => {
+    const recorder =
+      catalog && resolvedChatId
+        ? createTurnRecorder({
+            catalog,
+            chatId: resolvedChatId,
+            projectPath: resolvedProjectPath,
+            requestMessages: messages,
+            onChunk,
+            provider: providerId,
+          })
+        : null;
+    const streamTurn = () =>
+      provider.stream({
+        orchestrationTools: orchestration?.tools,
+        abortSignal,
+        chatId: resolvedChatId,
+        // Dream's browser tools reach the agent over MCP where the provider
+        // takes MCP config per session; Claude gets them in-process instead.
+        mcpServers: provider.browserMcpScope
+          ? appendBrowserMcpServer(mcpServers, {
+              projectId,
+              scope: provider.browserMcpScope,
+            })
+          : mcpServers,
+        messages: applySkillDispatchToMessages(messages, skillDispatch),
+        model,
+        modelSpeed,
+        permissionMode,
+        projectId,
+        projectPath: resolvedProjectPath,
+        projectReferencesPrompt:
+          [formatProjectReferencesForPrompt(projectReferences), handoff?.text]
+            .filter(Boolean)
+            .join("\n\n") || null,
+        reasoningEffort,
+        remoteConversationId,
+        remoteConversationModel,
+        remoteConversationModelSpeed,
+        remoteConversationProjectPath,
+        ...sessionContext,
+        responseMessageMetadata,
+        skillSlashCommand: skillDispatch?.slashCommand,
+      });
+    let streamResponse = recorder
+      ? await turnObservers.run(recorder, streamTurn)
+      : await streamTurn();
+    if (recorder && streamResponse?.body && streamResponse.ok) {
+      streamResponse = new Response(
+        streamResponse.body.pipeThrough(
+          new TransformStream({
+            async flush() {
+              const error = await recorder.done;
+              if (error) throw error;
+            },
+          }),
+        ),
+        { headers: streamResponse.headers, status: streamResponse.status },
+      );
+    }
+    if (!checkpointId || !(streamResponse instanceof Response)) {
+      return streamResponse;
+    }
+
+    return attachCheckpointFinalizer(streamResponse, abortSignal, () =>
+      finalizeCheckpoint({
+        chatId: resolvedChatId,
+        checkpointId,
+        projectPath: resolvedProjectPath,
+      }),
+    );
+  };
+
+  return runTurn(signal);
+}

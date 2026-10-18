@@ -18,6 +18,7 @@ import {
 } from "./browser-mcp-routes.js";
 import { registerBrowserToolCallRoutes } from "./browser-tool-call-routes.js";
 import { registerCatalogRoutes } from "./catalog-routes.js";
+import { ORCHESTRATION_MCP_PATH } from "./chat/delegation.js";
 import { registerChatRoutes } from "./chat-routes.js";
 import { registerCheckpointRoutes } from "./checkpoint-routes.js";
 import { registerCodePullRequestRoutes } from "./code-pull-request-routes.js";
@@ -50,6 +51,8 @@ export {
 // ---------------------------------------------------------------------------
 
 function createApiApp({
+  delegation,
+  scheduler,
   activity,
   apiToken,
   catalog,
@@ -70,6 +73,7 @@ function createApiApp({
     // host-socket-routes.js): a browser WebSocket cannot send this header.
     if (
       c.req.path === HOST_SOCKET_PATH ||
+      (delegation && c.req.path === ORCHESTRATION_MCP_PATH) ||
       isProxiedHostSocketPath(c.req.path)
     ) {
       await next();
@@ -90,6 +94,8 @@ function createApiApp({
   }
 
   registerHostInfoRoute(guardedApp, getHostInfo);
+  if (delegation)
+    guardedApp.all(ORCHESTRATION_MCP_PATH, (c) => delegation.handle(c.req.raw));
   registerHostDirectoryRoutes(guardedApp);
   if (catalog) registerCatalogRoutes(guardedApp, catalog);
   // Projects on other hosts, through this one (see host-proxy-routes.js).
@@ -101,7 +107,7 @@ function createApiApp({
   }
   registerToolApprovalRoutes(guardedApp);
   registerProviderRoutes(guardedApp);
-  registerChatRoutes(guardedApp, { catalog, turns });
+  registerChatRoutes(guardedApp, { catalog, turns, scheduler });
   registerProjectGitRoutes(guardedApp);
   registerCodePullRequestRoutes(guardedApp);
   registerCheckpointRoutes(guardedApp);
@@ -126,6 +132,8 @@ function createApiApp({
  * when each request begins and ends (see shared/request-activity.js).
  */
 export function startApiServer({
+  delegation,
+  scheduler,
   activity,
   apiToken,
   catalog,
@@ -137,6 +145,8 @@ export function startApiServer({
   terminals,
 }) {
   const guardedApp = createApiApp({
+    delegation,
+    scheduler,
     activity,
     apiToken,
     catalog,
@@ -157,6 +167,7 @@ export function startApiServer({
         websocket: { server: webSocketServer },
       },
       (info) => {
+        delegation?.setEndpoint(`http://127.0.0.1:${info.port}`);
         console.log(`API server listening on http://127.0.0.1:${info.port}`);
         // External agent CLIs reach the browser tools here; the token guard
         // on /api/* applies, so the header travels with the server config.

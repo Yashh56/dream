@@ -8,12 +8,17 @@
 // different chats never erase each other's work. Projects are unique by
 // path: an upsert whose path already belongs to another project is refused
 // and reported as a conflict.
+
 import {
   chatFromRow,
   chatToRow,
   projectFromRow,
   projectToCatalogRow,
 } from "../shared/persisted-state-codec.js";
+import { readDelegatedTasks } from "./delegation-store.js";
+import { readProviderSession } from "./provider-session-store.js";
+import { readRunQueue } from "./run-store.js";
+import { readTranscriptPage } from "./transcript-page.js";
 
 const isRecord = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -562,6 +567,11 @@ export function searchChatMessages(database, query, { limit = 50 } = {}) {
  * @type {Record<string, (database: import("node:sqlite").DatabaseSync, payload: any) => unknown>}
  */
 export const catalogReads = {
+  "transcript-page": readTranscriptPage,
+  "delegated-tasks": (database, { chatId }) =>
+    readDelegatedTasks(database, chatId),
+  "provider-session": readProviderSession,
+  "run-queue": (database, { chatId }) => readRunQueue(database, chatId),
   catalog: (database) => loadCatalog(database),
   chat: (database, { chatId }) => loadChat(database, chatId),
   "project-path": (database, ids) => resolveProjectPath(database, ids),

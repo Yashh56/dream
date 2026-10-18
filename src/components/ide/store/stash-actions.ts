@@ -170,7 +170,6 @@ export const createStashActions = (
     if (
       !chat ||
       chat.projectId !== state.activeProjectId ||
-      state.streamingChatIds[chatId] ||
       state.pendingChatSubmitByChatId[chatId] ||
       (!submission.text.trim() &&
         submission.references.length === 0 &&

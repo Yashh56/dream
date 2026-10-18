@@ -142,6 +142,21 @@ export const createCatalogSync = ({
 
     remember,
     forget,
+    ensureChat: (project: ProjectConfig, chat: ChatConfig) =>
+      enqueue(async () => {
+        const projects = syncedProjects.has(project.id) ? [] : [project];
+        const chats = syncedChats.has(chat.id) ? [] : [chat];
+        if (!projects.length && !chats.length) return;
+        const result = await api.catalogChanges({
+          projects,
+          chats,
+          removedProjectIds: [],
+          removedChatIds: [],
+        });
+        if (result.conflicts.length)
+          throw new Error("Project belongs to a different host catalog entry.");
+        remember({ projects, chats });
+      }),
 
     /** Ids the host has confirmed (the only ones a refetch may remove). */
     isSynced: (kind: "project" | "chat", id: string) =>
@@ -184,7 +199,17 @@ export const createCatalogSync = ({
     },
 
     /** Replaces a chat's transcript on the host, after pending changes. */
-    saveTranscript: (chatId: string, messages: UIMessage[]) =>
-      enqueue(() => api.saveCatalogTranscript({ chatId, messages })),
+    saveTranscript: (
+      chatId: string,
+      messages: UIMessage[],
+      mergeOnly = false,
+    ) =>
+      enqueue(() =>
+        api.saveCatalogTranscript({
+          chatId,
+          messages,
+          ...(mergeOnly ? { mergeOnly } : {}),
+        }),
+      ),
   };
 };

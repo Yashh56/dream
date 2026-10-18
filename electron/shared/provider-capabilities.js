@@ -35,6 +35,8 @@
  * @property {boolean} mcp Dream-managed MCP servers are passed to the agent.
  * @property {SkillDispatchStyle | null} skills `null` when the CLI loads no skills.
  * @property {boolean} usageLimits The provider reports usage limits.
+ * @property {boolean} modelSwitchInSession The adapter sets the model on each resumed turn.
+ * @property {boolean} nativeFork The adapter can fork from an exact recorded native boundary.
  * @property {"shared" | "project" | null} browserMcpScope How Dream's browser
  *   tools are exposed over MCP: one shared endpoint (a single long-lived
  *   agent process), a per-project endpoint, or not over MCP at all (Claude
@@ -54,6 +56,8 @@ export const PROVIDER_IDS = [
 export const PROVIDER_CAPABILITIES = {
   openai: {
     label: "Codex",
+    modelSwitchInSession: true,
+    nativeFork: true,
     selectedModelsSetting: "openAiSelectedModels",
     modelAliases: null,
     mcp: true,
@@ -63,6 +67,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   anthropic: {
     label: "Claude Code",
+    modelSwitchInSession: true,
+    nativeFork: true,
     selectedModelsSetting: "anthropicSelectedModels",
     modelAliases: "claude-code",
     mcp: true,
@@ -77,6 +83,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   opencode: {
     label: "OpenCode",
+    modelSwitchInSession: true,
+    nativeFork: false,
     selectedModelsSetting: "openCodeSelectedModels",
     modelAliases: null,
     mcp: true,
@@ -90,6 +98,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   cursor: {
     label: "Cursor Agent",
+    modelSwitchInSession: false,
+    nativeFork: false,
     selectedModelsSetting: "cursorSelectedModels",
     modelAliases: null,
     mcp: false,
@@ -99,6 +109,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   grok: {
     label: "Grok Build",
+    modelSwitchInSession: false,
+    nativeFork: false,
     selectedModelsSetting: "grokSelectedModels",
     modelAliases: null,
     mcp: true,

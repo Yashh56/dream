@@ -457,6 +457,7 @@ export const streamClaudeResponse = async ({
   let resumeSessionId = null;
   if (
     shouldResumeProviderSession({
+      provider: "anthropic",
       model,
       modelSpeed,
       projectPath,
@@ -491,6 +492,14 @@ export const streamClaudeResponse = async ({
         projectPath,
       }),
       streamingInput: "auto",
+      onSdkMessage: (message) => {
+        if (
+          message.type === "assistant" &&
+          !message.parent_tool_use_id &&
+          message.uuid
+        )
+          turn.metadata({ nativeMessageId: message.uuid });
+      },
       continue: false,
       cwd: projectPath,
       // Dream closes the transport when this request finishes, so background

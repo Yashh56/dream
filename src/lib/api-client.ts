@@ -53,10 +53,16 @@ import type {
   catalogChangesRequestSchema,
   catalogListRequestSchema,
   catalogSearchRequestSchema,
+  catalogTranscriptPageSchema,
   catalogTranscriptRequestSchema,
   catalogTranscriptSaveRequestSchema,
 } from "../../electron/api/catalog-routes.js";
-import type { chatTitleRequestBodySchema } from "../../electron/api/chat/schema.js";
+import type {
+  chatQueueControlSchema,
+  chatQueueRequestSchema,
+  chatSubmitRequestSchema,
+  chatTitleRequestBodySchema,
+} from "../../electron/api/chat/schema.js";
 import type { chatStopRequestSchema } from "../../electron/api/chat-routes.js";
 import type {
   checkpointChangesRequestSchema,
@@ -272,6 +278,33 @@ export interface CatalogResponse {
   chats: Record<string, unknown>[];
   /** Chats with a turn running on the host now. */
   runningChatIds?: string[];
+}
+
+export interface ChatRunSummary {
+  id: string;
+  chatId: string;
+  status:
+    | "queued"
+    | "running"
+    | "waiting"
+    | "completed"
+    | "interrupted"
+    | "failed"
+    | "cancelled";
+  text: string;
+  provider: string;
+  model: string;
+  error: string | null;
+}
+export interface ChatQueueResponse {
+  paused: boolean;
+  runs: ChatRunSummary[];
+}
+export interface TranscriptPage {
+  messages: UIMessage[];
+  total: number;
+  startIndex: number;
+  before: string | null;
 }
 
 export interface CatalogChangesResponse {
@@ -543,6 +576,17 @@ export const API_ROUTES = {
   >("/api/tool-approval-response"),
 
   // The host catalog (projects, chats, transcripts)
+  submitChat: post<
+    Input<typeof chatSubmitRequestSchema>,
+    { id: string; duplicate: boolean }
+  >("/api/chat/submit"),
+  chatQueue: post<Input<typeof chatQueueRequestSchema>, ChatQueueResponse>(
+    "/api/chat/queue",
+  ),
+  controlChatQueue: post<
+    Input<typeof chatQueueControlSchema>,
+    ChatQueueResponse
+  >("/api/chat/queue/control"),
   catalog: post<Input<typeof catalogListRequestSchema>, CatalogResponse>(
     "/api/catalog",
   ),
@@ -554,6 +598,10 @@ export const API_ROUTES = {
     Input<typeof catalogTranscriptRequestSchema>,
     UIMessage[]
   >("/api/catalog/transcript"),
+  catalogTranscriptPage: post<
+    Input<typeof catalogTranscriptPageSchema>,
+    TranscriptPage
+  >("/api/catalog/transcript/page"),
   catalogSearch: post<
     Input<typeof catalogSearchRequestSchema>,
     CatalogSearchResponse
