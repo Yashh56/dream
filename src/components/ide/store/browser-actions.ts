@@ -1,13 +1,19 @@
+import type { BrowserTabState } from "@/types/ide";
 import {
   createBrowserTabState,
   moveItem,
   resolveActiveBrowserTab,
 } from "./helpers";
-import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
+import type { IdeState, IdeStoreSet } from "./ide-store-types";
 
+interface Tabs {
+  tabs: BrowserTabState[];
+  activeTabId: string | null;
+}
+
+/** Tab transitions settle selection, the saved URL and removed loading state together. */
 export const createBrowserActions = (
   set: IdeStoreSet,
-  get: IdeStoreGet,
 ): Pick<
   IdeState,
   | "setBrowserError"
@@ -18,231 +24,130 @@ export const createBrowserActions = (
   | "closeBrowserTab"
   | "reorderBrowserTabs"
   | "setActiveBrowserTab"
-> => ({
-  setBrowserError: (error) => set({ browserError: error }),
-
-  setBrowserLoading: (id, loading) => {
-    set((state) => ({
-      browserLoading: { ...state.browserLoading, [id]: loading },
-    }));
-  },
-
-  ensureBrowserTabs: (projectId, initialUrl = "") => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    if (!normalizedProjectId) {
-      return;
-    }
-
+> => {
+  const changeTabs = (
+    projectId: string,
+    update: (current: Tabs) => Tabs,
+  ): string | null => {
+    const id = projectId.trim();
+    let activeId: string | null = null;
+    if (!id) return activeId;
     set((state) => {
-      const existingTabs =
-        state.browserTabsByProject[normalizedProjectId] ?? [];
-      if (existingTabs.length > 0) {
-        const activeTabId =
-          state.activeBrowserTabIdByProject[normalizedProjectId] ?? null;
-        if (activeTabId && existingTabs.some((tab) => tab.id === activeTabId)) {
-          return state;
-        }
-
-        return {
-          activeBrowserTabIdByProject: {
-            ...state.activeBrowserTabIdByProject,
-            [normalizedProjectId]: existingTabs[0]?.id ?? null,
-          },
-        };
-      }
-
-      const initialTab = createBrowserTabState(initialUrl);
-      return {
-        browserTabsByProject: {
-          ...state.browserTabsByProject,
-          [normalizedProjectId]: [initialTab],
-        },
-        activeBrowserTabIdByProject: {
-          ...state.activeBrowserTabIdByProject,
-          [normalizedProjectId]: initialTab.id,
-        },
-      };
-    });
-  },
-
-  createBrowserTab: (projectId, initialUrl = "") => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    if (!normalizedProjectId) {
-      return null;
-    }
-
-    const nextTab = createBrowserTabState(initialUrl);
-    set((state) => ({
-      browserTabsByProject: {
-        ...state.browserTabsByProject,
-        [normalizedProjectId]: [
-          ...(state.browserTabsByProject[normalizedProjectId] ?? []),
-          nextTab,
-        ],
-      },
-      activeBrowserTabIdByProject: {
-        ...state.activeBrowserTabIdByProject,
-        [normalizedProjectId]: nextTab.id,
-      },
-    }));
-
-    return nextTab.id;
-  },
-
-  updateBrowserTab: (projectId, tabId, updater) => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    const normalizedTabId = typeof tabId === "string" ? tabId.trim() : "";
-    if (!normalizedProjectId || !normalizedTabId) {
-      return;
-    }
-
-    set((state) => {
-      const tabs = state.browserTabsByProject[normalizedProjectId] ?? [];
-      let changed = false;
-      const nextTabs = tabs.map((tab) => {
-        if (tab.id !== normalizedTabId) {
-          return tab;
-        }
-
-        const updatedTab = updater(tab);
-        changed = changed || updatedTab !== tab;
-        return updatedTab;
-      });
-
-      if (!changed) {
+      const project = state.projects.find((item) => item.id === id);
+      // A late webview event cannot recreate a closed project's runtime state.
+      if (!project) return state;
+      const tabs = state.browserTabsByProject[id] ?? [];
+      const activeTabId = state.activeBrowserTabIdByProject[id] ?? null;
+      const next = update({ tabs, activeTabId });
+      if (!next.tabs.length && next.tabs === tabs) return state;
+      const active = resolveActiveBrowserTab(next.tabs, next.activeTabId);
+      activeId = active?.id ?? null;
+      const url = active?.url ?? "";
+      if (
+        next.tabs === tabs &&
+        activeId === activeTabId &&
+        project.browserUrl === url
+      )
         return state;
-      }
-
-      return {
-        browserTabsByProject: {
-          ...state.browserTabsByProject,
-          [normalizedProjectId]: nextTabs,
-        },
-      };
-    });
-  },
-
-  closeBrowserTab: (projectId, tabId) => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    const normalizedTabId = typeof tabId === "string" ? tabId.trim() : "";
-    if (!normalizedProjectId || !normalizedTabId) {
-      return null;
-    }
-
-    const existingTabs = get().browserTabsByProject[normalizedProjectId] ?? [];
-    const closingIndex = existingTabs.findIndex(
-      (tab) => tab.id === normalizedTabId,
-    );
-    if (closingIndex === -1) {
-      return (
-        resolveActiveBrowserTab(
-          existingTabs,
-          get().activeBrowserTabIdByProject[normalizedProjectId],
-        )?.id ?? null
+      const removed = tabs.filter(
+        (tab) => !next.tabs.some((item) => item.id === tab.id),
       );
-    }
+      const browserLoading = removed.length
+        ? { ...state.browserLoading }
+        : state.browserLoading;
+      for (const tab of removed) delete browserLoading[tab.id];
+      return {
+        browserLoading,
+        browserTabsByProject:
+          next.tabs === tabs
+            ? state.browserTabsByProject
+            : { ...state.browserTabsByProject, [id]: next.tabs },
+        activeBrowserTabIdByProject:
+          activeId === activeTabId
+            ? state.activeBrowserTabIdByProject
+            : { ...state.activeBrowserTabIdByProject, [id]: activeId },
+        projects:
+          project.browserUrl === url
+            ? state.projects
+            : state.projects.map((item) =>
+                item.id === id ? { ...item, browserUrl: url } : item,
+              ),
+      };
+    });
+    return activeId;
+  };
 
-    if (existingTabs.length <= 1) {
-      const replacementTab = createBrowserTabState();
+  return {
+    setBrowserError: (error) => set({ browserError: error }),
+
+    setBrowserLoading: (id, loading) => {
       set((state) => {
-        const nextBrowserLoading = { ...state.browserLoading };
-        delete nextBrowserLoading[normalizedTabId];
-
-        return {
-          browserLoading: nextBrowserLoading,
-          browserTabsByProject: {
-            ...state.browserTabsByProject,
-            [normalizedProjectId]: [replacementTab],
-          },
-          activeBrowserTabIdByProject: {
-            ...state.activeBrowserTabIdByProject,
-            [normalizedProjectId]: replacementTab.id,
-          },
-        };
+        if (
+          !state.projects.some((project) =>
+            state.browserTabsByProject[project.id]?.some(
+              (tab) => tab.id === id,
+            ),
+          )
+        )
+          return state;
+        return { browserLoading: { ...state.browserLoading, [id]: loading } };
       });
+    },
 
-      return replacementTab.id;
-    }
+    ensureBrowserTabs: (projectId, initialUrl = "") => {
+      changeTabs(projectId, (current) => {
+        if (current.tabs.length) return current;
+        const tab = createBrowserTabState(initialUrl);
+        return { tabs: [tab], activeTabId: tab.id };
+      });
+    },
 
-    const remainingTabs = existingTabs.filter(
-      (tab) => tab.id !== normalizedTabId,
-    );
-    const currentActiveTabId =
-      get().activeBrowserTabIdByProject[normalizedProjectId] ?? null;
-    const nextActiveTab =
-      currentActiveTabId === normalizedTabId
-        ? (remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)] ??
-          null)
-        : resolveActiveBrowserTab(remainingTabs, currentActiveTabId);
-    const nextActiveTabId = nextActiveTab?.id ?? null;
+    createBrowserTab: (projectId, initialUrl = "") =>
+      changeTabs(projectId, ({ tabs }) => {
+        const tab = createBrowserTabState(initialUrl);
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
 
-    set((state) => {
-      const nextBrowserLoading = { ...state.browserLoading };
-      delete nextBrowserLoading[normalizedTabId];
+    updateBrowserTab: (projectId, tabId, updater) => {
+      changeTabs(projectId, (current) => {
+        let changed = false;
+        const tabs = current.tabs.map((tab) => {
+          if (tab.id !== tabId.trim()) return tab;
+          const next = updater(tab);
+          changed ||= next !== tab;
+          return next;
+        });
+        return changed ? { ...current, tabs } : current;
+      });
+    },
 
-      return {
-        browserLoading: nextBrowserLoading,
-        browserTabsByProject: {
-          ...state.browserTabsByProject,
-          [normalizedProjectId]: remainingTabs,
-        },
-        activeBrowserTabIdByProject: {
-          ...state.activeBrowserTabIdByProject,
-          [normalizedProjectId]: nextActiveTabId,
-        },
-      };
-    });
+    closeBrowserTab: (projectId, tabId) =>
+      changeTabs(projectId, (current) => {
+        const index = current.tabs.findIndex((tab) => tab.id === tabId.trim());
+        if (index < 0) return current;
+        const tabs = current.tabs.filter((_, tabIndex) => tabIndex !== index);
+        if (!tabs.length) {
+          const tab = createBrowserTabState();
+          return { tabs: [tab], activeTabId: tab.id };
+        }
+        return {
+          tabs,
+          activeTabId:
+            current.activeTabId === tabId.trim()
+              ? tabs[Math.min(index, tabs.length - 1)].id
+              : current.activeTabId,
+        };
+      }),
 
-    return nextActiveTabId;
-  },
+    reorderBrowserTabs: (projectId, fromIndex, toIndex) => {
+      changeTabs(projectId, (current) => ({
+        ...current,
+        tabs: moveItem(current.tabs, fromIndex, toIndex),
+      }));
+    },
 
-  reorderBrowserTabs: (projectId, fromIndex, toIndex) => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    if (!normalizedProjectId) {
-      return;
-    }
-
-    set((state) => {
-      const tabs = state.browserTabsByProject[normalizedProjectId] ?? [];
-      const nextTabs = moveItem(tabs, fromIndex, toIndex);
-      if (nextTabs === tabs) {
-        return state;
-      }
-
-      return {
-        browserTabsByProject: {
-          ...state.browserTabsByProject,
-          [normalizedProjectId]: nextTabs,
-        },
-      };
-    });
-  },
-
-  setActiveBrowserTab: (projectId, tabId) => {
-    const normalizedProjectId =
-      typeof projectId === "string" ? projectId.trim() : "";
-    if (!normalizedProjectId) {
-      return;
-    }
-
-    set((state) => {
-      const tabs = state.browserTabsByProject[normalizedProjectId] ?? [];
-      const nextActiveTabId =
-        tabId && tabs.some((tab) => tab.id === tabId)
-          ? tabId
-          : (tabs[0]?.id ?? null);
-
-      return {
-        activeBrowserTabIdByProject: {
-          ...state.activeBrowserTabIdByProject,
-          [normalizedProjectId]: nextActiveTabId,
-        },
-      };
-    });
-  },
-});
+    setActiveBrowserTab: (projectId, tabId) => {
+      changeTabs(projectId, (current) => ({ ...current, activeTabId: tabId }));
+    },
+  };
+};

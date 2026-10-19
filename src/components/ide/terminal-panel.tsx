@@ -334,10 +334,6 @@ export const TerminalPanel = ({
       }
 
       state.createBrowserTab(projectId, uri);
-      state.updateProject(projectId, (project) => ({
-        ...project,
-        browserUrl: uri,
-      }));
       state.showRightPanelView(projectId, "browser");
     });
 

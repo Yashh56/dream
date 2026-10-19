@@ -55,9 +55,6 @@ const setTabUrl = (projectId: string, tabId: string, url: string) => {
   state.updateBrowserTab(projectId, tabId, (tab) =>
     tab.url === url ? tab : { ...tab, url },
   );
-  state.updateProject(projectId, (project) =>
-    project.browserUrl === url ? project : { ...project, browserUrl: url },
-  );
 };
 
 const showTab = (
@@ -137,14 +134,6 @@ const closeTab = (
     throw new Error(`No browser tab with id ${payload.tabId}.`);
   }
   const nextActiveTabId = state.closeBrowserTab(projectId, payload.tabId);
-  const nextTab =
-    (useIdeStore.getState().browserTabsByProject[projectId] ?? []).find(
-      (tab) => tab.id === nextActiveTabId,
-    ) ?? null;
-  state.updateProject(projectId, (project) => ({
-    ...project,
-    browserUrl: nextTab?.url ?? "",
-  }));
   return { activeTabId: nextActiveTabId, closed: payload.tabId };
 };
 

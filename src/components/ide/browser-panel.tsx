@@ -363,7 +363,6 @@ const BrowserPanelImpl = ({
   const setBrowserError = useIdeStore((state) => state.setBrowserError);
   const setBrowserLoading = useIdeStore((state) => state.setBrowserLoading);
   const openExternalUrl = useIdeStore((state) => state.openExternalUrl);
-  const updateProject = useIdeStore((state) => state.updateProject);
   const ensureBrowserTabs = useIdeStore((state) => state.ensureBrowserTabs);
   const createBrowserTab = useIdeStore((state) => state.createBrowserTab);
   const updateBrowserTab = useIdeStore((state) => state.updateBrowserTab);
@@ -416,17 +415,10 @@ const BrowserPanelImpl = ({
     ensureBrowserTabs(project.id, project.browserUrl);
   }, [active, ensureBrowserTabs, project.browserUrl, project.id]);
 
-  useEffect(() => {
-    if (!active || !tabs.length || activeTabId) {
-      return;
-    }
-
-    setActiveBrowserTab(projectId, tabs[0].id);
-  }, [active, activeTabId, projectId, setActiveBrowserTab, tabs]);
-
+  // biome-ignore lint/correctness/useExhaustiveDependencies: changing tabs resets an edited address even when both tabs have the same URL.
   useEffect(() => {
     setBrowserUrlDraft(activeTab?.url ?? "");
-  }, [activeTab?.url]);
+  }, [activeTab?.id, activeTab?.url]);
 
   useEffect(() => {
     if (!activeTab?.url && browserError) {
@@ -452,30 +444,6 @@ const BrowserPanelImpl = ({
     [],
   );
 
-  const updateProjectUrlIfActive = useCallback(
-    (tabId: string, url: string) => {
-      const state = useIdeStore.getState();
-      const currentActiveTabId =
-        state.activeBrowserTabIdByProject[projectId] ?? null;
-      if (currentActiveTabId !== tabId || !url) {
-        return;
-      }
-
-      const currentProject = state.projects.find(
-        (item) => item.id === projectId,
-      );
-      if (!currentProject || currentProject.browserUrl === url) {
-        return;
-      }
-
-      state.updateProject(projectId, (project) => ({
-        ...project,
-        browserUrl: url,
-      }));
-    },
-    [projectId],
-  );
-
   const handleWebviewStateChange = useCallback(
     (
       tabId: string,
@@ -496,9 +464,8 @@ const BrowserPanelImpl = ({
         url: url || tab.url,
         zoomFactor,
       }));
-      updateProjectUrlIfActive(tabId, url);
     },
-    [browserT, projectId, updateBrowserTab, updateProjectUrlIfActive],
+    [browserT, projectId, updateBrowserTab],
   );
 
   const handleWebviewLoadingChange = useCallback(
@@ -525,17 +492,13 @@ const BrowserPanelImpl = ({
 
   const handleActivateTab = useCallback(
     (tabId: string) => {
-      const nextTab = tabs.find((tab) => tab.id === tabId) ?? null;
       setActiveBrowserTab(projectId, tabId);
-      setBrowserUrlDraft(nextTab?.url ?? "");
+      setBrowserUrlDraft(
+        useIdeStore.getState().getActiveBrowserTab(projectId)?.url ?? "",
+      );
       setBrowserError(null);
-
-      updateProject(projectId, (project) => ({
-        ...project,
-        browserUrl: nextTab?.url ?? "",
-      }));
     },
-    [projectId, setActiveBrowserTab, setBrowserError, tabs, updateProject],
+    [projectId, setActiveBrowserTab, setBrowserError],
   );
 
   const handleReorderTab = useCallback(
@@ -549,55 +512,21 @@ const BrowserPanelImpl = ({
     createBrowserTab(projectId);
     setBrowserError(null);
     setBrowserUrlDraft("");
-    updateProject(projectId, (project) => ({
-      ...project,
-      browserUrl: "",
-    }));
-  }, [createBrowserTab, projectId, setBrowserError, updateProject]);
+  }, [createBrowserTab, projectId, setBrowserError]);
 
   const handleCloseTab = useCallback(
     (tabId: string) => {
-      if (tabs.length === 1) {
-        webviewRefs.current.delete(tabId);
-        closeBrowserTab(projectId, tabId);
-        closeRightPanel(projectId);
-        setBrowserError(null);
-        setBrowserUrlDraft("");
-        updateProject(projectId, (project) => ({
-          ...project,
-          browserUrl: "",
-        }));
-        return;
-      }
-
-      const closingIndex = tabs.findIndex((tab) => tab.id === tabId);
-      const remainingTabs = tabs.filter((tab) => tab.id !== tabId);
-      const fallbackTab =
-        activeTabId === tabId
-          ? (remainingTabs[Math.min(closingIndex, remainingTabs.length - 1)] ??
-            null)
-          : activeTab;
-
+      const closingLastTab =
+        useIdeStore.getState().getBrowserTabs(projectId).length === 1;
       webviewRefs.current.delete(tabId);
       closeBrowserTab(projectId, tabId);
+      if (closingLastTab) closeRightPanel(projectId);
       setBrowserError(null);
-      setBrowserUrlDraft(fallbackTab?.url ?? "");
-
-      updateProject(projectId, (project) => ({
-        ...project,
-        browserUrl: fallbackTab?.url ?? "",
-      }));
+      setBrowserUrlDraft(
+        useIdeStore.getState().getActiveBrowserTab(projectId)?.url ?? "",
+      );
     },
-    [
-      activeTab,
-      activeTabId,
-      closeBrowserTab,
-      projectId,
-      setBrowserError,
-      closeRightPanel,
-      tabs,
-      updateProject,
-    ],
+    [closeBrowserTab, projectId, setBrowserError, closeRightPanel],
   );
 
   const handleNavigate = useCallback(() => {
@@ -617,10 +546,6 @@ const BrowserPanelImpl = ({
       title: getBrowserTabTitle(nextUrl, browserT("newTab")),
       url: nextUrl,
     }));
-    updateProject(projectId, (project) => ({
-      ...project,
-      browserUrl: nextUrl,
-    }));
     setBrowserUrlDraft(nextUrl);
 
     void toLoadableUrl(project.hostId, nextUrl)
@@ -637,7 +562,6 @@ const BrowserPanelImpl = ({
     setBrowserError,
     setBrowserLoading,
     updateBrowserTab,
-    updateProject,
     project.hostId,
   ]);
 

@@ -429,6 +429,15 @@ showing (on the same Git tab) closes the panel. Leaving the terminal view
 discards terminals nobody typed into; showing it starts one. Whether the
 panel is **expanded** over the chats is the workspace's own view state.
 
+## Browser tab
+
+A page open in a project's Browser panel. A project's active browser tab is
+one of its tabs; its saved browser URL follows that tab, including a blank URL.
+Closing the active tab selects its neighbor; closing the final tab leaves a
+blank replacement. The panel also closes itself on final-tab close, while an
+agent's close command leaves the panel open. An agent opening a URL can reuse
+the active blank tab; the panel's Add tab always adds one.
+
 ## File editor session
 
 A project's open files in the Files panel, held outside React

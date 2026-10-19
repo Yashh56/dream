@@ -184,7 +184,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
   // ── Actions: runtime ────────────────────────────────────────────────
   ...createRuntimeActions(set),
-  ...createBrowserActions(set, get),
+  ...createBrowserActions(set),
   ...createTerminalActions(set, get),
 
   // ── Actions: hydration & persistence ────────────────────────────────
