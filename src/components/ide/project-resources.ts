@@ -269,6 +269,16 @@ const IDLE_SNAPSHOT: ResourceSnapshot<never> = {
   version: null,
 };
 
+/** Subscribes outside React, with the same refresh-key watcher as the hook. */
+export const subscribeProjectResource = (
+  key: ResourceKey<ProjectResourceKind>,
+  listener: () => void,
+  active = true,
+) => {
+  watchRefreshKeys();
+  return projectResources.subscribe(key, listener, active);
+};
+
 /**
  * Follows one project resource. `active` says the reader is being shown:
  * only then is it fetched, and fetched again when the project's refresh
@@ -290,8 +300,7 @@ export const useProjectResource = <Kind extends ProjectResourceKind>(
   const subscribe = useCallback(
     (listener: () => void) => {
       if (!stableKey) return () => {};
-      watchRefreshKeys();
-      const subscription = projectResources.subscribe(
+      const subscription = subscribeProjectResource(
         stableKey,
         listener,
         activeRef.current,

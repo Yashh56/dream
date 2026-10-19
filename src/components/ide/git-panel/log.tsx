@@ -5,47 +5,22 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { Spinner } from "@/components/ui/spinner";
-import { apiClient, getApiErrorMessage, isAbortError } from "@/lib/api-client";
+import { getApiErrorMessage } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import type { ProjectGitLogCommit, ProjectGitLogResponse } from "@/types/ide";
+import type { ProjectGitLogCommit } from "@/types/ide";
 import { formatLastActiveTime } from "../activity-time";
-import { projectResourceKey, useProjectResource } from "../project-resources";
 import { buildGitGraph, type GitGraphRow } from "./log-graph";
 import {
   type GitGraphLayout,
   GitLogGraphCell,
   getGitGraphLayout,
 } from "./log-graph-cell";
+import { useGitHistory } from "./use-git-history";
 
-const GIT_LOG_PAGE_SIZE = 100;
 const COPIED_FEEDBACK_MS = 1500;
-
-const fetchGitLog = async (
-  projectPath: string,
-  skip: number,
-  signal: AbortSignal,
-): Promise<ProjectGitLogResponse> => {
-  return apiClient.gitLog(
-    { limit: GIT_LOG_PAGE_SIZE, projectPath, skip },
-    { signal },
-  );
-};
 
 // An empty message falls back to the translated generic error when rendered.
 const getErrorMessage = (error: unknown) => getApiErrorMessage(error, "");
-
-/**
- * The log's first page, a project resource shared by the log and the
- * overview's recent commits: read while shown, again after commits, pushes
- * and branch switches (the git refresh key).
- */
-export const useGitLogFirstPage = (projectPath: string, active: boolean) =>
-  useProjectResource(
-    projectResourceKey("gitLog", projectPath, {
-      params: { limit: GIT_LOG_PAGE_SIZE },
-    }),
-    { active },
-  );
 
 /** Formats a commit's age the way the log rows show it. */
 export const useCommitTimeFormatter = () => {
@@ -168,93 +143,26 @@ export const GitLogRow = ({
 export const GitLog = ({
   active,
   projectPath,
+  hostId,
 }: {
   active: boolean;
   projectPath: string;
+  hostId: string;
 }) => {
   const gitT = useTranslations("git");
   const panelsT = useTranslations("panels");
   const pullRequestsT = useTranslations("pullRequests");
   const relativeTimeFormatter = useCommitTimeFormatter();
-  const firstPage = useGitLogFirstPage(projectPath, active);
-  const firstPageData =
-    firstPage.error === undefined ? firstPage.data : undefined;
-  // Later pages, kept only while the first page they continue is current.
-  const [more, setMore] = useState<{
-    after: ProjectGitLogResponse;
-    commits: ProjectGitLogCommit[];
-    hasMore: boolean;
-  } | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const {
+    commits,
+    hasMore,
+    loading,
+    loadingMore,
+    error: loadError,
+    loadMore: handleLoadMore,
+  } = useGitHistory(projectPath, hostId, active);
+  const error = loadError === undefined ? null : getErrorMessage(loadError);
   const [searchQuery, setSearchQuery] = useState("");
-  const loadMoreAbortRef = useRef<AbortController | null>(null);
-
-  const continued = more && more.after === firstPageData ? more : null;
-  const commits = useMemo(
-    () => [...(firstPageData?.commits ?? []), ...(continued?.commits ?? [])],
-    [continued, firstPageData],
-  );
-  const hasMore = continued?.hasMore ?? firstPageData?.hasMore ?? false;
-  const loading = firstPage.loading;
-  const error =
-    firstPage.error !== undefined && !firstPage.loading
-      ? getErrorMessage(firstPage.error)
-      : loadMoreError;
-
-  useEffect(() => {
-    // A new first page: whatever "load more" was doing continued the old one.
-    void firstPageData;
-    loadMoreAbortRef.current?.abort();
-    setLoadMoreError(null);
-  }, [firstPageData]);
-
-  useEffect(() => () => loadMoreAbortRef.current?.abort(), []);
-
-  const handleLoadMore = useCallback(() => {
-    if (loadingMore || !hasMore || !firstPageData) {
-      return;
-    }
-
-    const abortController = new AbortController();
-    const after = firstPageData;
-    loadMoreAbortRef.current?.abort();
-    loadMoreAbortRef.current = abortController;
-    setLoadingMore(true);
-
-    fetchGitLog(projectPath, commits.length, abortController.signal)
-      .then((payload) => {
-        if (abortController.signal.aborted) {
-          return;
-        }
-        setMore((current) => {
-          const previous = current?.after === after ? current.commits : [];
-          const seen = new Set(
-            [...after.commits, ...previous].map((commit) => commit.hash),
-          );
-          return {
-            after,
-            commits: [
-              ...previous,
-              ...payload.commits.filter((commit) => !seen.has(commit.hash)),
-            ],
-            hasMore: payload.hasMore,
-          };
-        });
-      })
-      .catch((loadError: unknown) => {
-        if (isAbortError(loadError) || abortController.signal.aborted) {
-          return;
-        }
-        setLoadMoreError(getErrorMessage(loadError));
-      })
-      .finally(() => {
-        if (loadMoreAbortRef.current === abortController) {
-          loadMoreAbortRef.current = null;
-          setLoadingMore(false);
-        }
-      });
-  }, [commits.length, firstPageData, hasMore, loadingMore, projectPath]);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredCommits = useMemo(

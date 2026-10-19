@@ -429,6 +429,15 @@ showing (on the same Git tab) closes the panel. Leaving the terminal view
 discards terminals nobody typed into; showing it starts one. Whether the
 panel is **expanded** over the chats is the workspace's own view state.
 
+## Git history
+
+The commits loaded for one project's HEAD on one host. The shared first page
+is a Project resource; `git-panel/git-history.ts` owns its continuation pages,
+loading state and cancellation. A refresh replaces the continuation, so late
+pages cannot extend a newer history. Paging advances by host rows received,
+while visible commits are unique by hash. Search and graph rendering belong
+to the view.
+
 ## Browser tab
 
 A page open in a project's Browser panel. A project's active browser tab is

@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { cn } from "@/lib/utils";
 import type { GitPanelTab, ProjectConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
@@ -105,7 +106,13 @@ export const GitPanel = ({
       return <GitChanges active={tabActive} projectId={projectId} />;
     }
     if (value === "log") {
-      return <GitLog active={tabActive} projectPath={project.path} />;
+      return (
+        <GitLog
+          active={tabActive}
+          hostId={project.hostId ?? LOCAL_HOST_ID}
+          projectPath={project.path}
+        />
+      );
     }
     return (
       <Suspense fallback={<TabLoadingFallback />}>
