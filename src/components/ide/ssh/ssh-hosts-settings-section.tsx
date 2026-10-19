@@ -11,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { StatusDot, type StatusDotColor } from "@/components/ui/status-dot";
 import type { HostConnectionState, SshHostConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
@@ -230,9 +232,10 @@ export const SshHostsSettingsSection = () => {
                 <div className="truncate font-medium text-sm">{host.label}</div>
                 <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
                   <span className="truncate">{host.target}</span>
-                  <span aria-hidden="true">·</span>
-                  <StatusDot color={dot.color} pulse={dot.pulse} />
-                  <span className="shrink-0">{stateLabel(runtime?.state)}</span>
+                  <Badge className="gap-1.5" variant="outline">
+                    <StatusDot color={dot.color} pulse={dot.pulse} />
+                    {stateLabel(runtime?.state)}
+                  </Badge>
                 </div>
                 {runtime?.error ? (
                   <div className="mt-1 select-text whitespace-pre-wrap break-words text-destructive text-xs">
@@ -251,13 +254,18 @@ export const SshHostsSettingsSection = () => {
                 </Button>
               ) : (
                 <Button
+                  aria-busy={busy}
                   disabled={busy}
                   onClick={() => void connectHost(host.id)}
                   size="sm"
                   variant="outline"
                 >
-                  <PlugZap className="size-3.5" />
-                  {t("connect")}
+                  {busy ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <PlugZap className="size-3.5" />
+                  )}
+                  {busy ? t("stateConnecting") : t("connect")}
                 </Button>
               )}
               <div className="flex shrink-0 items-center">
