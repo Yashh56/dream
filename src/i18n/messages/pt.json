@@ -180,7 +180,9 @@
     "queueResume": "Retomar fila",
     "queuePause": "Pausar fila",
     "queueCancel": "Cancelar",
-    "queueRetry": "Enfileirar novamente",
+    "queueRetry": "Tentar novamente",
+    "queueRemove": "Remover",
+    "queueInterruptedHint": "Parou antes de terminar. Confira a resposta antes de tentar novamente.",
     "queueAttachment": "Anexo",
     "queueStatus": {
       "queued": "Na fila",

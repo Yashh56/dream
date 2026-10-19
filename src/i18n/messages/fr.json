@@ -180,7 +180,9 @@
     "queueResume": "Reprendre",
     "queuePause": "Suspendre",
     "queueCancel": "Annuler",
-    "queueRetry": "Remettre en file",
+    "queueRetry": "Réessayer",
+    "queueRemove": "Retirer",
+    "queueInterruptedHint": "Arrêté avant la fin. Vérifiez la réponse avant de réessayer.",
     "queueAttachment": "Pièce jointe",
     "queueStatus": {
       "queued": "En attente",

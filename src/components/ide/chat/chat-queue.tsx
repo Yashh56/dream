@@ -5,6 +5,7 @@ import {
   controlChatQueue,
   refreshChatQueue,
   useChatQueueStore,
+  visibleQueueRuns,
 } from "@/lib/chat-queue";
 
 export function ChatQueue({ chatId }: { chatId: string }) {
@@ -14,13 +15,13 @@ export function ChatQueue({ chatId }: { chatId: string }) {
   useEffect(() => {
     void refreshChatQueue(chatId);
   }, [chatId]);
-  const runs =
-    queue?.runs.filter(
-      (run) => run.status !== "completed" && run.status !== "cancelled",
-    ) ?? [];
+  const runs = visibleQueueRuns(queue?.runs ?? []);
   if (!runs.length && !error) return null;
   return (
-    <div className="mx-3 mb-2 rounded-md border p-2 text-sm" aria-live="polite">
+    <div
+      className="mx-auto mb-2 w-full max-w-[700px] rounded-md border p-2 text-sm"
+      aria-live="polite"
+    >
       <div className="flex items-center justify-between gap-2">
         <span>{t(queue?.paused ? "queuePaused" : "queueTitle")}</span>
         <Button
@@ -47,15 +48,31 @@ export function ChatQueue({ chatId }: { chatId: string }) {
             <div className="min-w-0 flex-1">
               <p className="truncate">{run.text || t("queueAttachment")}</p>
               <p className="text-xs text-muted-foreground">
-                {run.model} ·{" "}
-                {run.status !== "completed" && run.status !== "cancelled"
-                  ? t(`queueStatus.${run.status}`)
-                  : null}
+                {run.model} · {t(`queueStatus.${run.status}`)}
               </p>
               {run.error ? (
                 <p className="text-xs text-destructive">{run.error}</p>
+              ) : run.status === "interrupted" ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("queueInterruptedHint")}
+                </p>
               ) : null}
             </div>
+            {run.status === "failed" || run.status === "interrupted" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void controlChatQueue({
+                    chatId,
+                    action: "cancel",
+                    id: run.id,
+                  })
+                }
+              >
+                {t("queueRemove")}
+              </Button>
+            ) : null}
             {run.status === "queued" ? (
               <Button
                 size="sm"
@@ -71,7 +88,7 @@ export function ChatQueue({ chatId }: { chatId: string }) {
                 {t("queueCancel")}
               </Button>
             ) : null}
-            {["failed", "interrupted"].includes(run.status) ? (
+            {run.status === "failed" || run.status === "interrupted" ? (
               <Button
                 size="sm"
                 variant="outline"

@@ -180,7 +180,9 @@
     "queueResume": "Reanudar cola",
     "queuePause": "Pausar cola",
     "queueCancel": "Cancelar",
-    "queueRetry": "Volver a encolar",
+    "queueRetry": "Reintentar",
+    "queueRemove": "Quitar",
+    "queueInterruptedHint": "Se detuvo antes de terminar. Revisa la respuesta antes de reintentar.",
     "queueAttachment": "Adjunto",
     "queueStatus": {
       "queued": "En cola",

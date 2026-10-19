@@ -180,7 +180,9 @@
     "queueResume": "キューを再開",
     "queuePause": "キューを一時停止",
     "queueCancel": "キャンセル",
-    "queueRetry": "再試行をキューに追加",
+    "queueRetry": "再試行",
+    "queueRemove": "削除",
+    "queueInterruptedHint": "完了前に停止しました。再試行する前に応答を確認してください。",
     "queueAttachment": "添付ファイル",
     "queueStatus": {
       "queued": "待機中",

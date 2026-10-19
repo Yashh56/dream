@@ -132,8 +132,10 @@ function mutate(db, { type, chatId, id, request, status, error }) {
       "INSERT INTO chat_queues (chat_id, paused) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET paused = excluded.paused",
     ).run(chatId, Number(type === "pause"));
   } else if (type === "cancel") {
+    // Queued work never starts; a failed or interrupted run is dismissed
+    // instead of retried. The live turn is ended with Stop, not here.
     db.prepare(
-      "UPDATE chat_runs SET status = 'cancelled', updated_at = ? WHERE chat_id = ? AND id = ? AND status = 'queued'",
+      "UPDATE chat_runs SET status = 'cancelled', updated_at = ? WHERE chat_id = ? AND id = ? AND status IN ('queued', 'failed', 'interrupted')",
     ).run(now, chatId, id);
   } else if (type === "retry") {
     // Explicit consent to another attempt; never an automatic crash replay.

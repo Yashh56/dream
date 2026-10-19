@@ -180,7 +180,9 @@
     "queueResume": "Tiếp tục hàng đợi",
     "queuePause": "Tạm dừng hàng đợi",
     "queueCancel": "Hủy",
-    "queueRetry": "Thêm lại vào hàng đợi",
+    "queueRetry": "Thử lại",
+    "queueRemove": "Xóa",
+    "queueInterruptedHint": "Đã dừng trước khi hoàn tất. Hãy kiểm tra phản hồi trước khi thử lại.",
     "queueAttachment": "Tệp đính kèm",
     "queueStatus": {
       "queued": "Đang xếp hàng",

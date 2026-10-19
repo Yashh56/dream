@@ -85,7 +85,9 @@ export function createStateSaveQueue({ databasePath }) {
       if (entry) {
         inFlight.delete(message.id);
         if (message.ok) {
-          entry.resolve(message.result ?? true);
+          // A void operation resolves true; a null result (an empty queue
+          // claim) is an answer and must reach the caller as null.
+          entry.resolve(message.result === undefined ? true : message.result);
         } else {
           entry.reject(new Error(message.error || "State save failed."));
         }

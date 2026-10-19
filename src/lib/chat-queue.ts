@@ -1,5 +1,32 @@
 import { create } from "zustand";
-import { apiClient, type ChatQueueResponse } from "./api-client";
+import {
+  apiClient,
+  type ChatQueueResponse,
+  type ChatRunSummary,
+} from "./api-client";
+
+type FinishedRunStatus = "completed" | "cancelled";
+export type OpenChatRun = ChatRunSummary & {
+  status: Exclude<ChatRunSummary["status"], FinishedRunStatus>;
+};
+
+const isOpenRun = (run: ChatRunSummary): run is OpenChatRun =>
+  run.status !== "completed" && run.status !== "cancelled";
+// The turn in progress (or waiting on a tool approval): the transcript
+// already shows it.
+const LIVE_RUN_STATUSES = new Set(["running", "waiting"]);
+
+/**
+ * The runs the queue panel lists: none unless one needs attention (queued
+ * behind the current turn, interrupted or failed). The live turn alone is not
+ * a queue; alongside waiting runs it is listed first, as context.
+ */
+export function visibleQueueRuns(
+  runs: readonly ChatRunSummary[],
+): OpenChatRun[] {
+  const open = runs.filter(isOpenRun);
+  return open.some((run) => !LIVE_RUN_STATUSES.has(run.status)) ? open : [];
+}
 
 export const useChatQueueStore = create<{
   queues: Record<string, ChatQueueResponse>;

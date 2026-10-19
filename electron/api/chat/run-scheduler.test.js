@@ -207,6 +207,43 @@ test("Stop holds the queue while delayed interruption settles; cancelled work ne
   assert.equal((await scheduler.list("c")).runs[1].status, "cancelled");
 });
 
+test("a failed or interrupted run can be removed instead of retried; a running one cannot", async () => {
+  const { catalog } = await setup();
+  let calls = 0;
+  let finish;
+  const { scheduler, turns } = schedulerFor(catalog, async () => {
+    calls++;
+    if (calls === 1) throw new Error("Provider failed.");
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          finish = () => controller.close();
+        },
+      }),
+    );
+  });
+  await scheduler.submit(request("one"));
+  await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[0].status === "failed",
+  );
+  await scheduler.control({ chatId: "c", action: "cancel", id: "one" });
+  await scheduler.control({ chatId: "c", action: "retry", id: "one" });
+  assert.equal((await scheduler.list("c")).runs[0].status, "cancelled");
+
+  await scheduler.control({ chatId: "c", action: "resume" });
+  await scheduler.submit(request("two"));
+  await until(() => Promise.resolve(turns.isRunning("c")), Boolean);
+  await scheduler.control({ chatId: "c", action: "cancel", id: "two" });
+  assert.equal((await scheduler.list("c")).runs[1].status, "running");
+  finish();
+  await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[1].status === "completed",
+  );
+  assert.equal(calls, 2);
+});
+
 test("delegated tasks deduplicate, retain results across service restart, and enforce scope and permissions", async () => {
   const { catalog } = await setup();
   let parentScope;

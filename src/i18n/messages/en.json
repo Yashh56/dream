@@ -180,7 +180,9 @@
     "queueResume": "Resume queue",
     "queuePause": "Pause queue",
     "queueCancel": "Cancel",
-    "queueRetry": "Queue retry",
+    "queueRetry": "Retry",
+    "queueRemove": "Remove",
+    "queueInterruptedHint": "Stopped before finishing. Check the reply before retrying.",
     "queueAttachment": "Attachment",
     "queueStatus": {
       "queued": "Queued",

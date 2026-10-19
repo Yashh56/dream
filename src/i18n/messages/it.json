@@ -180,7 +180,9 @@
     "queueResume": "Riprendi coda",
     "queuePause": "Pausa coda",
     "queueCancel": "Annulla",
-    "queueRetry": "Rimetti in coda",
+    "queueRetry": "Riprova",
+    "queueRemove": "Rimuovi",
+    "queueInterruptedHint": "Interrotto prima del termine. Controlla la risposta prima di riprovare.",
     "queueAttachment": "Allegato",
     "queueStatus": {
       "queued": "In coda",

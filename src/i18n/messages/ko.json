@@ -180,7 +180,9 @@
     "queueResume": "대기열 재개",
     "queuePause": "대기열 일시 중지",
     "queueCancel": "취소",
-    "queueRetry": "재시도 대기열에 추가",
+    "queueRetry": "다시 시도",
+    "queueRemove": "제거",
+    "queueInterruptedHint": "완료 전에 중지되었습니다. 다시 시도하기 전에 응답을 확인하세요.",
     "queueAttachment": "첨부 파일",
     "queueStatus": {
       "queued": "대기 중",

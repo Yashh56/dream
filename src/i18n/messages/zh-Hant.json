@@ -180,7 +180,9 @@
     "queueResume": "繼續佇列",
     "queuePause": "暫停佇列",
     "queueCancel": "取消",
-    "queueRetry": "重新排入佇列",
+    "queueRetry": "重試",
+    "queueRemove": "移除",
+    "queueInterruptedHint": "在完成前已停止。重試前請先查看回覆。",
     "queueAttachment": "附件",
     "queueStatus": {
       "queued": "排隊中",

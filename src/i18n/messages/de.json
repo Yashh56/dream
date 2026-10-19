@@ -180,7 +180,9 @@
     "queueResume": "Fortsetzen",
     "queuePause": "Pausieren",
     "queueCancel": "Abbrechen",
-    "queueRetry": "Erneut einreihen",
+    "queueRetry": "Wiederholen",
+    "queueRemove": "Entfernen",
+    "queueInterruptedHint": "Vor dem Abschluss gestoppt. Prüfe die Antwort vor einem erneuten Versuch.",
     "queueAttachment": "Anhang",
     "queueStatus": {
       "queued": "Eingereiht",
