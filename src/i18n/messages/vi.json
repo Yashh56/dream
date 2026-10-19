@@ -966,6 +966,8 @@
     "hostCommand": "Lệnh host",
     "hostCommandHint": "Để trống để tự động cài host, hoặc nhập lệnh chạy dream-host trên máy đó.",
     "remove": "Xóa",
+    "removeTitle": "Xóa {name}?",
+    "removeDescription": "Các dự án sẽ bị xóa khỏi Dream và terminal của chúng sẽ bị dừng. Tệp và cuộc trò chuyện trên máy chủ không bị ảnh hưởng.",
     "connect": "Kết nối",
     "disconnect": "Ngắt kết nối",
     "save": "Lưu",

@@ -966,6 +966,8 @@
     "hostCommand": "主機指令",
     "hostCommandHint": "留空則自動安裝主機；否則填寫在那台機器上執行 dream-host 的指令。",
     "remove": "移除",
+    "removeTitle": "移除 {name}？",
+    "removeDescription": "其專案將從 Dream 中移除，相關終端機會被停止。主機上的檔案和對話不受影響。",
     "connect": "連線",
     "disconnect": "中斷連線",
     "save": "儲存",

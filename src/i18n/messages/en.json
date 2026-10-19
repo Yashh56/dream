@@ -966,6 +966,8 @@
     "hostCommand": "Host command",
     "hostCommandHint": "Leave empty to install the host automatically, or enter the command that runs dream-host on that machine.",
     "remove": "Remove",
+    "removeTitle": "Remove {name}?",
+    "removeDescription": "Its projects are removed from Dream and their terminals are stopped. Files and chats on the host are not touched.",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "save": "Save",

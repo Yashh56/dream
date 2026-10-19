@@ -966,6 +966,8 @@
     "hostCommand": "ホストコマンド",
     "hostCommandHint": "空のままにするとホストを自動でインストールします。指定する場合は、そのマシンで dream-host を起動するコマンドを入力します。",
     "remove": "削除",
+    "removeTitle": "{name} を削除しますか？",
+    "removeDescription": "プロジェクトは Dream から削除され、そのターミナルは停止されます。ホスト上のファイルとチャットは変更されません。",
     "connect": "接続",
     "disconnect": "切断",
     "save": "保存",

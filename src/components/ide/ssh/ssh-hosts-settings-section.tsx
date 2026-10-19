@@ -1,6 +1,16 @@
 import { Pencil, Plug, PlugZap, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -173,6 +183,10 @@ export const SshHostsSettingsSection = () => {
     editing && editing !== "new"
       ? sshHosts.find((host) => host.id === editing)
       : undefined;
+  // The host awaiting confirmation before it is removed.
+  const [pendingRemove, setPendingRemove] = useState<SshHostConfig | null>(
+    null,
+  );
 
   const addHost = (values: HostFormValues) => {
     const host: SshHostConfig = { ...values, id: crypto.randomUUID() };
@@ -258,7 +272,7 @@ export const SshHostsSettingsSection = () => {
                 </Button>
                 <Button
                   aria-label={t("remove")}
-                  onClick={() => void removeSshHost(host.id)}
+                  onClick={() => setPendingRemove(host)}
                   size="icon-sm"
                   title={t("remove")}
                   variant="ghost"
@@ -290,6 +304,35 @@ export const SshHostsSettingsSection = () => {
           }}
         />
       ) : null}
+      <AlertDialog
+        onOpenChange={(open) => {
+          if (!open) setPendingRemove(null);
+        }}
+        open={pendingRemove !== null}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("removeTitle", { name: pendingRemove?.label ?? "" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("removeDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRemove) void removeSshHost(pendingRemove.id);
+                setPendingRemove(null);
+              }}
+              variant="destructive"
+            >
+              {t("remove")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

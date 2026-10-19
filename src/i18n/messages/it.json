@@ -966,6 +966,8 @@
     "hostCommand": "Comando dell’host",
     "hostCommandHint": "Lascia vuoto per installare l’host automaticamente, oppure inserisci il comando che avvia dream-host su quella macchina.",
     "remove": "Rimuovi",
+    "removeTitle": "Rimuovere {name}?",
+    "removeDescription": "I suoi progetti vengono rimossi da Dream e i relativi terminali vengono chiusi. File e chat sull’host restano invariati.",
     "connect": "Connetti",
     "disconnect": "Disconnetti",
     "save": "Salva",
