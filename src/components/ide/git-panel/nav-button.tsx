@@ -33,7 +33,7 @@ const GitNavButtonImpl = ({
     detail: "summary",
     hostId: projectHostId,
   });
-  const { data } = usePullRequestContext(projectPath, visible);
+  const { data } = usePullRequestContext(projectPath, visible, projectHostId);
   const hasOpenPullRequest = data?.current?.state === "open";
 
   return (

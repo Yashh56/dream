@@ -105,6 +105,7 @@ const GitFooterActionsImpl = ({
   const { data: pullRequestContext } = usePullRequestContext(
     projectPath,
     active && Boolean(status?.isRepo),
+    project.hostId,
   );
   const gitRefreshKey = useIdeStore(
     (s) => s.projectGitRefreshKeys[projectId] ?? 0,

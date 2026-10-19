@@ -43,6 +43,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { Messages } from "@/i18n/messages";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
+import type { ProjectScope } from "@/lib/project-resource-cache";
 import { cn } from "@/lib/utils";
 import type { ProjectConfig, ProjectGitStatusEntry } from "@/types/ide";
 import type { DiffViewMode } from "../changes";
@@ -53,16 +55,17 @@ import { AppShellPlaceholder } from "../ide-helpers";
 import { useIdeStore } from "../ide-store";
 import { WordWrapToggle } from "../word-wrap-toggle";
 import {
-  type Page,
-  type PrAction,
   type PrComment,
   type PrFile,
+  type PrWrite,
   type PullRequestChecks,
   type PullRequestDetail,
   type PullRequestSummary,
-  prRequest,
   usePrDraft,
+  usePrPage,
   usePullRequestContext,
+  usePullRequestRead,
+  writePullRequest,
 } from "./api";
 import { PrMarkdownImage } from "./markdown-image";
 import { MergePrDialog } from "./merge-pr-dialog";
@@ -224,14 +227,12 @@ function Composer({
   );
 }
 
-type Save = (
-  input: Omit<PrAction, "number" | "repository">,
-) => Promise<boolean>;
+type Save = (input: Omit<PrWrite, "number" | "repository">) => Promise<boolean>;
 interface SectionProps {
-  projectPath: string;
+  scope: ProjectScope;
   repository: string;
   pr: PullRequestDetail;
-  revision: string;
+  active: boolean;
   busy: boolean;
   save: Save;
 }
@@ -477,60 +478,6 @@ function Comment({
   );
 }
 
-// Refresh loaded pages in place so selection, drafts, and pagination survive.
-function usePrPage<T>(
-  projectPath: string,
-  repository: string,
-  number: number,
-  action: PrAction["action"],
-  revision: string,
-  commit?: string,
-) {
-  const t = useTranslations();
-  const [items, setItems] = useState<T[]>([]);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void Promise.all(
-      Array.from({ length: page }, (_, index) =>
-        prRequest<Page<T>>(projectPath, {
-          repository,
-          number,
-          action,
-          page: index + 1,
-          revision,
-          commit,
-        }),
-      ),
-    )
-      .then(
-        (pages) => {
-          if (cancelled) return;
-          const next = pages.flatMap((result) => result.items);
-          setItems((previous) =>
-            JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
-          );
-          setHasMore(pages[pages.length - 1]?.hasMore ?? false);
-        },
-        (error) => {
-          if (!cancelled) setError(message(error, t("ui.requestFailed")));
-        },
-      )
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, repository, number, action, page, revision, commit, t]);
-  return { items, error, loading, hasMore, more: () => setPage((p) => p + 1) };
-}
-
 function PullRequestLoading({ fill = false }: { fill?: boolean }) {
   return (
     <div
@@ -575,20 +522,20 @@ function PageFooter({
 
 function SummaryComments(props: SectionProps) {
   const t = useTranslations();
-  const { projectPath, repository, pr, revision, busy, save } = props;
+  const { scope, repository, pr, active, busy, save } = props;
   const comments = usePrPage<PrComment>(
-    projectPath,
+    scope,
     repository,
     pr.number,
     "comments",
-    revision,
+    active,
   );
   const reviews = usePrPage<PrComment>(
-    projectPath,
+    scope,
     repository,
     pr.number,
     "reviews",
-    revision,
+    active,
   );
   const activity = [...comments.items, ...reviews.items].sort((a, b) =>
     (a.created_at ?? a.submitted_at ?? "").localeCompare(
@@ -878,21 +825,21 @@ function Files(props: SectionProps) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
     () => new Set(),
   );
-  const { projectPath, repository, pr, revision } = props;
+  const { scope, repository, pr, active } = props;
   const files = usePrPage<PrFile>(
-    projectPath,
+    scope,
     repository,
     pr.number,
     "files",
-    revision,
+    active,
     pr.commit,
   );
   const threads = usePrPage<PrComment>(
-    projectPath,
+    scope,
     repository,
     pr.number,
     "threads",
-    revision,
+    active,
   );
   const allExpanded =
     files.items.length > 0 &&
@@ -974,22 +921,29 @@ function Files(props: SectionProps) {
 
 function Detail({
   active,
-  projectPath,
+  scope,
   repository,
   number,
-  refreshKey,
 }: {
   active: boolean;
-  projectPath: string;
+  scope: ProjectScope;
   repository: string;
   number: number;
-  refreshKey: string;
 }) {
   const t = useTranslations();
   const format = useFormatter();
-  const [pr, setPr] = useState<PullRequestDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
+  const resource = usePullRequestRead<PullRequestDetail>(
+    scope,
+    { action: "detail", repository, number },
+    active,
+  );
+  const pr = resource.data ?? null;
+  const [writeError, setError] = useState<string | null>(null);
+  const error =
+    writeError ??
+    (resource.error === undefined
+      ? null
+      : message(resource.error, t("ui.requestFailed")));
   const [busy, setBusy] = useState(false);
   const writing = useRef(false);
   const [tab, setTab] = useState("overview");
@@ -1004,62 +958,19 @@ function Detail({
     checksSection.current?.focus({ preventScroll: true });
   }, [checksNavigation, tab]);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const loading = resource.loading || resource.version === null;
   const openExternalUrl = useIdeStore((s) => s.openExternalUrl);
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    setLoading(true);
-    void prRequest<PullRequestDetail>(projectPath, {
-      action: "detail",
-      repository,
-      number,
-      revision,
-      refreshKey,
-    })
-      .then(
-        (data) => {
-          if (!cancelled) {
-            setPr(data);
-            setError(null);
-          }
-        },
-        (error) => {
-          if (!cancelled) setError(message(error, t("ui.requestFailed")));
-        },
-      )
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, repository, number, revision, refreshKey, active, t]);
   const save: Save = async (input) => {
     if (writing.current) return false;
     writing.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await prRequest<{ updated_at?: string }>(projectPath, {
+      await writePullRequest(scope, {
         repository,
         number,
         ...input,
       });
-      if (input.action === "edit")
-        setPr((current) =>
-          current
-            ? {
-                ...current,
-                ...(typeof input.title === "string"
-                  ? { title: input.title.trim() }
-                  : {}),
-                ...(typeof input.body === "string" ? { body: input.body } : {}),
-                updatedAt: result.updated_at ?? current.updatedAt,
-              }
-            : current,
-        );
-      setRevision((n) => n + 1);
       return true;
     } catch (error) {
       setError(message(error, t("ui.requestFailed")));
@@ -1071,10 +982,10 @@ function Detail({
   };
   const section = pr
     ? {
-        projectPath,
+        scope,
         repository,
         pr,
-        revision: `${revision}:${refreshKey}`,
+        active,
         busy,
         save,
       }
@@ -1355,8 +1266,11 @@ export function PullRequestView({
   active?: boolean;
 }) {
   const t = useTranslations();
-  const context = usePullRequestContext(project.path, active);
-  const [revision, setRevision] = useState(0);
+  const scope = {
+    projectPath: project.path,
+    hostId: project.hostId ?? LOCAL_HOST_ID,
+  };
+  const context = usePullRequestContext(project.path, active, scope.hostId);
   const [mergeTarget, setMergeTarget] = useState<{
     repository: string;
     number: number;
@@ -1365,7 +1279,6 @@ export function PullRequestView({
   const current = context.data?.current;
   const refresh = () => {
     context.refresh();
-    setRevision((n) => n + 1);
   };
   const panelsT = useTranslations("panels");
   return (
@@ -1404,12 +1317,11 @@ export function PullRequestView({
       ) : current ? (
         <div className="flex-1 min-h-0">
           <Detail
-            key={`${repository}:${context.data?.branch}:${current.number}`}
+            key={`${scope.hostId}:${project.path}:${repository}:${context.data?.branch}:${current.number}`}
             active={active}
-            projectPath={project.path}
+            scope={scope}
             repository={repository}
             number={current.number}
-            refreshKey={String(revision)}
           />
         </div>
       ) : (
@@ -1419,12 +1331,11 @@ export function PullRequestView({
       )}
       {mergeTarget ? (
         <MergePrDialog
-          key={`${project.path}:${mergeTarget.repository}:${mergeTarget.number}`}
-          projectPath={project.path}
+          key={`${scope.hostId}:${project.path}:${mergeTarget.repository}:${mergeTarget.number}`}
+          scope={scope}
           repository={mergeTarget.repository}
           number={mergeTarget.number}
           onClose={() => setMergeTarget(null)}
-          onMerged={refresh}
         />
       ) : null}
     </div>

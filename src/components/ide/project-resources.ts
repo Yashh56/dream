@@ -15,7 +15,11 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { apiClient, type ProjectFilesResponse } from "@/lib/api-client";
+import {
+  type ApiRequestOf,
+  apiClient,
+  type ProjectFilesResponse,
+} from "@/lib/api-client";
 import { resolveRequestHost } from "@/lib/host-routing";
 import {
   createProjectResourceCache,
@@ -117,6 +121,19 @@ const specs = {
         hostOptions(key),
       )) as PullRequestContext,
   } satisfies ResourceSpec<PullRequestContext>,
+  pullRequestRead: {
+    group: "git",
+    load: (key) =>
+      apiClient.codePullRequests(
+        {
+          ...key.params,
+          action: key.params
+            ?.action as ApiRequestOf<"codePullRequests">["action"],
+          projectPath: key.projectPath,
+        },
+        hostOptions(key),
+      ),
+  } satisfies ResourceSpec,
   projectFiles: {
     group: "files",
     load: (key) =>

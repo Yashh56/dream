@@ -80,3 +80,7 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   push notifications and a host-owned browser.
 
 Module names and current ownership live in ../../GLOSSARY.md.
+
+- `tasks/review-20261018.md` tracks PRR-01, HCL-01, BTN-01 and GLP-01:
+  pull-request resources, host catalog readiness, browser tab operations and
+  Git history pagination.

@@ -11,8 +11,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import type { ProjectScope } from "@/lib/project-resource-cache";
 import { NextStepSelector } from "../git-actions/dialog-layout";
-import { type PullRequestSummary, prRequest } from "./api";
+import {
+  type PullRequestSummary,
+  usePullRequestRead,
+  writePullRequest,
+} from "./api";
 
 type MergeMethod = "merge" | "squash" | "rebase";
 type MergeInfo = PullRequestSummary & {
@@ -23,56 +28,45 @@ type MergeInfo = PullRequestSummary & {
 };
 
 export function MergePrDialog({
-  projectPath,
+  scope,
   repository,
   number,
   onClose,
-  onMerged,
 }: {
-  projectPath: string;
+  scope: ProjectScope;
   repository: string;
   number: number;
   onClose: () => void;
-  onMerged: () => void;
 }) {
   const t = useTranslations();
-  const [info, setInfo] = useState<MergeInfo | null>(null);
+  const resource = usePullRequestRead<MergeInfo>(scope, {
+    action: "mergeInfo",
+    repository,
+    number,
+  });
+  const info = resource.error === undefined ? (resource.data ?? null) : null;
   const [method, setMethod] = useState<MergeMethod>("merge");
-  const [loading, setLoading] = useState(true);
+  const loading = resource.loading || resource.version === null;
   const [merging, setMerging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision explicitly reloads merge details after an error.
+  const [writeError, setError] = useState<string | null>(null);
+  const error =
+    writeError ??
+    (resource.error === undefined
+      ? null
+      : resource.error instanceof Error
+        ? resource.error.message
+        : t("pullRequests.loadMergeFailed"));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on opening, refresh a previous result, but share a first load already under way.
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setInfo(null);
-    setError(null);
-    prRequest<MergeInfo>(
-      projectPath,
-      { action: "mergeInfo", repository, number },
-      true,
-    )
-      .then((data) => {
-        if (cancelled) return;
-        setInfo(data);
-        setMethod(data.methods[0] ?? "merge");
-      })
-      .catch((error) => {
-        if (!cancelled)
-          setError(
-            error instanceof Error
-              ? error.message
-              : t("pullRequests.loadMergeFailed"),
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, repository, number, revision, t]);
+    if (resource.version !== null)
+      void resource.refresh().catch(() => undefined);
+  }, [resource.refresh]);
+  useEffect(() => {
+    if (info)
+      setMethod((current) =>
+        info.methods.includes(current) ? current : (info.methods[0] ?? "merge"),
+      );
+  }, [info]);
 
   const blocked =
     info &&
@@ -90,14 +84,13 @@ export function MergePrDialog({
     setMerging(true);
     setError(null);
     try {
-      await prRequest(projectPath, {
+      await writePullRequest(scope, {
         action: "merge",
         repository,
         number,
         commit: info.commit,
         mergeMethod: method,
       });
-      onMerged();
       onClose();
     } catch (error) {
       setError(
@@ -188,7 +181,10 @@ export function MergePrDialog({
               size="sm"
               variant="outline"
               disabled={loading || merging}
-              onClick={() => setRevision((value) => value + 1)}
+              onClick={() => {
+                setError(null);
+                void resource.refresh().catch(() => undefined);
+              }}
             >
               {t("common.refresh")}
             </Button>

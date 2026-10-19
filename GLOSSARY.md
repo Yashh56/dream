@@ -198,7 +198,7 @@ or to the browser panel. Not related to a chat's provider session.
 ## Project resources
 
 What a client reads about one project on one host (git status, branches,
-worktrees, log, a file's diff, pull request context, the file list), held
+worktrees, log, a file's diff, pull request context, detail and pages, the file list), held
 in one cache (`src/lib/project-resource-cache.ts`, the kinds in
 `src/components/ide/project-resources.ts`). A resource belongs to a
 **group** (git or files) whose **version** is the store's refresh key; a
@@ -207,6 +207,9 @@ again at once. Reads at one version share, one resource can answer another
 (a summary status from a full one), and a kind can be read only a few at a
 time (`maxConcurrentLoads`: diffs). Panels read them with
 `useProjectResource`; no panel reads a refresh key to decide when to fetch.
+Pull-request writes make only their own project's pull-request resources stale,
+including every loaded page; drafts and selection survive the refresh. A host
+is part of every resource's identity, even when paths on two hosts match.
 
 ## GitHub pull requests
 

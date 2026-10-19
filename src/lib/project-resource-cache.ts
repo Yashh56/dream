@@ -361,6 +361,19 @@ export const createProjectResourceCache = <Kind extends string>({
       }
     },
 
+    /** Expires selected kinds on one project, including reads before a write. */
+    expireScope: (scope: ProjectScope, kinds: readonly Kind[]) => {
+      const id = scopeId(scope);
+      for (const entry of entries.values()) {
+        if (
+          scopeId(entry.key) === id &&
+          kinds.includes(entry.key.kind as Kind)
+        ) {
+          cache.expire(entry.key);
+        }
+      }
+    },
+
     /** Drops everything (tests, sign-out). */
     clear: () => entries.clear(),
   };
