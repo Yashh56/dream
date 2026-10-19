@@ -53,7 +53,9 @@ const catalogChat = (chat) => {
  *   events: { publish: (event: object) => void },
  *   getWriter: () => {
  *     applyCatalogChanges: (changes: object) => Promise<any>,
+ *     mutateRunQueue: (operation: { type: string, chatId?: string }) => Promise<any>,
  *     saveChatMessages: (payload: { chatId: string, fromIndex?: number, messages: unknown[] }) => Promise<unknown>,
+ *     saveProviderSession: (payload: object) => Promise<unknown>,
  *   },
  *   getReader?: () => { read: (type: string, payload?: object) => Promise<any> },
  *   getRunningChatIds?: () => string[],

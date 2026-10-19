@@ -143,9 +143,13 @@ const host = createHost({
   getStateWriter: () => ({
     applyCatalogChanges: (changes) =>
       getStateSaveQueue().applyCatalogChanges(changes),
+    mutateRunQueue: (operation) =>
+      getStateSaveQueue().mutateRunQueue(operation),
     ready: () => getStateSaveQueue().ready(),
     saveChatMessages: (payload) =>
       getStateSaveQueue().saveChatMessages(payload),
+    saveProviderSession: (payload) =>
+      getStateSaveQueue().saveProviderSession(payload),
   }),
   version: dreamVersion,
   // Requests for SSH-host projects go through the local API to the host's

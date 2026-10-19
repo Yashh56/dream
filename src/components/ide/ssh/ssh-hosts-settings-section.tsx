@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { StatusDot } from "@/components/ui/status-dot";
+import { StatusDot, type StatusDotColor } from "@/components/ui/status-dot";
 import type { HostConnectionState, SshHostConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
 import { SettingsGroup } from "../settings/settings-shared";
@@ -31,6 +31,19 @@ const STATE_MESSAGE_KEYS: Record<
   failed: "stateFailed",
   idle: "stateIdle",
   reconnecting: "stateReconnecting",
+};
+
+/** The dot beside each state; only in-between states pulse. */
+const STATE_DOTS: Record<
+  HostConnectionState,
+  { color: StatusDotColor; pulse: boolean }
+> = {
+  connected: { color: "green", pulse: false },
+  connecting: { color: "amber", pulse: true },
+  disconnected: { color: "neutral", pulse: false },
+  failed: { color: "red", pulse: false },
+  idle: { color: "neutral", pulse: false },
+  reconnecting: { color: "amber", pulse: true },
 };
 
 /** One host's connection state as a short line, with its error if any. */
@@ -195,16 +208,17 @@ export const SshHostsSettingsSection = () => {
           const connected =
             runtime?.state === "connected" || runtime?.state === "reconnecting";
           const busy = runtime?.state === "connecting";
+          const dot = STATE_DOTS[runtime?.state ?? "idle"];
           return (
             <div className="flex items-center gap-3 px-4 py-3" key={host.id}>
               <Server className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-sm">{host.label}</div>
                 <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
-                  {runtime?.state === "connected" ? <StatusDot /> : null}
-                  <span className="truncate">
-                    {host.target} · {stateLabel(runtime?.state)}
-                  </span>
+                  <span className="truncate">{host.target}</span>
+                  <span aria-hidden="true">·</span>
+                  <StatusDot color={dot.color} pulse={dot.pulse} />
+                  <span className="shrink-0">{stateLabel(runtime?.state)}</span>
                 </div>
                 {runtime?.error ? (
                   <div className="mt-1 select-text whitespace-pre-wrap break-words text-destructive text-xs">
@@ -232,24 +246,26 @@ export const SshHostsSettingsSection = () => {
                   {t("connect")}
                 </Button>
               )}
-              <Button
-                aria-label={t("edit")}
-                onClick={() => setEditing(host.id)}
-                size="icon-sm"
-                title={t("edit")}
-                variant="ghost"
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                aria-label={t("remove")}
-                onClick={() => void removeSshHost(host.id)}
-                size="icon-sm"
-                title={t("remove")}
-                variant="ghost"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+              <div className="flex shrink-0 items-center">
+                <Button
+                  aria-label={t("edit")}
+                  onClick={() => setEditing(host.id)}
+                  size="icon-sm"
+                  title={t("edit")}
+                  variant="ghost"
+                >
+                  <Pencil className="size-3.5" />
+                </Button>
+                <Button
+                  aria-label={t("remove")}
+                  onClick={() => void removeSshHost(host.id)}
+                  size="icon-sm"
+                  title={t("remove")}
+                  variant="ghost"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
             </div>
           );
         })}
