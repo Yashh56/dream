@@ -18,7 +18,15 @@ export const watchHostCatalog = (hostId: string) => {
     for (const chatId of Object.keys(useChatQueueStore.getState().queues))
       void refreshChatQueue(chatId);
     if (useIdeStore.getState().stateHydrated) {
-      void useIdeStore.getState().reloadCatalog(hostId);
+      void useIdeStore
+        .getState()
+        .refreshHostCatalog(hostId)
+        .catch((error: unknown) => {
+          console.warn(
+            `Unable to refresh the catalog of host ${hostId}.`,
+            error,
+          );
+        });
       return;
     }
     if (stopWaiting) return;
@@ -26,7 +34,9 @@ export const watchHostCatalog = (hostId: string) => {
       if (!state.stateHydrated) return;
       stopWaiting?.();
       stopWaiting = null;
-      void state.reloadCatalog(hostId);
+      void state.refreshHostCatalog(hostId).catch((error: unknown) => {
+        console.warn(`Unable to refresh the catalog of host ${hostId}.`, error);
+      });
     });
   };
 

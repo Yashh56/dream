@@ -141,6 +141,14 @@ The machine whose filesystem, agent CLIs and terminals a project uses. The
 another machine Dream reaches over SSH. Not to be confused with a provider
 session, which lives on the provider's side whatever the host.
 
+## Host catalog readiness
+
+A host's **catalog readiness** means this client has successfully applied its
+catalog on the current connection. A connected transport can still have a
+catalog loading or a catalog error. Concurrent refresh requests share the load;
+disconnecting makes old responses ineligible to update the workspace. Previously
+loaded catalog data remains available while the host is away.
+
 ## Host socket
 
 The one live connection between a client and a host, carrying every kind

@@ -550,6 +550,8 @@ export interface IdeState {
   /** A host transcript changed; refreshes a cached or currently loading chat. */
   applyCatalogTranscript: (chatId: string) => Promise<void>;
   /** Re-reads a host's whole catalog (after its host socket says to). */
+  refreshHostCatalog: (hostId?: string) => Promise<void>;
+  /** Internal reload projection, called by the host catalog lifecycle. */
   reloadCatalog: (hostId?: string) => Promise<void>;
   /** Loads a just-connected host's catalog into the store. */
   loadHostCatalog: (hostId: string) => Promise<void>;

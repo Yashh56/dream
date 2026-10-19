@@ -9,10 +9,10 @@
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type { ProjectConfig } from "@/types/ide";
 import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
+import { hostCatalogLifecycle } from "./host-catalog-lifecycle";
 import {
   getCatalogSync,
   getLoadedWorkspace,
-  loadCatalog,
   markHostLoaded,
 } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
@@ -35,6 +35,7 @@ export const createCatalogActions = (
   | "applyCatalogChanges"
   | "reloadCatalog"
   | "loadHostCatalog"
+  | "refreshHostCatalog"
   | "setHostTurnRunning"
 > => {
   const applyCatalogChanges: IdeState["applyCatalogChanges"] = (
@@ -95,36 +96,50 @@ export const createCatalogActions = (
 
   return {
     applyCatalogChanges,
+    refreshHostCatalog: (hostId = LOCAL_HOST_ID) =>
+      hostCatalogLifecycle(set, get).refresh(hostId),
 
     adoptHostProjects: async (hostId, conflicts) => {
       // The host's own projects, read from it: the store cannot hold the
       // one it kept beside the refused one (one project per path).
-      let catalog: Awaited<ReturnType<typeof loadCatalog>>;
       try {
-        catalog = await loadCatalog(hostId);
+        await hostCatalogLifecycle(set, get).read(hostId, (catalog) => {
+          const hostProjects = new Map(
+            catalog.projects
+              .filter(isRecordWithId)
+              .map((project) => [project.id, project]),
+          );
+          for (const { id, existingId } of conflicts) {
+            const keptRow = hostProjects.get(existingId);
+            if (!keptRow) continue;
+            const state = get();
+            void commitWorkspaceRemoval(
+              set,
+              get,
+              workspace.adoptProject(
+                state,
+                state.settings,
+                hostId,
+                id,
+                keptRow,
+              ),
+            );
+          }
+          get().persist();
+        });
       } catch (error) {
         console.warn(`Unable to read the catalog of host ${hostId}.`, error);
         return;
       }
-      const hostProjects = new Map(
-        catalog.projects
-          .filter(isRecordWithId)
-          .map((project) => [project.id, project]),
-      );
-
-      for (const { id, existingId } of conflicts) {
-        const keptRow = hostProjects.get(existingId);
-        if (!keptRow) continue;
-        const state = get();
-        void commitWorkspaceRemoval(
-          set,
-          get,
-          workspace.adoptProject(state, state.settings, hostId, id, keptRow),
-        );
-      }
-      get().persist();
       // Its chats, and anything else the host has that this window lacks.
-      await get().reloadCatalog(hostId);
+      await get()
+        .refreshHostCatalog(hostId)
+        .catch((error: unknown) => {
+          console.warn(
+            `Unable to reload the catalog of host ${hostId}.`,
+            error,
+          );
+        });
     },
 
     setHostTurnRunning: (chatId, running) => {
@@ -136,73 +151,70 @@ export const createCatalogActions = (
       set({ hostRunningChatIds: next });
     },
 
-    loadHostCatalog: async (hostId) => {
-      const catalog = await loadCatalog(hostId);
-      const state = get();
-      void commitWorkspaceRemoval(
-        set,
-        get,
-        workspace.loadHostCatalog(state, state.settings, hostId, {
-          catalog,
-          workspaceProjects: getLoadedWorkspace().workspaceProjects,
-        }),
-      );
+    loadHostCatalog: (hostId) =>
+      hostCatalogLifecycle(set, get).read(hostId, (catalog) => {
+        const state = get();
+        void commitWorkspaceRemoval(
+          set,
+          get,
+          workspace.loadHostCatalog(state, state.settings, hostId, {
+            catalog,
+            workspaceProjects: getLoadedWorkspace().workspaceProjects,
+          }),
+        );
 
-      const after = get();
-      const onHost = (project: ProjectConfig) =>
-        getProjectHostId(project) === hostId;
-      const hostProjectIds = new Set(
-        [...after.projects, ...after.closedProjects]
-          .filter(onHost)
-          .map((project) => project.id),
-      );
-      getCatalogSync(hostId).reset({
-        chats: after.chats.filter((chat) => hostProjectIds.has(chat.projectId)),
-        closedProjects: after.closedProjects.filter(onHost),
-        projects: after.projects.filter(onHost),
-      });
-      markHostLoaded(hostId);
-      setRunning(hostId, catalog.runningChatIds ?? []);
-    },
+        const after = get();
+        const onHost = (project: ProjectConfig) =>
+          getProjectHostId(project) === hostId;
+        const hostProjectIds = new Set(
+          [...after.projects, ...after.closedProjects]
+            .filter(onHost)
+            .map((project) => project.id),
+        );
+        getCatalogSync(hostId).reset({
+          chats: after.chats.filter((chat) =>
+            hostProjectIds.has(chat.projectId),
+          ),
+          closedProjects: after.closedProjects.filter(onHost),
+          projects: after.projects.filter(onHost),
+        });
+        markHostLoaded(hostId);
+        setRunning(hostId, catalog.runningChatIds ?? []);
+      }),
 
     reloadCatalog: async (hostId = LOCAL_HOST_ID) => {
       if (!get().stateHydrated) return;
-      let catalog: Awaited<ReturnType<typeof loadCatalog>>;
-      try {
-        catalog = await loadCatalog(hostId);
-      } catch (error) {
-        console.warn(`Unable to reload the catalog of host ${hostId}.`, error);
-        return;
-      }
-      setRunning(hostId, catalog.runningChatIds ?? []);
-      const state = get();
-      const sync = getCatalogSync(hostId);
-      const catalogProjectIds = new Set(
-        catalog.projects.filter(isRecordWithId).map((project) => project.id),
-      );
-      const catalogChatIds = new Set(
-        catalog.chats.filter(isRecordWithId).map((chat) => chat.id),
-      );
-      // Only what the host had confirmed and no longer has is gone; a
-      // change this window has not sent yet is not.
-      applyCatalogChanges(
-        {
-          chats: catalog.chats,
-          projects: catalog.projects,
-          removedChatIds: state.chats
-            .map((chat) => chat.id)
-            .filter(
-              (id) => !catalogChatIds.has(id) && sync.isSynced("chat", id),
-            ),
-          removedProjectIds: [...state.projects, ...state.closedProjects]
-            .map((project) => project.id)
-            .filter(
-              (id) =>
-                !catalogProjectIds.has(id) && sync.isSynced("project", id),
-            ),
-        },
-        hostId,
-      );
+      await hostCatalogLifecycle(set, get).read(hostId, (catalog) => {
+        setRunning(hostId, catalog.runningChatIds ?? []);
+        const state = get();
+        const sync = getCatalogSync(hostId);
+        const catalogProjectIds = new Set(
+          catalog.projects.filter(isRecordWithId).map((project) => project.id),
+        );
+        const catalogChatIds = new Set(
+          catalog.chats.filter(isRecordWithId).map((chat) => chat.id),
+        );
+        // Only what the host had confirmed and no longer has is gone; a
+        // change this window has not sent yet is not.
+        applyCatalogChanges(
+          {
+            chats: catalog.chats,
+            projects: catalog.projects,
+            removedChatIds: state.chats
+              .map((chat) => chat.id)
+              .filter(
+                (id) => !catalogChatIds.has(id) && sync.isSynced("chat", id),
+              ),
+            removedProjectIds: [...state.projects, ...state.closedProjects]
+              .map((project) => project.id)
+              .filter(
+                (id) =>
+                  !catalogProjectIds.has(id) && sync.isSynced("project", id),
+              ),
+          },
+          hostId,
+        );
+      });
     },
   };
 };

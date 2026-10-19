@@ -8,8 +8,8 @@
 import { getDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type { HostConnectionState } from "@/types/ide";
-import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
-import { forgetLoadedHost, isHostLoaded } from "./ide-store-persistence";
+import { hostCatalogLifecycle } from "./host-catalog-lifecycle";
+import { forgetLoadedHost } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import { applyWorkspaceRemoval } from "./project-runtime-state";
 import { settleSettings } from "./settings-actions";
@@ -73,22 +73,26 @@ export const createHostActions = (
       },
     }));
 
-  const connecting = new Map<string, Promise<boolean>>();
-
-  // The host is back: what its open projects showed while it was away (git
-  // status, branches) is stale or failed to load.
-  const refreshHostProjects = (hostId: string) => {
-    for (const project of get().projects) {
-      if (getProjectHostId(project) === hostId) {
-        get().bumpProjectGitRefreshKey(project.id);
-      }
-    }
+  const catalogs = hostCatalogLifecycle(set, get);
+  const connecting = new Map<
+    string,
+    { token: symbol; promise: Promise<boolean> }
+  >();
+  const stopped = new Set<string>();
+  const stopFollowing = (hostId: string) => {
+    stopped.add(hostId);
+    connecting.delete(hostId);
+    catalogs.suspend(hostId);
   };
 
   const connectHost: IdeState["connectHost"] = (hostId) => {
     if (hostId === LOCAL_HOST_ID) return Promise.resolve(true);
     const pending = connecting.get(hostId);
-    if (pending) return pending;
+    if (pending) return pending.promise;
+    const token = Symbol(hostId);
+    const current = () => connecting.get(hostId)?.token === token;
+    stopped.delete(hostId);
+    catalogs.resume(hostId);
 
     const run = (async () => {
       const desktopApi = getDesktopApi();
@@ -101,38 +105,34 @@ export const createHostActions = (
         return false;
       }
 
-      setHost(hostId, { error: null, state: "connecting" });
+      setHost(hostId, { error: null, loaded: false, state: "connecting" });
       try {
         await desktopApi.connectHost({
           hostCommand: config.hostCommand,
           hostId,
           target: config.target,
         });
-        // Reconnecting reloads; the first connect brings the projects in.
-        if (isHostLoaded(hostId)) await get().reloadCatalog(hostId);
-        else await get().loadHostCatalog(hostId);
-        setHost(hostId, { error: null, loaded: true, state: "connected" });
-        refreshHostProjects(hostId);
-        return true;
+        if (!current()) return false;
+        setHost(hostId, { state: "connected" });
+        await catalogs.refresh(hostId);
+        return current();
       } catch (error) {
-        setHost(hostId, { error: errorMessage(error), state: "failed" });
+        if (current())
+          setHost(hostId, {
+            error: errorMessage(error),
+            loaded: false,
+            state:
+              get().hosts[hostId]?.state === "connected"
+                ? "connected"
+                : "failed",
+          });
         return false;
       }
-    })().finally(() => connecting.delete(hostId));
-    connecting.set(hostId, run);
+    })().finally(() => {
+      if (current()) connecting.delete(hostId);
+    });
+    connecting.set(hostId, { token, promise: run });
     return run;
-  };
-
-  // The host's catalog, once it is connected: loaded the first time,
-  // reloaded after that (it may have changed while away).
-  const followConnectedHost = async (hostId: string) => {
-    if (isHostLoaded(hostId)) {
-      await get().reloadCatalog(hostId);
-    } else {
-      await get().loadHostCatalog(hostId);
-      setHost(hostId, { loaded: true });
-    }
-    refreshHostProjects(hostId);
   };
 
   return {
@@ -148,6 +148,11 @@ export const createHostActions = (
           const mainState = await desktopApi
             ?.getHostState(host.id)
             .catch(() => "idle" as const);
+          if (
+            stopped.has(host.id) ||
+            !get().settings.sshHosts.some((item) => item.id === host.id)
+          )
+            return;
           if (mainState === "connected") {
             // Already there: connecting returns at once, without prompts.
             await connectHost(host.id);
@@ -191,12 +196,14 @@ export const createHostActions = (
           live === "connecting" ||
           live === "reconnecting")
       ) {
+        stopFollowing(hostId);
         await getDesktopApi()?.disconnectHost(hostId);
         await connectHost(hostId);
       }
     },
 
     removeSshHost: async (hostId) => {
+      stopFollowing(hostId);
       // Its shells go with it, stopped while the host can still be reached.
       // A host that does not answer does not hold the removal up; one that
       // is not connected cannot be asked.
@@ -243,12 +250,19 @@ export const createHostActions = (
     },
 
     disconnectHost: async (hostId) => {
+      stopFollowing(hostId);
       await getDesktopApi()?.disconnectHost(hostId);
       setHost(hostId, { error: null, state: "disconnected" });
     },
 
     setHostStatus: ({ error, hostId, state }) => {
+      if (!get().settings.sshHosts.some((host) => host.id === hostId)) return;
+      if (state === "connected" && stopped.has(hostId)) return;
       const previous = get().hosts[hostId]?.state;
+      if (state !== "connected" && state !== "connecting") {
+        connecting.delete(hostId);
+        catalogs.suspend(hostId);
+      }
       setHost(hostId, { error, state });
       // Connected without this window asking (back after a drop, or a
       // connection main had before this window reloaded): bring the
@@ -258,9 +272,8 @@ export const createHostActions = (
         previous !== "connected" &&
         !connecting.has(hostId)
       ) {
-        void followConnectedHost(hostId).catch((failure: unknown) =>
-          setHost(hostId, { error: errorMessage(failure) }),
-        );
+        catalogs.resume(hostId);
+        void catalogs.refresh(hostId).catch(() => undefined);
       }
     },
 

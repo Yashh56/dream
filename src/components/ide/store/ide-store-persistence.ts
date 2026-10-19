@@ -142,9 +142,10 @@ export const getCatalogSync = (hostId: string = LOCAL_HOST_ID) => {
 export const loadCatalog = (
   hostId: string = LOCAL_HOST_ID,
   timeoutMs: number = STATE_LOAD_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<CatalogResponse> =>
   withTimeout(
-    apiClient.catalog({}, { hostId }),
+    apiClient.catalog({}, { hostId, signal }),
     timeoutMs,
     `Timed out loading the catalog of host ${hostId}.`,
   );
