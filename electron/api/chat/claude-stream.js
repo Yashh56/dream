@@ -605,10 +605,13 @@ export const streamClaudeResponse = async ({
     responseMessageMetadata,
     execute: (turn) => {
       turn.session(resumeSessionId, { emit: false });
+      const failed = new AbortController();
       const textResult = streamText({
         // The turn's own signal (turn-registry.js): Stop aborts the Claude
         // query; a client disconnecting does not.
-        abortSignal,
+        abortSignal: abortSignal
+          ? AbortSignal.any([abortSignal, failed.signal])
+          : failed.signal,
         messages: modelMessages,
         model: providerFactory(model, turn),
         stopWhen: isStepCount(
@@ -648,7 +651,18 @@ export const streamClaudeResponse = async ({
             console.error("[chat stream error]", error);
             return formatStreamError(error);
           },
-        }),
+        }).pipeThrough(
+          new TransformStream({
+            transform(chunk, controller) {
+              controller.enqueue(chunk);
+              if (chunk.type !== "error") return;
+              // A terminal error must finish both the client stream and the
+              // transcript observer, even if the provider stalls in cleanup.
+              controller.terminate();
+              failed.abort();
+            },
+          }),
+        ),
       );
     },
   });
