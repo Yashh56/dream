@@ -13,7 +13,10 @@
 //                 prompt): its ssh processes end, so ssh cannot ask again.
 //
 // An attempt that fails on authentication or the host key stops retrying:
-// asking for a password again every minute helps nobody.
+// asking for a password again every minute helps nobody. Nor does one that
+// reaches a different Dream host than the one this connection is for: the
+// first host it reaches (or the one it was told to expect) is the only one
+// it will connect to, so a reassigned address never silently swaps hosts.
 //
 // Electron-free: the process spawner, port picker, fetch and timers are
 // injected, so it runs under plain Node and in tests.
@@ -21,7 +24,7 @@ import { spawn as spawnChildProcess } from "node:child_process";
 import { createReadStream } from "node:fs";
 import net from "node:net";
 import { API_SESSION_TOKEN_HEADER } from "../api/shared/session-token.js";
-import { SUPPORTED_HOST_PROTOCOLS } from "../host/protocol.js";
+import { hostProtocolProblem } from "../host/protocol.js";
 import {
   buildInstallScript,
   buildPlatformScript,
@@ -89,6 +92,7 @@ const lastLine = (text) =>
  *   runtimeVersion?: string | null,
  *   runtimeBaseUrl?: string,
  *   runtimeCacheDirectory?: string | null,
+ *   expectedIdentity?: { hostId: string, fingerprint?: string | null } | null,
  * }} options
  *   `target`: what the user would type after `ssh` (an alias from
  *   ~/.ssh/config, or user@host).
@@ -100,6 +104,8 @@ const lastLine = (text) =>
  *   `controlPath`: a ControlMaster socket path to multiplex through; null
  *   where the client cannot (Windows).
  *   `env`: the ssh processes' environment (askpass variables included).
+ *   `expectedIdentity`: the persistent host this target was verified to
+ *   reach before; without it, the first host reached is pinned.
  */
 export function createSshHostConnection({
   target,
@@ -107,6 +113,7 @@ export function createSshHostConnection({
   runtimeVersion = null,
   runtimeBaseUrl,
   runtimeCacheDirectory = null,
+  expectedIdentity = null,
   sshPath = "ssh",
   controlPath = null,
   env = process.env,
@@ -137,6 +144,8 @@ export function createSshHostConnection({
   const portForwards = new Map();
   let state = "idle";
   let endpoint = null;
+  /** The host this connection is for, once known. */
+  let pinnedIdentity = expectedIdentity?.hostId ? expectedIdentity : null;
   let session = null; // the ssh process whose exit means the link is gone
   let retryTimer = null;
   let retryIndex = 0;
@@ -341,17 +350,8 @@ export function createSshHostConnection({
           })
         : sshFailure("SSH failed", stderr);
     }
-    const version = result.hostProtocolVersion;
-    if (
-      !Number.isInteger(version) ||
-      version < SUPPORTED_HOST_PROTOCOLS.min ||
-      version > SUPPORTED_HOST_PROTOCOLS.max
-    ) {
-      throw new SshHostError(
-        `The host speaks protocol ${version}; this app supports ${SUPPORTED_HOST_PROTOCOLS.min}-${SUPPORTED_HOST_PROTOCOLS.max}.`,
-        { fatal: true },
-      );
-    }
+    const problem = hostProtocolProblem(result.hostProtocolVersion);
+    if (problem) throw new SshHostError(problem, { fatal: true });
     return result;
   };
 
@@ -368,6 +368,27 @@ export function createSshHostConnection({
     } catch {
       return null;
     }
+  };
+
+  /**
+   * Why the host that answered (its host-info) is not the one this
+   * connection is for, or null. A host too old to name itself cannot be
+   * told apart from another, so it is refused once one has been pinned.
+   */
+  const identityProblem = (info) => {
+    if (!pinnedIdentity) return null;
+    const hostId = typeof info?.hostId === "string" ? info.hostId : null;
+    if (!hostId) {
+      return `The Dream host at ${target} did not identify itself, so it cannot be confirmed as the host saved for it. Update the Dream host there, or remove its custom host command so Dream installs a matching one.`;
+    }
+    if (
+      hostId !== pinnedIdentity.hostId ||
+      (pinnedIdentity.fingerprint &&
+        info.fingerprint !== pinnedIdentity.fingerprint)
+    ) {
+      return `${target} now reaches a different Dream host than the one saved for it, so its projects were not loaded from there. If that machine was replaced, remove this host in Settings and add it again.`;
+    }
+    return null;
   };
 
   /** One attempt. Resolves with { endpoint, session } or rejects. */
@@ -388,8 +409,13 @@ export function createSshHostConnection({
       const daemon = await runEnsure();
       const localPort = await getLocalPort();
       const ports = { localPort, remotePort: daemon.port };
-      const answers = async () =>
-        (await fetchHostInfo(localPort, daemon.token))?.pid === daemon.pid;
+      let info = null;
+      const answers = async () => {
+        const answered = await fetchHostInfo(localPort, daemon.token);
+        if (answered?.pid !== daemon.pid) return false;
+        info = answered;
+        return true;
+      };
 
       let held = master;
       if (master) {
@@ -417,9 +443,21 @@ export function createSshHostConnection({
         );
       }
 
+      const problem = identityProblem(info);
+      if (problem) {
+        if (held !== master) held.kill();
+        throw new SshHostError(problem, { fatal: true });
+      }
+      const hostId = typeof info?.hostId === "string" ? info.hostId : null;
+      const fingerprint =
+        typeof info?.fingerprint === "string" ? info.fingerprint : null;
+      if (hostId) pinnedIdentity ??= { fingerprint, hostId };
+
       return {
         endpoint: {
           baseUrl: `http://127.0.0.1:${localPort}`,
+          fingerprint,
+          hostId,
           hostProtocolVersion: daemon.hostProtocolVersion,
           pid: daemon.pid,
           token: daemon.token,

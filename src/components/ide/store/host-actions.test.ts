@@ -169,6 +169,8 @@ test("editing a host keeps it, and a live connection reconnects when how it is r
     .updateSshHost("a", { hostCommand: "~/bin/dream-host" });
   expect(desktop.disconnectHost).toHaveBeenCalledWith("a");
   expect(desktop.connectHost).toHaveBeenCalledWith({
+    expectedFingerprint: null,
+    expectedHostId: null,
     hostCommand: "~/bin/dream-host",
     hostId: "a",
     target: "me@new-a",

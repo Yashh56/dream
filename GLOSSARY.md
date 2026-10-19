@@ -141,6 +141,33 @@ The machine whose filesystem, agent CLIs and terminals a project uses. The
 another machine Dream reaches over SSH. Not to be confused with a provider
 session, which lives on the provider's side whatever the host.
 
+## Host identity
+
+Who a host is, however it is reached (`electron/host/identity.js`): a
+**persistent host ID** and an Ed25519 key pair, created once per host data
+directory and kept across restarts, runtime upgrades and address changes.
+The **host descriptor** (ID, key fingerprint and public key, protocol,
+capabilities, version; no paths or credentials) is listed with every
+catalog, and a client checks it before applying that catalog. An ID match
+is a consistency check, not authentication: the route vouches for the host
+(this app's own process, an authenticated SSH session). A route that cannot
+vouch for it verifies the key instead.
+
+## Saved host connection
+
+One client's record that a **client connection ID** reaches a persistent
+host, and by which **routes** (`electron/shared/host-connections.js`,
+`hostConnections` in persisted state). The connection ID is what that
+client's projects, workspace rows and requests name a host by: `local`, or
+an SSH host's id in Settings. A **route ID** names one way of reaching the
+host (the local route, an SSH host). The record is saved on the route's
+first verified catalog load; until then a connection routes by its ID
+alone. After that, a route that reaches another host is refused. A second
+connection that reaches an already saved host is also refused, and so is a
+catalog whose project or chat IDs collide with another host's. The local
+route is never refused. Device and session IDs belong to remote
+authorization, which is a separate concern.
+
 ## Host catalog readiness
 
 A host's **catalog readiness** means this client has successfully applied its

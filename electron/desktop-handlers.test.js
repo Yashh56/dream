@@ -232,14 +232,22 @@ test("SSH host calls are checked before they reach the hosts", async () => {
       hostId: "h",
       target: " box ",
     }),
-    { hostProtocolVersion: 3, version: "1.2" },
+    { fingerprint: null, hostId: null, hostProtocolVersion: 3, version: "1.2" },
   );
   assert.throws(() => handlers.forwardHostPort({ hostId: "h", port: 70000 }));
   assert.equal(handlers.forwardHostPort({ hostId: "h", port: "3000" }), 43000);
   assert.equal(handlers.getHostState({}), "idle");
   handlers.answerHostPrompt({ answer: "pw", promptId: 2 });
   assert.deepEqual(log, [
-    ["connect", { hostCommand: undefined, hostId: "h", target: "box" }],
+    [
+      "connect",
+      {
+        expectedIdentity: null,
+        hostCommand: undefined,
+        hostId: "h",
+        target: "box",
+      },
+    ],
     ["prompt answer", 2, "pw"],
   ]);
 });

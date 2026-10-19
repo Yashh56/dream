@@ -20,6 +20,7 @@ import type {
   ProjectGitWorktreeMergeResponse,
   ProjectWorktreeInfo,
   RightPanelView,
+  SavedHostConnection,
   SavedPrompt,
   SshHostConfig,
   StashItem,
@@ -100,6 +101,8 @@ export interface IdeState {
   savedPrompts: SavedPrompt[];
   chats: ChatConfig[];
   chatSort: ChatSortOrder;
+  /** Which persistent host each connection id reaches, once verified. */
+  hostConnections: SavedHostConnection[];
   settings: AppSettings;
   messagesByChatId: Record<string, UIMessage[]>;
   transcriptPageByChatId: Record<

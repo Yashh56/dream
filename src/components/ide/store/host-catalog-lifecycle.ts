@@ -1,8 +1,28 @@
-/** One per-store owner of catalog readiness, shared by every host trigger. */
+/**
+ * One per-store owner of catalog readiness, shared by every host trigger.
+ * Every catalog it reads is checked first: that the host that answered is
+ * the one the connection is for (or, newly verified, no other connection's),
+ * that this app speaks its protocol, and that its ids collide with no other
+ * host's. A catalog that fails is never applied.
+ */
+import type { CatalogResponse } from "@/lib/api-client";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
+import {
+  acceptHostDescriptor,
+  findCatalogIdCollisions,
+} from "../../../../electron/shared/host-connections.js";
 import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
 import { isHostLoaded, loadCatalog } from "./ide-store-persistence";
 import type { IdeStoreGet, IdeStoreSet } from "./ide-store-types";
+
+/**
+ * The host that answered is not one this connection may load: another
+ * host, one already open under another connection, an incompatible
+ * protocol or colliding ids. Retrying the same route will not help.
+ */
+export class HostIdentityError extends Error {
+  override name = "HostIdentityError";
+}
 
 const lifecycles = new WeakMap<
   IdeStoreGet,
@@ -45,7 +65,51 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
     });
   };
 
+  const labelOf = (connectionId: string) =>
+    connectionId === LOCAL_HOST_ID
+      ? "This computer"
+      : (get().settings.sshHosts.find((host) => host.id === connectionId)
+          ?.label ?? connectionId);
+
+  /**
+   * Checks whose catalog this is before anything of it is applied, and
+   * saves the connection's host the first time it is verified. Throws a
+   * HostIdentityError for a catalog that must not be applied. The local
+   * host's own catalog is never refused for colliding ids: it is the one
+   * the others' are checked against.
+   */
+  const accept = (
+    hostId: string,
+    catalog: Pick<CatalogResponse, "host"> & Partial<CatalogResponse>,
+  ) => {
+    const state = get();
+    const accepted = acceptHostDescriptor(state.hostConnections, {
+      connectionId: hostId,
+      descriptor: catalog.host,
+      labelOf,
+    });
+    if (accepted.error) throw new HostIdentityError(accepted.error);
+    if (hostId !== LOCAL_HOST_ID) {
+      const collisions = findCatalogIdCollisions({
+        catalog,
+        chats: state.chats,
+        connectionId: hostId,
+        projects: [...state.projects, ...state.closedProjects],
+      });
+      const count = collisions.projectIds.length + collisions.chatIds.length;
+      if (count > 0) {
+        throw new HostIdentityError(
+          `“${labelOf(hostId)}” has ${count === 1 ? "a project or chat" : `${count} projects or chats`} with the same id as another host's here, as if its data were copied from that host. It was not loaded, so the two hosts are not mixed up.`,
+        );
+      }
+    }
+    if (accepted.connections !== state.hostConnections) {
+      set({ hostConnections: accepted.connections });
+    }
+  };
+
   return {
+    accept,
     /** Internal read seam: accept the result and apply it in the same turn. */
     async read(
       hostId: string,
@@ -55,6 +119,7 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
       signal.throwIfAborted();
       const catalog = await loadCatalog(hostId, undefined, signal);
       signal.throwIfAborted();
+      accept(hostId, catalog);
       apply(catalog);
     },
     /** Transport is going away. Keep saved baselines, but reject old reads. */

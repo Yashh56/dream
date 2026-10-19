@@ -5,7 +5,10 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import getPort from "get-port";
 import { startAskpassServer } from "./askpass-server.js";
-import { createSshHostConnection } from "./ssh-host-connection.js";
+import {
+  createSshHostConnection,
+  SshHostError,
+} from "./ssh-host-connection.js";
 
 /**
  * @param {{
@@ -75,19 +78,43 @@ export function createSshHostManager({
     /**
      * Connects host `hostId` at `target` (an ~/.ssh/config alias or
      * user@host). `hostId` is the app's name for the host, which requests
-     * are routed by; it defaults to the target.
-     * @param {{ hostId?: string, target: string, hostCommand?: string }} options
+     * are routed by; it defaults to the target. `expectedIdentity` is the
+     * persistent host the app saved for it: no other host is connected.
+     * @param {{
+     *   hostId?: string,
+     *   target: string,
+     *   hostCommand?: string,
+     *   expectedIdentity?: { hostId: string, fingerprint?: string | null } | null,
+     * }} options
      */
-    async connect({ hostId: requestedHostId, target, hostCommand }) {
+    async connect({
+      hostId: requestedHostId,
+      target,
+      hostCommand,
+      expectedIdentity = null,
+    }) {
       const hostId = requestedHostId ?? target;
       const existing = connections.get(hostId);
-      if (existing?.getState() === "connected") return existing.getEndpoint();
+      if (existing?.getState() === "connected") {
+        const endpoint = existing.getEndpoint();
+        if (
+          !expectedIdentity?.hostId ||
+          endpoint?.hostId === expectedIdentity.hostId
+        ) {
+          return endpoint;
+        }
+        throw new SshHostError(
+          `${target} is connected to a different Dream host than the one saved for it.`,
+          { fatal: true },
+        );
+      }
       existing?.disconnect();
 
       const { env } = await getAskpass();
       const connection = createSshHostConnection({
         controlPath: getControlPath(),
         env: { ...process.env, ...env },
+        expectedIdentity,
         getLocalPort: () => getPort({ host: "127.0.0.1" }),
         hostCommand: hostCommand || null,
         runtimeCacheDirectory: path.join(stateDirectory, "runtime"),

@@ -6,8 +6,8 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: proposed. This plan records implementation candidates; implementation
-has not started. Task numbers below resolve to CONN-01 through CONN-11.
+Status: CONN-01 implemented; CONN-02 through CONN-11 proposed. Task numbers
+below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
 
@@ -66,7 +66,7 @@ feature in that source is available in a released T3 client.
 
 ## CONN-01: Persistent host identity and connection records
 
-Status: proposed
+Status: implemented (desktop UI walkthrough pending; see Validation)
 
 Problem and trigger: `local` and SSH configuration IDs currently identify routing
 choices. The same host added through Tailscale would otherwise appear as another
@@ -96,11 +96,67 @@ Completion criteria:
   credentials. An ID match alone is not treated as cryptographic authentication.
 - An incompatible protocol produces an actionable error before catalog loading.
 
-Validation: pending; inspect migration with existing local and SSH workspace
-copies, an offline SSH record and two catalogs containing colliding fixture IDs.
-Use existing codec, routing and host-boundary checks.
+Agreed scope (as implemented):
 
-Remaining/deferred: device authorization is CONN-02; route selection is CONN-07.
+- `electron/host/identity.js` creates `host-identity.json` (0600) in the host
+  data directory: `host_<uuid>` plus an Ed25519 key pair. It is published with
+  a hard link of a complete temporary file, or an exclusive create where links
+  are unsupported, and is never replaced. An unreadable or tampered file stops
+  the host with instructions; it is never silently regenerated.
+- `createHost` exposes `getHostDescriptor()` (ID, `SHA256:` fingerprint,
+  public key, protocol, capabilities, version). `/api/host-info`, daemon
+  `ensure`/`status` and the host record name the ID. `/api/catalog` lists the
+  descriptor as `host`. Protocol capability `host-identity` was added without
+  a protocol version bump. `hostProtocolProblem` in `protocol.js` produces the
+  actionable incompatibility message for SSH and for catalog acceptance.
+- Saved connections are `hostConnections`, a codec plain persisted field
+  (versioned `SavedHostConnection` records with `local`/`ssh` routes;
+  `electron/shared/host-connections.js`). Connection IDs remain the legacy
+  `local`/SSH IDs, so no workspace, project or chat row is rewritten.
+- Before a catalog is applied, `host-catalog-lifecycle.ts` accepts its
+  descriptor. A first verified load saves the connection. A saved connection
+  that reaches another host, or a host that stops identifying itself, is
+  refused, and so is a second connection to an already saved host, an
+  incompatible protocol, or project/chat IDs that collide with another host's
+  (copied data). A refusal disconnects that SSH host with the reason. The local
+  route records rather than refuses. The local identity is recorded after
+  hydration, so it is saved.
+- The SSH connection pins the expected identity passed from the saved record,
+  or the first host it reaches. A different host on connect or reconnect is a
+  fatal error, so a reassigned address is never retried into the wrong host.
+  Removing an SSH host forgets its saved connection; editing its target keeps
+  the pinned identity.
+
+Validation (2026-10-18): `pnpm typecheck`, `pnpm lint` and `pnpm test` (173
+files, 1197 passed, 4 skipped) pass. Existing tests updated for the new field
+and contract: codec plain-field samples (now compared deeply), save-scheduler
+and workspace-save fixtures, the desktop-handler connect payload, the
+host-actions connect payload and the daemon capabilities. No new tests were
+added. Ad hoc scratch programs outside the checkout passed:
+- Eight concurrent processes initializing one directory published one ID.
+  Restart reread it; a separate directory got a new ID. A tampered key was
+  refused and left in place.
+- Acceptance covered: legacy host without identity (still routes, unsaved),
+  first verification, repeat, wrong host, same ID with another key, a saved
+  host that stops identifying itself, a duplicate SSH connection, an SSH
+  connection reaching the local host, protocol 2, and local re-recording.
+  The codec dropped unknown record versions and duplicate host IDs.
+  Colliding fixture IDs across two catalogs were found; a host's own snapshot
+  IDs were not.
+- A real daemon (restarted) kept its ID. Its catalog descriptor contained no
+  path, PID or token.
+- The SSH connection with fake ssh and a real daemon: a reconnect to a daemon
+  whose identity changed failed fatally without retry, an expected identity
+  refused the other host up front, and a fresh connection accepted it.
+
+Not yet inspected: the running desktop app with copies of real local and SSH
+workspaces (Electron main must be restarted to load the host change), and an
+SSH host on a real remote machine.
+
+Remaining/deferred: device authorization is CONN-02; route selection,
+cryptographic proof of identity over routes that cannot vouch for the host,
+and merging several routes into one connection are CONN-07. Unauthenticated
+descriptor access belongs to CONN-02's remote route policy.
 
 ## CONN-02: Pairing and revocable device sessions
 
@@ -486,7 +542,7 @@ First implementation slice: CONN-01, followed by CONN-02. Establish identity and
 authorization while the application remains desktop-compatible, then use those
 contracts for the browser client. Keep each candidate independently reviewable.
 
-Recovery: `docs/architecture/tasks/remote-connections.md`, CONN-01 through
-CONN-11, all proposed. No implementation or runtime validation performed for this
-plan. Preserve the user's no-new-tests and no-dev-server constraints; commits
+Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01
+implemented (desktop walkthrough with real workspace copies pending);
+CONN-02 through CONN-11 proposed, next is CONN-02. Preserve the user's no-new-tests and no-dev-server constraints; commits
 and pushes require explicit confirmation.

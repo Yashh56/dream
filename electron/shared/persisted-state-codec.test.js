@@ -542,6 +542,16 @@ test("encode then decode is the identity on a decoded state", () => {
 const PLAIN_FIELD_SAMPLES = {
   appView: "code",
   chatSort: "titleAsc",
+  hostConnections: [
+    {
+      fingerprint: "SHA256:sample",
+      hostId: "host_sample",
+      id: "local",
+      routes: [{ id: "local", kind: "local" }],
+      verifiedAt: "2026-10-18T00:00:00.000Z",
+      version: 1,
+    },
+  ],
 };
 
 test("every plain persisted field has a sample", () => {
@@ -555,14 +565,14 @@ test("a plain persisted field defaults when absent or invalid", () => {
   const empty = createEmptyPersistedState();
   for (const name of PLAIN_PERSISTED_FIELD_NAMES) {
     const fallback = PLAIN_PERSISTED_FIELDS[name](undefined);
-    assert.equal(empty[name], fallback, name);
-    assert.equal(decodePersistedState({})[name], fallback, name);
-    assert.equal(
+    assert.deepEqual(empty[name], fallback, name);
+    assert.deepEqual(decodePersistedState({})[name], fallback, name);
+    assert.deepEqual(
       decodePersistedState({ [name]: { not: "valid" } })[name],
       fallback,
       name,
     );
-    assert.equal(plainPersistedFieldsOf(null)[name], fallback, name);
+    assert.deepEqual(plainPersistedFieldsOf(null)[name], fallback, name);
   }
 });
 
@@ -573,10 +583,10 @@ test("a plain persisted field survives decode, encode and the config rows", () =
     stateFromConfig(stateToConfig(encoded)),
   );
   for (const [name, value] of Object.entries(PLAIN_FIELD_SAMPLES)) {
-    assert.equal(decoded[name], value, name);
-    assert.equal(encoded[name], value, name);
-    assert.equal(stateToConfig(encoded)[name], value, name);
-    assert.equal(throughConfig[name], value, name);
+    assert.deepEqual(decoded[name], value, name);
+    assert.deepEqual(encoded[name], value, name);
+    assert.deepEqual(stateToConfig(encoded)[name], value, name);
+    assert.deepEqual(throughConfig[name], value, name);
   }
 });
 

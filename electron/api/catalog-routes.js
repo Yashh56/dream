@@ -49,8 +49,12 @@ export const catalogSearchRequestSchema = z.object({
 /**
  * @param {import("hono").Hono} app
  * @param {ReturnType<typeof import("../host/catalog.js").createHostCatalog>} catalog
+ * @param {{ describeHost?: () => object }} [options]
+ *   `describeHost`: the host's descriptor (identity and protocol), listed
+ *   with the catalog as `host` so a client checks whose catalog it is in
+ *   the same response it applies.
  */
-export function registerCatalogRoutes(app, catalog) {
+export function registerCatalogRoutes(app, catalog, { describeHost } = {}) {
   app.post("/api/catalog/transcript/page", (c) =>
     handleJsonRoute(c, catalogTranscriptPageSchema, (data) =>
       catalog.transcriptPage(data),
@@ -59,9 +63,15 @@ export function registerCatalogRoutes(app, catalog) {
   const origin = (c) => c.req.header(CLIENT_ID_HEADER) ?? null;
 
   app.post("/api/catalog", (c) =>
-    handleJsonRoute(c, catalogListRequestSchema, () => catalog.list(), {
-      missingBody: {},
-    }),
+    handleJsonRoute(
+      c,
+      catalogListRequestSchema,
+      async () => ({
+        ...(await catalog.list()),
+        ...(describeHost ? { host: describeHost() } : {}),
+      }),
+      { missingBody: {} },
+    ),
   );
 
   app.post("/api/catalog/changes", (c) =>

@@ -58,6 +58,7 @@ function createApiApp({
   catalog,
   resolveRemoteHost,
   turns,
+  getHostDescriptor,
   getHostInfo,
   hostSocket,
   terminals,
@@ -97,7 +98,10 @@ function createApiApp({
   if (delegation)
     guardedApp.all(ORCHESTRATION_MCP_PATH, (c) => delegation.handle(c.req.raw));
   registerHostDirectoryRoutes(guardedApp);
-  if (catalog) registerCatalogRoutes(guardedApp, catalog);
+  if (catalog)
+    registerCatalogRoutes(guardedApp, catalog, {
+      describeHost: getHostDescriptor,
+    });
   // Projects on other hosts, through this one (see host-proxy-routes.js).
   if (resolveRemoteHost) {
     registerHostProxyRoutes(guardedApp, {
@@ -127,7 +131,8 @@ function createApiApp({
  *
  * `catalog` serves the catalog routes (host/catalog.js). `resolveRemoteHost`
  * enables `/api/hosts/:hostId/*`, forwarded to that host's endpoint.
- * `getHostInfo` answers `GET /api/host-info`. `hostSocket` is
+ * `getHostInfo` answers `GET /api/host-info`; `getHostDescriptor` (the
+ * host's identity and protocol) is listed with the catalog. `hostSocket` is
  * `{ socket, tickets }` for the host socket (host-socket-routes.js). `activity`, when given, is told
  * when each request begins and ends (see shared/request-activity.js).
  */
@@ -139,6 +144,7 @@ export function startApiServer({
   catalog,
   resolveRemoteHost,
   turns,
+  getHostDescriptor,
   getHostInfo,
   hostSocket,
   port,
@@ -152,6 +158,7 @@ export function startApiServer({
     catalog,
     resolveRemoteHost,
     turns,
+    getHostDescriptor,
     getHostInfo,
     hostSocket,
     terminals,

@@ -21,6 +21,7 @@
 
 import { normalizeMcpServerList } from "../api/chat/mcp-servers.js";
 import { normalizeChatPermissionMode } from "./chat-permissions.js";
+import { normalizeHostConnections } from "./host-connections.js";
 import { normalizeLocalePreference } from "./locales.js";
 import {
   ALL_PROVIDERS,
@@ -293,6 +294,7 @@ export const PLAIN_PERSISTED_FIELDS =
   /** @satisfies {{ [K in keyof PersistedIdeState]?: (value: unknown) => PersistedIdeState[K] }} */ ({
     appView: (value) => normalizeAppView(value) ?? DEFAULT_APP_VIEW,
     chatSort: normalizeChatSort,
+    hostConnections: normalizeHostConnections,
   });
 
 /** @typedef {keyof typeof PLAIN_PERSISTED_FIELDS} PlainPersistedField */

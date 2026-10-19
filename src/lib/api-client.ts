@@ -27,6 +27,7 @@ import type {
   CheckpointChangesResponse,
   CheckpointDiffResponse,
   CheckpointRestoreResponse,
+  HostDescriptor,
   McpServerTransport,
   ProjectGitBranchesResponse,
   ProjectGitCheckoutResponse,
@@ -276,6 +277,8 @@ export interface TerminalStartResponse {
 export interface CatalogResponse {
   projects: Record<string, unknown>[];
   chats: Record<string, unknown>[];
+  /** Whose catalog this is; absent from hosts older than identities. */
+  host?: HostDescriptor;
   /** Chats with a turn running on the host now. */
   runningChatIds?: string[];
 }

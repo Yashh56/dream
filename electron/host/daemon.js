@@ -101,6 +101,8 @@ export async function probeDaemon(runDirectory) {
 }
 
 const describe = (record, { withToken = false } = {}) => ({
+  fingerprint: record.fingerprint ?? null,
+  hostId: record.hostId ?? null,
   hostProtocolVersion: record.hostProtocolVersion,
   pid: record.pid,
   port: record.port,
@@ -199,7 +201,10 @@ async function serve({ home, runDirectory, values, log }) {
     port: Number(values.port ?? 0),
   });
 
+  const { fingerprint, hostId } = host.getHostDescriptor();
   writeHostRecord(runDirectory, {
+    fingerprint,
+    hostId,
     hostProtocolVersion: HOST_PROTOCOL_VERSION,
     pid: process.pid,
     port,
@@ -208,7 +213,7 @@ async function serve({ home, runDirectory, values, log }) {
     version,
   });
   log(
-    `Dream host ${version ?? "(unknown version)"} (protocol ${HOST_PROTOCOL_VERSION}) listening on 127.0.0.1:${port}, data in ${dataDirectory}.`,
+    `Dream host ${version ?? "(unknown version)"} (protocol ${HOST_PROTOCOL_VERSION}, ${hostId}) listening on 127.0.0.1:${port}, data in ${dataDirectory}.`,
   );
 
   let stopping = false;

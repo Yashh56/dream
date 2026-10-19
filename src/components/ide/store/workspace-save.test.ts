@@ -74,6 +74,7 @@ const encode = (
     chats: [],
     chatSort: "recent",
     closedProjects: [],
+    hostConnections: [],
     messagesByChatId: {},
     projects,
     savedPrompts: [],

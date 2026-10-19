@@ -16,6 +16,7 @@ const baseState = (): SchedulerState => ({
   chatSort: "recent",
   chats: [],
   closedProjects: [],
+  hostConnections: [],
   projects: [],
   savedPrompts: [],
   settings: {},

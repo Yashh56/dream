@@ -4,11 +4,23 @@
  * as main reports it, and opening a folder on it as a project. A host's
  * projects stay in the store while it is away, so its tabs do not vanish
  * with a dropped connection.
+ *
+ * An SSH host verified once (its saved connection) connects to that host
+ * only: main refuses any other, then and on every reconnect.
+ * A catalog refused for its host's identity (host-catalog-lifecycle.ts)
+ * disconnects it: nothing of a host that is not the one meant is used.
  */
 import { getDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type { HostConnectionState } from "@/types/ide";
-import { hostCatalogLifecycle } from "./host-catalog-lifecycle";
+import {
+  findHostConnection,
+  forgetHostConnection,
+} from "../../../../electron/shared/host-connections.js";
+import {
+  HostIdentityError,
+  hostCatalogLifecycle,
+} from "./host-catalog-lifecycle";
 import { forgetLoadedHost } from "./ide-store-persistence";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import { applyWorkspaceRemoval } from "./project-runtime-state";
@@ -85,6 +97,22 @@ export const createHostActions = (
     catalogs.suspend(hostId);
   };
 
+  /**
+   * Brings `hostId`'s catalog in. A host refused for who it is gets
+   * disconnected, with why; any other failure is left to the caller.
+   */
+  const refreshCatalog = async (hostId: string) => {
+    try {
+      await catalogs.refresh(hostId);
+    } catch (error) {
+      if (!(error instanceof HostIdentityError)) throw error;
+      stopFollowing(hostId);
+      await getDesktopApi()?.disconnectHost(hostId);
+      setHost(hostId, { error: error.message, loaded: false, state: "failed" });
+      throw error;
+    }
+  };
+
   const connectHost: IdeState["connectHost"] = (hostId) => {
     if (hostId === LOCAL_HOST_ID) return Promise.resolve(true);
     const pending = connecting.get(hostId);
@@ -106,17 +134,21 @@ export const createHostActions = (
       }
 
       setHost(hostId, { error: null, loaded: false, state: "connecting" });
+      const saved = findHostConnection(get().hostConnections, hostId);
       try {
         await desktopApi.connectHost({
+          expectedFingerprint: saved?.fingerprint ?? null,
+          expectedHostId: saved?.hostId ?? null,
           hostCommand: config.hostCommand,
           hostId,
           target: config.target,
         });
         if (!current()) return false;
         setHost(hostId, { state: "connected" });
-        await catalogs.refresh(hostId);
+        await refreshCatalog(hostId);
         return current();
       } catch (error) {
+        if (error instanceof HostIdentityError) return false;
         if (current())
           setHost(hostId, {
             error: errorMessage(error),
@@ -185,7 +217,8 @@ export const createHostActions = (
 
       // Same host, reached differently: a live connection reconnects with
       // the new settings. Its projects stay (they are keyed by the host's
-      // id, which does not change).
+      // id, which does not change), and so does the host it was verified
+      // as: a target that now reaches another host is refused.
       const reachedDifferently =
         next.target !== previous.target ||
         next.hostCommand !== previous.hostCommand;
@@ -243,6 +276,7 @@ export const createHostActions = (
               ),
             },
           ),
+          hostConnections: forgetHostConnection(state.hostConnections, hostId),
           hosts,
         };
       });
@@ -273,7 +307,7 @@ export const createHostActions = (
         !connecting.has(hostId)
       ) {
         catalogs.resume(hostId);
-        void catalogs.refresh(hostId).catch(() => undefined);
+        void refreshCatalog(hostId).catch(() => undefined);
       }
     },
 

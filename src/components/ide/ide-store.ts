@@ -18,7 +18,9 @@ import {
   resolveActiveBrowserTab,
 } from "./store/helpers";
 import { createHostActions } from "./store/host-actions";
+import { hostCatalogLifecycle } from "./store/host-catalog-lifecycle";
 import {
+  getLoadedLocalHost,
   getLoadedRunningChatIds,
   getLoadedWorkspace,
   isWorkspaceLoaded,
@@ -216,6 +218,16 @@ export const useIdeStore = create<IdeState>((set, get) => ({
       persistenceBlocked: !isWorkspaceLoaded(),
     });
     transcriptCache.markHydrated(restored.messagesByChatId);
+    // Saves the local host's identity as this client's `local` connection.
+    // Its catalog is already in: the local host is this app's own, so it
+    // is never refused, only recorded.
+    try {
+      hostCatalogLifecycle(set, get).accept(LOCAL_HOST_ID, {
+        host: getLoadedLocalHost(),
+      });
+    } catch (error) {
+      console.warn("Unable to record the local host's identity.", error);
+    }
 
     void get().resumeHosts(
       getLoadedWorkspace()

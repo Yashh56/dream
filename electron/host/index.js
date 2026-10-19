@@ -22,6 +22,7 @@ import { createStateSaveQueue } from "../state-save-queue.js";
 import { detectAvailableTerminalShells } from "../terminal-shells.js";
 import { createHostCatalog } from "./catalog.js";
 import { configureHostDataDirectory } from "./host-paths.js";
+import { loadHostIdentity } from "./identity.js";
 import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
 
 /**
@@ -54,6 +55,8 @@ export function createHost({
   resolveRemoteHost,
 }) {
   configureHostDataDirectory(dataDirectory);
+  // Before anything else: a host that cannot say who it is serves nobody.
+  const identity = loadHostIdentity(dataDirectory);
 
   let ownWriter = null;
   const getWriter =
@@ -118,13 +121,22 @@ export function createHost({
       }
     : undefined;
 
-  const getHostInfo = () => ({
-    arch: process.arch,
+  // Who this host is and what it speaks: nothing about where its files
+  // are, and no credential. Clients check it before applying a catalog.
+  const getHostDescriptor = () => ({
     capabilities: HOST_CAPABILITIES,
+    fingerprint: identity.fingerprint,
+    hostId: identity.hostId,
     hostProtocolVersion: HOST_PROTOCOL_VERSION,
+    publicKey: identity.publicKey,
+    version,
+  });
+
+  const getHostInfo = () => ({
+    ...getHostDescriptor(),
+    arch: process.arch,
     pid: process.pid,
     platform: process.platform,
-    version,
   });
 
   let server = null;
@@ -133,6 +145,7 @@ export function createHost({
     processSessions,
     /** The host catalog (projects, chats, transcripts). */
     catalog,
+    getHostDescriptor,
     getHostInfo,
 
     /** The host's running agent turns. */
@@ -164,6 +177,7 @@ export function createHost({
         activity,
         apiToken,
         catalog,
+        getHostDescriptor,
         getHostInfo,
         hostSocket: { socket: hostSocket, tickets: socketTickets },
         port,

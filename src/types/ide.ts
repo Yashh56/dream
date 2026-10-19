@@ -305,6 +305,51 @@ export interface SshHostConfig {
   hostCommand: string;
 }
 
+/**
+ * Who a host is and what it speaks, as it describes itself (listed with
+ * its catalog): its persistent identity and protocol. No paths, no
+ * credentials. Hosts older than identities list none.
+ */
+export interface HostDescriptor {
+  /** The host's persistent id, the same through any route and restart. */
+  hostId: string;
+  /** `SHA256:` and the digest of `publicKey`, as ssh prints keys. */
+  fingerprint: string;
+  /** The host's Ed25519 public key (SPKI DER, base64). */
+  publicKey: string;
+  hostProtocolVersion: number;
+  capabilities: string[];
+  /** The app version the host was built from. */
+  version: string | null;
+}
+
+/** One way this client reaches a host. */
+export type HostRoute =
+  /** The host inside this app. */
+  | { id: string; kind: "local" }
+  /** An SSH host from Settings, by its id there. */
+  | { id: string; kind: "ssh"; sshHostId: string };
+
+/**
+ * A host this client has verified (electron/shared/host-connections.js):
+ * which persistent host one of its connection ids reaches. Saved the first
+ * time a route is verified; a connection without one routes by its id.
+ */
+export interface SavedHostConnection {
+  version: 1;
+  /**
+   * The client's connection id: what its projects, workspace rows and
+   * requests name the host by (`local`, or an SSH host's id).
+   */
+  id: string;
+  /** The persistent host it reaches (HostDescriptor.hostId). */
+  hostId: string;
+  fingerprint: string | null;
+  /** When a route first confirmed this host. */
+  verifiedAt: string | null;
+  routes: HostRoute[];
+}
+
 export type HostConnectionState =
   | "idle"
   | "connecting"
@@ -372,6 +417,8 @@ export interface PersistedIdeState {
   closedProjects: ProjectConfig[];
   activeProjectId: string | null;
   appView: AppView;
+  /** The hosts this client has verified, by connection id. */
+  hostConnections: SavedHostConnection[];
   /** Every saved prompt in the app, in the order Settings > Prompts lists them. */
   savedPrompts: SavedPrompt[];
   activeBrowserTabIdByProject: Record<string, string | null>;
@@ -887,12 +934,24 @@ export interface DesktopApi {
 
   pickProjectDirectory: () => Promise<string | null>;
 
-  /** Connects an SSH host (its daemon is started or reused there). */
+  /**
+   * Connects an SSH host (its daemon is started or reused there). With an
+   * expected host id, only that host: any other is refused, then and on
+   * every reconnect.
+   */
   connectHost: (payload: {
     hostId: string;
     target: string;
     hostCommand?: string;
-  }) => Promise<{ hostProtocolVersion: number; version: string | null }>;
+    expectedHostId?: string | null;
+    expectedFingerprint?: string | null;
+  }) => Promise<{
+    hostProtocolVersion: number;
+    version: string | null;
+    /** The host's persistent id; null from a host too old to say. */
+    hostId: string | null;
+    fingerprint: string | null;
+  }>;
   disconnectHost: (hostId: string) => Promise<boolean>;
   getHostState: (hostId: string) => Promise<HostConnectionState>;
   /** Forwards an SSH host's port here; resolves with the local port. */

@@ -62,7 +62,7 @@ const fields = (payload) =>
  * @param {ReturnType<typeof import("./theme-store.js").createThemeStore>} deps.themes
  * @param {() => boolean} deps.systemPrefersDark
  * @param {{ loadWorkspace: () => unknown, saveWorkspaceChanges: (changes: unknown) => unknown }} deps.state
- * @param {{ connect: (options: { hostCommand?: string, hostId: string, target: string }) => Promise<{ hostProtocolVersion: number, version?: string | null }>, disconnect: (hostId: string) => void, getState: (hostId: string) => unknown, forwardPort: (hostId: string, port: number) => unknown }} deps.sshHosts
+ * @param {{ connect: (options: { hostCommand?: string, hostId: string, target: string, expectedIdentity?: { hostId: string, fingerprint?: string | null } | null }) => Promise<{ hostProtocolVersion: number, version?: string | null, hostId?: string | null, fingerprint?: string | null }>, disconnect: (hostId: string) => void, getState: (hostId: string) => unknown, forwardPort: (hostId: string, port: number) => unknown }} deps.sshHosts
  * @param {{ answer: (promptId: unknown, answer: unknown) => void }} deps.sshPrompts
  * @param {{ update: (payload: unknown) => void, capturePage: (payload: unknown) => unknown }} deps.browserSessions
  * @param {{ detect: () => unknown, open: (options: { editorId: unknown, projectPath: unknown, sshTarget: unknown }) => unknown }} deps.editors
@@ -293,7 +293,13 @@ export const createDesktopHandlers = ({
     },
 
     connectHost: async (/** @type {unknown} */ payload) => {
-      const { hostCommand, hostId, target } = fields(payload);
+      const {
+        expectedHostId,
+        expectedFingerprint,
+        hostCommand,
+        hostId,
+        target,
+      } = fields(payload);
       if (
         typeof hostId !== "string" ||
         typeof target !== "string" ||
@@ -308,9 +314,21 @@ export const createDesktopHandlers = ({
             : undefined,
         hostId,
         target: target.trim(),
+        expectedIdentity:
+          typeof expectedHostId === "string" && expectedHostId
+            ? {
+                fingerprint:
+                  typeof expectedFingerprint === "string"
+                    ? expectedFingerprint
+                    : null,
+                hostId: expectedHostId,
+              }
+            : null,
       });
       // The token stays in this process; the renderer goes through the proxy.
       return {
+        fingerprint: endpoint.fingerprint ?? null,
+        hostId: endpoint.hostId ?? null,
         hostProtocolVersion: endpoint.hostProtocolVersion,
         version: endpoint.version ?? null,
       };

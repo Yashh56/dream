@@ -87,6 +87,13 @@ const withTimeout = async <T>(
 let loadedRunningChatIds: string[] = [];
 export const getLoadedRunningChatIds = () => loadedRunningChatIds;
 
+/**
+ * The local host's descriptor from its startup catalog load, accepted once
+ * the store has hydrated (so a newly saved connection is saved).
+ */
+let loadedLocalHost: CatalogResponse["host"];
+export const getLoadedLocalHost = () => loadedLocalHost;
+
 /** The workspace as loaded, for merging SSH hosts' catalogs later. */
 let loadedWorkspace: PersistedWorkspace = { workspaceProjects: [] };
 export const getLoadedWorkspace = () => loadedWorkspace;
@@ -187,6 +194,7 @@ const loadOnce = async (): Promise<PersistedIdeState> => {
     savedWorkspace = recordLoadedWorkspace(workspace);
     const catalog = await loadCatalog(LOCAL_HOST_ID, STARTUP_LOAD_TIMEOUT_MS);
     loadedRunningChatIds = catalog.runningChatIds ?? [];
+    loadedLocalHost = catalog.host;
     // SSH hosts still in Settings show their projects from the snapshot.
     const snapshotHostIds = normalizeSshHosts(
       (workspace.settings as { sshHosts?: unknown } | undefined)?.sshHosts,
