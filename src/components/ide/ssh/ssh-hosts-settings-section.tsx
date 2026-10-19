@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusDot } from "@/components/ui/status-dot";
 import type { HostConnectionState, SshHostConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
 import { SettingsGroup } from "../settings/settings-shared";
@@ -199,8 +200,11 @@ export const SshHostsSettingsSection = () => {
               <Server className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-sm">{host.label}</div>
-                <div className="truncate text-muted-foreground text-xs">
-                  {host.target} · {stateLabel(runtime?.state)}
+                <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                  {runtime?.state === "connected" ? <StatusDot /> : null}
+                  <span className="truncate">
+                    {host.target} · {stateLabel(runtime?.state)}
+                  </span>
                 </div>
                 {runtime?.error ? (
                   <div className="mt-1 select-text whitespace-pre-wrap break-words text-destructive text-xs">
