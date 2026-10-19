@@ -6,7 +6,7 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 implemented; CONN-02 through CONN-11 proposed. Task numbers
+Status: CONN-01 and CONN-02 implemented; CONN-03 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -160,7 +160,7 @@ descriptor access belongs to CONN-02's remote route policy.
 
 ## CONN-02: Pairing and revocable device sessions
 
-Status: proposed
+Status: implemented (desktop pairing UI and CLI are CONN-05; see Validation)
 
 Problem and trigger: the current launch token and one-time socket tickets do not
 provide independent device credentials, session management or remote permissions.
@@ -199,8 +199,119 @@ Validation: pending; inspect the full route/channel inventory and manually
 exercise invalid pairing, expiry, CSRF, ticket replay and live revocation.
 Run existing token, socket-ticket, proxy and approval checks.
 
-Remaining/deferred: cloud-bound proof credentials are CONN-08; team isolation
-and arbitrary project-specific grants are outside this plan.
+Agreed scope (as implemented):
+
+- `electron/host/auth/`:
+  - `scopes.js` defines the ladder: view < operate < manage.
+  - `host-auth.js` owns pairings and code claims (in memory), device
+    sessions (in memory, plus the `device_sessions` table through the save
+    queue's `device-session` write and the read pool's `device-sessions`
+    read), authentication, renewal, revocation and live socket/stream
+    tracking.
+  - `route-policy.js` assigns a scope to each served route and each socket
+    message, and lists the local-only routes.
+  - Migration `0007` adds the table.
+- The pairing, session and expiry contract is in the header of
+  `host-auth.js`:
+  - A pairing expires after 10 minutes and works once. The link carries
+    `#pair=<id>.<secret>` in the fragment.
+  - The short code is 8 Crockford characters, limited to 10 claims a minute
+    host-wide, and needs operator confirmation by device name before the
+    device's poll receives the session once.
+  - Wrong secrets are limited to 30 a minute.
+  - Tokens are `dsess.<id>.<secret>`; only sha256(secret) is stored.
+  - A session expires after 30 idle days. A use after an hour extends it
+    (and is written down). `POST /api/remote/session/renew` extends it
+    without changing the credential, so streams and sockets continue.
+    Revocation is immediate.
+- `electron/api/app.js` now registers routes once for both listeners
+  (`registerHostRoutes`, `serveApp`). On the local listener the launch token
+  is the `local` principal with every scope.
+- `electron/api/remote-app.js` is the remote listener:
+  - Host allowlist from the public origins; `trustForwardedHost` is the
+    explicit trusted-proxy switch.
+  - Foreign Origin and cross-site fetch metadata are refused.
+  - Bearer token or `__Host-dream-session` cookie (HttpOnly, Secure,
+    SameSite=Strict). A cookie-carried request other than GET must send a
+    matching Origin.
+  - Route policy check: unlisted routes return 404, too-low scopes 403, and
+    startup asserts every registered route is classified.
+  - Response bodies close on revocation, which detaches the observer only.
+- Local-only, never registered remotely: `host-info`, orchestration MCP,
+  browser MCP, `browser-tools/call` and the `/api/hosts/:hostId/*` SSH proxy.
+  On the host socket, the browser channel (including its resume
+  announcement) is local-only. Terminal input and resize need operate;
+  following terminals and catalog changes needs view.
+- Socket tickets are bound to the requesting principal. Redemption rechecks
+  the session, and revocation closes the socket with code 4401.
+- Remote-access routes (`electron/api/remote-access-routes.js`):
+  - Public: `GET /api/remote/descriptor`, `POST /api/remote/pair`,
+    `/pair/code`, `/pair/claim`.
+  - Session: `GET /api/remote/session`, `POST .../session/renew`,
+    `.../session/end`.
+  - Manage: `POST /api/remote/pairings`, `/claims`, `/claims/answer`,
+    `/sessions`, `/sessions/revoke`. These are also served on the local
+    listener for the local operator.
+  - A web client receives only the cookie; a native client receives its
+    token in the body.
+- `createHost` exposes `listenRemote` and `closeRemote`. The daemon gained
+  `--remote-port`, `--remote-origin` (repeatable) and
+  `--trust-forwarded-host` so the listener can be exercised; the record and
+  status include `remotePort`.
+
+Validation (2026-10-18): `pnpm typecheck`, `pnpm lint` and `pnpm test` (173
+files, 1197 passed, 4 skipped) pass. Existing tests updated: the socket
+ticket test (redeem now returns the principal) and two migration-rewind
+tests (they drop the new table). No new tests were added. Ad hoc scratch
+programs outside the checkout passed:
+- A real daemon with its remote listener passed 50 checks:
+  - The descriptor is public; requests without a session, or with only the
+    launch token, are refused.
+  - All five local-only routes return 404.
+  - Pairing: link exchange; replayed and forged secrets refused; secret only
+    in URL fragments; web pairing sets the hardened cookie and returns no
+    token.
+  - CSRF and Host: cookie POST without Origin or from a foreign Origin
+    refused; cross-site metadata refused; unknown Host refused with 421.
+  - Scopes: view refused for catalog changes, chat submit, approvals,
+    terminal start, commit, checkpoint restore, pairing and device listing;
+    pull-request reads allowed and merges refused; operate refused for CLI
+    upgrade.
+  - Code flow: pending, then confirmed by name, then delivered once; code
+    guessing limited.
+  - Two phones' sockets: ticket replay refused; revoking one closed its
+    socket (4401), blocked its requests, renewal and new tickets, and left
+    the other phone's socket, requests and renewal working.
+  - No token or pairing secret in the database or host log. A session and a
+    revocation both survived a daemon restart. Self sign-out works.
+- With a fake clock: expired pairing link and code; expired idle session and
+  its renewal refused; sliding extension written down; tampered tokens
+  refused; operate cannot mint manage; secret guessing limited. Socket
+  scopes: view cannot type into terminals, and no remote client can run or
+  announce the browser channel. Revoking a session ended its open stream
+  with an error and cancelled only the observer.
+
+- The local host built as Electron main builds it (a shared save queue
+  behind main's writer adapter) starts without warnings. A pairing made on it
+  is written through the shared queue, and the new session reads the catalog.
+  The first desktop start failed because `electron/main.js`'s adapter lacked
+  `writeDeviceSession`. That is fixed, and a failed session load no longer
+  stops the local host.
+
+Not yet inspected: a real browser over HTTPS, since the cookie path is
+validated with Node fetch (CONN-04/05), and a desktop-hosted remote listener
+(the desktop does not start one until CONN-05's settings).
+
+Known limit, recorded rather than fixed: pairing grants the host's OS user.
+View sessions read files by path, without project isolation, so they can
+read files such as a daemon's `host.json` that contains its launch token.
+That token is useless through the remote listener, which ignores it.
+Project-level isolation is outside this plan.
+
+Remaining/deferred: pairing and session UI, QR codes and CLI commands are
+CONN-05. Serving the web client's pairing page at `/pair` is CONN-04.
+Cloud-bound proof credentials are CONN-08. Team isolation and arbitrary
+project-specific grants are outside this plan.
 
 ## CONN-03: Shared connection runtime and platform services
 
@@ -542,7 +653,7 @@ First implementation slice: CONN-01, followed by CONN-02. Establish identity and
 authorization while the application remains desktop-compatible, then use those
 contracts for the browser client. Keep each candidate independently reviewable.
 
-Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01
-implemented (desktop walkthrough with real workspace copies pending);
-CONN-02 through CONN-11 proposed, next is CONN-02. Preserve the user's no-new-tests and no-dev-server constraints; commits
+Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 and
+CONN-02 implemented (desktop walkthrough and real-browser HTTPS checks
+pending); CONN-03 through CONN-11 proposed, next is CONN-03. Preserve the user's no-new-tests and no-dev-server constraints; commits
 and pushes require explicit confirmation.

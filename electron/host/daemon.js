@@ -12,6 +12,12 @@
 // Options: --home <dir> (default ~/.dream/host, or DREAM_HOST_HOME),
 // --data-dir <dir> (default <home>/data), --idle-timeout <seconds> (0 never
 // idles out), --port <n> (serve only; default a free port).
+//
+// Remote access (serve and ensure): --remote-port <n> also serves paired
+// devices on that loopback port (api/remote-app.js); --remote-origin <url>
+// (repeatable) names the origin a reverse proxy serves it at, and
+// --trust-forwarded-host lets that proxy name the host. Pairing is always
+// required. Settings, Tailscale setup and pairing commands are CONN-05's.
 import { spawn } from "node:child_process";
 import { closeSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -101,6 +107,7 @@ export async function probeDaemon(runDirectory) {
 }
 
 const describe = (record, { withToken = false } = {}) => ({
+  remotePort: record.remotePort ?? null,
   fingerprint: record.fingerprint ?? null,
   hostId: record.hostId ?? null,
   hostProtocolVersion: record.hostProtocolVersion,
@@ -152,6 +159,13 @@ async function ensure({ home, runDirectory, values, env, write }) {
     if (values["idle-timeout"] !== undefined) {
       args.push("--idle-timeout", values["idle-timeout"]);
     }
+    if (values["remote-port"] !== undefined) {
+      args.push("--remote-port", values["remote-port"]);
+    }
+    for (const origin of values["remote-origin"] ?? []) {
+      args.push("--remote-origin", origin);
+    }
+    if (values["trust-forwarded-host"]) args.push("--trust-forwarded-host");
     const child = spawn(process.execPath, args, {
       cwd: home,
       detached: true,
@@ -201,6 +215,26 @@ async function serve({ home, runDirectory, values, log }) {
     port: Number(values.port ?? 0),
   });
 
+  let remote = null;
+  if (values["remote-port"] !== undefined) {
+    const remotePort = Number(values["remote-port"]);
+    if (
+      !Number.isInteger(remotePort) ||
+      remotePort < 0 ||
+      remotePort > 65_535
+    ) {
+      throw new Error(`Invalid --remote-port: ${values["remote-port"]}`);
+    }
+    remote = await host.listenRemote({
+      port: remotePort,
+      publicOrigins: values["remote-origin"] ?? [],
+      trustForwardedHost: Boolean(values["trust-forwarded-host"]),
+    });
+    log(
+      `Serving paired devices on 127.0.0.1:${remote.port} for ${remote.origins.join(", ")}.`,
+    );
+  }
+
   const { fingerprint, hostId } = host.getHostDescriptor();
   writeHostRecord(runDirectory, {
     fingerprint,
@@ -208,6 +242,7 @@ async function serve({ home, runDirectory, values, log }) {
     hostProtocolVersion: HOST_PROTOCOL_VERSION,
     pid: process.pid,
     port,
+    remotePort: remote?.port ?? null,
     startedAt: new Date().toISOString(),
     token,
     version,
@@ -305,6 +340,9 @@ export async function runDaemonCli(
         home: { type: "string" },
         "idle-timeout": { type: "string" },
         port: { type: "string" },
+        "remote-origin": { multiple: true, type: "string" },
+        "remote-port": { type: "string" },
+        "trust-forwarded-host": { type: "boolean" },
       },
     });
   } catch (error) {
@@ -316,7 +354,7 @@ export async function runDaemonCli(
   const command = COMMANDS[name];
   if (!command) {
     stderr.write(
-      "Usage: dream-host <ensure|serve|status|stop|version> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n]\n",
+      "Usage: dream-host <ensure|serve|status|stop|version> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host]\n",
     );
     return 2;
   }

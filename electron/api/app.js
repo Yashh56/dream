@@ -6,11 +6,18 @@
  * request types from the same schemas.
  *
  * This file is loaded by the Electron main process at startup.
+ *
+ * Two listeners serve the same host services. The local one (this file's
+ * startApiServer) answers this machine's own clients with the launch token.
+ * The remote one (remote-app.js) answers paired devices by their sessions,
+ * under an explicit route policy; routes only this machine may call are not
+ * registered on it at all.
  */
 
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { LOCAL_PRINCIPAL } from "../host/auth/host-auth.js";
 import { setBrowserMcpEndpoint } from "./browser-bridge.js";
 import {
   BROWSER_MCP_PATH,
@@ -35,6 +42,7 @@ import {
 import { registerMcpServerRoutes } from "./mcp-server-routes.js";
 import { registerProjectGitRoutes } from "./project-git-routes.js";
 import { registerProviderRoutes } from "./provider-routes.js";
+import { registerRemoteAccessRoutes } from "./remote-access-routes.js";
 import { trackRequestActivity } from "./shared/request-activity.js";
 import { API_SESSION_TOKEN_HEADER } from "./shared/session-token.js";
 import { registerSkillsRoutes } from "./skills-routes.js";
@@ -47,22 +55,110 @@ export {
 } from "./shared/session-token.js";
 
 // ---------------------------------------------------------------------------
-// Exported start function
+// Routes, shared by both listeners
 // ---------------------------------------------------------------------------
 
-function createApiApp({
-  delegation,
-  scheduler,
-  activity,
-  apiToken,
-  catalog,
-  resolveRemoteHost,
-  turns,
-  getHostDescriptor,
-  getHostInfo,
-  hostSocket,
-  terminals,
-}) {
+/**
+ * Registers the host's routes on `app`. With `remote`, only those a paired
+ * device may reach (host/auth/route-policy.js lists them): not host-info,
+ * the agents' MCP endpoints, the window's browser or the SSH proxy.
+ * @param {import("hono").Hono} app
+ * @param {object} deps what startApiServer documents
+ * @param {{ remote: boolean, pairingUrls?: (fragment: string) => string[] }} options
+ */
+export function registerHostRoutes(
+  app,
+  {
+    auth,
+    delegation,
+    scheduler,
+    catalog,
+    resolveRemoteHost,
+    turns,
+    getHostDescriptor,
+    getHostInfo,
+    hostSocket,
+    terminals,
+  },
+  { remote, pairingUrls },
+) {
+  if (!remote) {
+    registerHostInfoRoute(app, getHostInfo);
+    if (delegation)
+      app.all(ORCHESTRATION_MCP_PATH, (c) => delegation.handle(c.req.raw));
+    // Projects on other hosts, through this one (see host-proxy-routes.js).
+    if (resolveRemoteHost) {
+      registerHostProxyRoutes(app, {
+        resolveHost: resolveRemoteHost,
+        upgradeWebSocket,
+      });
+    }
+    registerBrowserMcpRoutes(app);
+    registerBrowserToolCallRoutes(app);
+  }
+  registerHostDirectoryRoutes(app);
+  if (catalog)
+    registerCatalogRoutes(app, catalog, { describeHost: getHostDescriptor });
+  registerToolApprovalRoutes(app);
+  registerProviderRoutes(app);
+  registerChatRoutes(app, { catalog, turns, scheduler });
+  registerProjectGitRoutes(app);
+  registerCodePullRequestRoutes(app);
+  registerCheckpointRoutes(app);
+  registerMcpServerRoutes(app);
+  registerSkillsRoutes(app);
+  registerTerminalRoutes(app, terminals);
+  if (auth) {
+    registerRemoteAccessRoutes(app, {
+      auth,
+      describeHost: getHostDescriptor,
+      pairingUrls,
+      remote,
+    });
+  }
+  registerHostSocketRoutes(app, { ...hostSocket, auth, upgradeWebSocket });
+}
+
+/**
+ * Serves `app` on `hostname:port`, WebSocket upgrades included. Resolves
+ * with the port and `close`, which drops socket clients and stops it.
+ * @param {import("hono").Hono} app
+ * @param {{ hostname: string, port: number, onListening?: (port: number) => void }} options
+ * @returns {Promise<{ port: number, close: () => Promise<void> }>}
+ */
+export function serveApp(app, { hostname, port, onListening }) {
+  const webSocketServer = new WebSocketServer({ noServer: true });
+  return new Promise((resolve) => {
+    const server = serve(
+      {
+        fetch: app.fetch,
+        hostname,
+        port,
+        websocket: { server: webSocketServer },
+      },
+      (info) => {
+        onListening?.(info.port);
+        resolve({
+          port: info.port,
+          close: () =>
+            new Promise((done) => {
+              for (const client of webSocketServer.clients) client.terminate();
+              webSocketServer.close();
+              server.close(() => done(undefined));
+              server.closeAllConnections?.();
+            }),
+        });
+      },
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The local listener
+// ---------------------------------------------------------------------------
+
+function createApiApp(deps) {
+  const { activity, apiToken, delegation } = deps;
   if (!apiToken) {
     throw new Error("API session token is required to start the API server.");
   }
@@ -85,6 +181,8 @@ function createApiApp({
       return c.text("Unauthorized", 401);
     }
 
+    // The launch token is this machine's own operator: every scope.
+    c.set("principal", LOCAL_PRINCIPAL);
     await next();
   });
 
@@ -94,34 +192,10 @@ function createApiApp({
     });
   }
 
-  registerHostInfoRoute(guardedApp, getHostInfo);
-  if (delegation)
-    guardedApp.all(ORCHESTRATION_MCP_PATH, (c) => delegation.handle(c.req.raw));
-  registerHostDirectoryRoutes(guardedApp);
-  if (catalog)
-    registerCatalogRoutes(guardedApp, catalog, {
-      describeHost: getHostDescriptor,
-    });
-  // Projects on other hosts, through this one (see host-proxy-routes.js).
-  if (resolveRemoteHost) {
-    registerHostProxyRoutes(guardedApp, {
-      resolveHost: resolveRemoteHost,
-      upgradeWebSocket,
-    });
-  }
-  registerToolApprovalRoutes(guardedApp);
-  registerProviderRoutes(guardedApp);
-  registerChatRoutes(guardedApp, { catalog, turns, scheduler });
-  registerProjectGitRoutes(guardedApp);
-  registerCodePullRequestRoutes(guardedApp);
-  registerCheckpointRoutes(guardedApp);
-  registerMcpServerRoutes(guardedApp);
-  registerSkillsRoutes(guardedApp);
-  registerBrowserMcpRoutes(guardedApp);
-  registerBrowserToolCallRoutes(guardedApp);
-  registerTerminalRoutes(guardedApp, terminals);
-  registerHostSocketRoutes(guardedApp, { ...hostSocket, upgradeWebSocket });
-
+  registerHostRoutes(guardedApp, deps, {
+    pairingUrls: deps.pairingUrls,
+    remote: false,
+  });
   return guardedApp;
 }
 
@@ -133,66 +207,28 @@ function createApiApp({
  * enables `/api/hosts/:hostId/*`, forwarded to that host's endpoint.
  * `getHostInfo` answers `GET /api/host-info`; `getHostDescriptor` (the
  * host's identity and protocol) is listed with the catalog. `hostSocket` is
- * `{ socket, tickets }` for the host socket (host-socket-routes.js). `activity`, when given, is told
+ * `{ socket, tickets }` for the host socket (host-socket-routes.js).
+ * `auth`, the host's device sessions (host/auth/host-auth.js), serves the
+ * remote-access management routes and binds socket tickets; without it
+ * there are none. `pairingUrls` turns a new pairing's fragment into the
+ * links the remote listener can open it at. `activity`, when given, is told
  * when each request begins and ends (see shared/request-activity.js).
  */
-export function startApiServer({
-  delegation,
-  scheduler,
-  activity,
-  apiToken,
-  catalog,
-  resolveRemoteHost,
-  turns,
-  getHostDescriptor,
-  getHostInfo,
-  hostSocket,
-  port,
-  terminals,
-}) {
-  const guardedApp = createApiApp({
-    delegation,
-    scheduler,
-    activity,
-    apiToken,
-    catalog,
-    resolveRemoteHost,
-    turns,
-    getHostDescriptor,
-    getHostInfo,
-    hostSocket,
-    terminals,
-  });
-  const webSocketServer = new WebSocketServer({ noServer: true });
-
-  return new Promise((resolve) => {
-    const server = serve(
-      {
-        fetch: guardedApp.fetch,
-        hostname: "127.0.0.1",
-        port,
-        websocket: { server: webSocketServer },
-      },
-      (info) => {
-        delegation?.setEndpoint(`http://127.0.0.1:${info.port}`);
-        console.log(`API server listening on http://127.0.0.1:${info.port}`);
-        // External agent CLIs reach the browser tools here; the token guard
-        // on /api/* applies, so the header travels with the server config.
-        setBrowserMcpEndpoint({
-          headers: { [API_SESSION_TOKEN_HEADER]: apiToken },
-          url: `http://127.0.0.1:${info.port}${BROWSER_MCP_PATH}`,
-        });
-        resolve({
-          port: info.port,
-          close: () =>
-            new Promise((done) => {
-              for (const client of webSocketServer.clients) client.terminate();
-              webSocketServer.close();
-              server.close(() => done(undefined));
-              server.closeAllConnections?.();
-            }),
-        });
-      },
-    );
+export function startApiServer({ port, pairingUrls, ...deps }) {
+  const guardedApp = createApiApp({ ...deps, pairingUrls });
+  const { apiToken, delegation } = deps;
+  return serveApp(guardedApp, {
+    hostname: "127.0.0.1",
+    port,
+    onListening: (listening) => {
+      delegation?.setEndpoint(`http://127.0.0.1:${listening}`);
+      console.log(`API server listening on http://127.0.0.1:${listening}`);
+      // External agent CLIs reach the browser tools here; the token guard
+      // on /api/* applies, so the header travels with the server config.
+      setBrowserMcpEndpoint({
+        headers: { [API_SESSION_TOKEN_HEADER]: apiToken },
+        url: `http://127.0.0.1:${listening}${BROWSER_MCP_PATH}`,
+      });
+    },
   });
 }

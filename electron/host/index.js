@@ -14,12 +14,14 @@ import { createRunScheduler } from "../api/chat/run-scheduler.js";
 import { createTurnRegistry } from "../api/chat/turn-registry.js";
 import { executeChatRequest } from "../api/chat-routes.js";
 import { createHostSocket } from "../api/host-socket/host-socket.js";
+import { startRemoteApiServer } from "../api/remote-app.js";
 import { createSocketTickets } from "../api/shared/socket-tickets.js";
 import { resolveStateDatabasePath } from "../persisted-state.js";
 import { createProcessSessionManager } from "../process-sessions.js";
 import { createStateReadPool } from "../state-read-pool.js";
 import { createStateSaveQueue } from "../state-save-queue.js";
 import { detectAvailableTerminalShells } from "../terminal-shells.js";
+import { createHostAuth } from "./auth/host-auth.js";
 import { createHostCatalog } from "./catalog.js";
 import { configureHostDataDirectory } from "./host-paths.js";
 import { loadHostIdentity } from "./identity.js";
@@ -41,7 +43,9 @@ import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
  *   `version`: the app version this host was built from, for host-info.
  *   `getStateWriter`: the save queue catalog writes go through. The local
  *   host shares Electron main's (one writer per database file); without it
- *   the host starts its own. Catalog reads go through the host's own read
+ *   the host starts its own. A shared one needs every host write the save
+ *   queue has: applyCatalogChanges, mutateRunQueue, ready,
+ *   saveChatMessages, saveProviderSession and writeDeviceSession. Catalog reads go through the host's own read
  *   pool, which opens the file once the writer is `ready`.
  *   `resolveRemoteHost`: other hosts this one forwards requests to (the
  *   local host, for SSH-host projects); none on a daemon.
@@ -72,6 +76,10 @@ export function createHost({
       databasePath: resolveStateDatabasePath(),
       whenReady: () => getWriter().ready(),
     }));
+
+  // Paired devices' sessions, for the remote listener and the management
+  // routes on the local one (auth/host-auth.js).
+  const auth = createHostAuth({ getReader, getWriter });
 
   const hostSocket = createHostSocket();
   // Agents here use the browser of a window that has their project open
@@ -140,6 +148,24 @@ export function createHost({
   });
 
   let server = null;
+  let remoteServer = null;
+  /** What both listeners serve, besides their own guards. */
+  const services = () => ({
+    activity,
+    auth,
+    catalog,
+    delegation,
+    getHostDescriptor,
+    getHostInfo,
+    hostSocket: { socket: hostSocket, tickets: socketTickets },
+    scheduler,
+    terminals: {
+      detectShells: detectAvailableTerminalShells,
+      diagnosticsEnabled,
+      sessions: processSessions,
+    },
+    turns,
+  });
 
   return {
     processSessions,
@@ -171,25 +197,51 @@ export function createHost({
     async listen({ apiToken, port }) {
       if (server) throw new Error("Host is already listening.");
       await scheduler.initialize();
+      // Paired devices' sessions; local work never waits on them. A failed
+      // load is tried again by the next remote request, which fails closed.
+      await auth.load().catch((error) => {
+        console.warn("Unable to load device sessions.", error);
+      });
       server = await startApiServer({
-        delegation,
-        scheduler,
-        activity,
+        ...services(),
         apiToken,
-        catalog,
-        getHostDescriptor,
-        getHostInfo,
-        hostSocket: { socket: hostSocket, tickets: socketTickets },
+        pairingUrls: (fragment) =>
+          (remoteServer?.origins ?? []).map(
+            (origin) => `${origin}/pair#${fragment}`,
+          ),
         port,
         resolveRemoteHost,
-        turns,
-        terminals: {
-          detectShells: detectAvailableTerminalShells,
-          diagnosticsEnabled,
-          sessions: processSessions,
-        },
       });
       return server.port;
+    },
+
+    /**
+     * Starts serving paired devices (api/remote-app.js), after `listen`.
+     * Bound to loopback unless told otherwise: a reverse proxy (Tailscale
+     * Serve) is what exposes it, and pairing is required whoever reaches it.
+     * @param {{
+     *   port: number,
+     *   hostname?: string,
+     *   publicOrigins?: string[],
+     *   trustForwardedHost?: boolean,
+     * }} options
+     *   `publicOrigins`: the origins clients load from (the HTTPS URL the
+     *   proxy serves). `trustForwardedHost`: the proxy names the host in
+     *   X-Forwarded-Host.
+     * @returns {Promise<{ port: number, origins: string[] }>}
+     */
+    async listenRemote(options) {
+      if (!server) throw new Error("Start the host's local listener first.");
+      if (remoteServer) throw new Error("The remote listener is running.");
+      remoteServer = await startRemoteApiServer(services(), options);
+      return { origins: remoteServer.origins, port: remoteServer.port };
+    },
+
+    /** Stops serving paired devices; local work carries on. */
+    async closeRemote() {
+      const closing = remoteServer;
+      remoteServer = null;
+      await closing?.close();
     },
 
     /**
@@ -203,6 +255,9 @@ export function createHost({
         setBrowserToolRelay(null);
       }
       await processSessions.stopAllProcesses();
+      const closingRemote = remoteServer;
+      remoteServer = null;
+      await closingRemote?.close();
       const closing = server;
       server = null;
       await closing?.close();

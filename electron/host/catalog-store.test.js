@@ -386,6 +386,7 @@ test("an older database gets the same search text on upgrade", async () => {
     DROP TRIGGER chat_messages_text_delete;
     DROP TABLE chat_message_text;
     DELETE FROM __drizzle_migrations WHERE created_at >= ${searchTextMigrationMillis};
+    DROP TABLE device_sessions;
     DROP TABLE delegated_tasks;
     DROP TABLE chat_runs;
     DROP TABLE chat_queues;

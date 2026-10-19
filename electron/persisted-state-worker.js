@@ -8,6 +8,7 @@
 // The parent passes the resolved database path in workerData so persisted-state.js
 // never needs the (unavailable) "electron" module.
 import { parentPort, workerData } from "node:worker_threads";
+import { writeDeviceSession } from "./host/auth/session-store.js";
 import { saveProviderSession } from "./host/provider-session-store.js";
 import { mutateRunQueue } from "./host/run-store.js";
 
@@ -36,6 +37,8 @@ const options = { databasePath };
 const operations = {
   "run-queue": (payload) =>
     mutateRunQueue(getPersistedStateDatabase(options), payload),
+  "device-session": (payload) =>
+    writeDeviceSession(getPersistedStateDatabase(options), payload),
   "save-provider-session": (payload) =>
     saveProviderSession(getPersistedStateDatabase(options), payload),
   // Opens (creating and migrating) the database, so readers on other

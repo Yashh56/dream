@@ -150,6 +150,8 @@ const host = createHost({
       getStateSaveQueue().saveChatMessages(payload),
     saveProviderSession: (payload) =>
       getStateSaveQueue().saveProviderSession(payload),
+    writeDeviceSession: (operation) =>
+      getStateSaveQueue().writeDeviceSession(operation),
   }),
   version: dreamVersion,
   // Requests for SSH-host projects go through the local API to the host's

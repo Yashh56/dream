@@ -12,6 +12,10 @@
 // and each channel sends that client what it missed. A channel that talks
 // to one client in particular gets that client with each message and is
 // told when it closes.
+//
+// A client may be limited in what it sends (a paired device's scopes,
+// host/auth/route-policy.js): a message, or a channel's resume, it may not
+// send is dropped. What is broadcast reaches every client.
 import { createTerminalStream } from "../terminals/terminal-stream.js";
 import { BROWSER_CHANNEL, createBrowserRelay } from "./browser-relay.js";
 import { CATALOG_CHANNEL, createCatalogEvents } from "./catalog-events.js";
@@ -50,7 +54,7 @@ export function createHostSocket({
     terminal: terminals,
   };
 
-  const receive = (client, text) => {
+  const receive = (client, allows, text) => {
     let message;
     try {
       message = JSON.parse(text);
@@ -66,11 +70,17 @@ export function createHostSocket({
           : {};
       const send = (reply) => sendTo(client, reply);
       for (const [name, channel] of Object.entries(channels)) {
+        if (!allows(name, message)) continue;
         channel.resume(send, cursors[name], client);
       }
       return;
     }
 
+    if (
+      typeof message.channel !== "string" ||
+      !allows(message.channel, message)
+    )
+      return;
     channels[message.channel]?.receive(
       message,
       (reply) => sendTo(client, reply),
@@ -88,13 +98,16 @@ export function createHostSocket({
 
     /**
      * Attaches a client. Returns its handlers: `receive` for each text
-     * message it sends, `close` when its socket goes away.
+     * message it sends, `close` when its socket goes away. `allows` says
+     * whether it may send a message on a channel (a resume is checked per
+     * channel); everything by default.
      * @param {{ send: (text: string) => void }} client
+     * @param {{ allows?: (channel: string, message: { type?: unknown }) => boolean }} [options]
      */
-    connect(client) {
+    connect(client, { allows = () => true } = {}) {
       clients.add(client);
       return {
-        receive: (text) => receive(client, text),
+        receive: (text) => receive(client, allows, text),
         close: () => {
           clients.delete(client);
           for (const channel of Object.values(channels)) {

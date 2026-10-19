@@ -208,3 +208,24 @@ export const chatRuns = sqliteTable(
     check("chat_runs_request_json", sql`json_valid(${table.request})`),
   ],
 );
+
+// A paired device's session on this host (electron/host/auth/). Only a
+// verifier of its secret is stored; the bearer secret never is.
+export const deviceSessions = sqliteTable(
+  "device_sessions",
+  {
+    id: text("id").primaryKey(),
+    deviceName: text("device_name").notNull(),
+    clientKind: text("client_kind").notNull(),
+    scopes: text("scopes").notNull(),
+    verifier: text("verifier").notNull(),
+    grantedBy: text("granted_by").notNull(),
+    createdAt: text("created_at").notNull(),
+    lastUsedAt: text("last_used_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+  },
+  (table) => [
+    check("device_sessions_scopes_json", sql`json_valid(${table.scopes})`),
+  ],
+);

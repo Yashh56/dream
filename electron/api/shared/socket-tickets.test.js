@@ -3,10 +3,11 @@ import { createSocketTickets } from "./socket-tickets.js";
 
 test("a ticket is redeemed once", () => {
   const tickets = createSocketTickets();
-  const ticket = tickets.issue();
+  const principal = { kind: "local" };
+  const ticket = tickets.issue(principal);
 
-  expect(tickets.redeem(ticket)).toBe(true);
-  expect(tickets.redeem(ticket)).toBe(false);
+  expect(tickets.redeem(ticket)).toBe(principal);
+  expect(tickets.redeem(ticket)).toBeNull();
 });
 
 test("an expired or unknown ticket is refused", () => {
@@ -15,7 +16,7 @@ test("an expired or unknown ticket is refused", () => {
   const ticket = tickets.issue();
   time = 1000;
 
-  expect(tickets.redeem(ticket)).toBe(false);
-  expect(tickets.redeem("nope")).toBe(false);
-  expect(tickets.redeem(undefined)).toBe(false);
+  expect(tickets.redeem(ticket)).toBeNull();
+  expect(tickets.redeem("nope")).toBeNull();
+  expect(tickets.redeem(undefined)).toBeNull();
 });

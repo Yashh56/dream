@@ -248,6 +248,8 @@ export function createStateSaveQueue({ databasePath }) {
   return {
     mutateRunQueue: (payload) => enqueue("run-queue", payload),
     saveProviderSession: (payload) => enqueue("save-provider-session", payload),
+    /** A device session write (host/auth/session-store.js). */
+    writeDeviceSession: (payload) => enqueue("device-session", payload),
     saveChatMessages,
     applyCatalogChanges,
     saveWorkspaceChanges,

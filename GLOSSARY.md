@@ -168,6 +168,31 @@ catalog whose project or chat IDs collide with another host's. The local
 route is never refused. Device and session IDs belong to remote
 authorization, which is a separate concern.
 
+## Device session
+
+A paired device's credential on one host (`electron/host/auth/`). A
+**pairing** is minted by the host's local operator (holding the launch token)
+or by a device with `manage`. It is a single-use link secret carried in a
+URL fragment, or a short code that an operator then confirms by device name.
+Both expire after ten minutes. Exchanging a pairing creates a **session**
+with **scopes**, a ladder of `view`, `operate` and `manage`. The device keeps
+the token: as an HttpOnly cookie in a browser, or in OS secure storage for a
+native client. The host stores only a verifier of the token, written through
+the save queue. A session expires after 30 days unused. Renewing it never
+changes the credential. Revoking it closes its sockets and streams at once.
+Socket tickets are bound to the principal that asked for them.
+
+## Remote listener
+
+The host's second HTTP listener, for paired devices (`electron/api/remote-app.js`).
+It calls the same host services as the local listener. It checks the Host
+header and the Origin, authenticates the session, and enforces the route
+policy (`electron/host/auth/route-policy.js`), which assigns every served
+route a scope. It refuses to start while any registered route lacks a policy.
+Host-info, the agents' MCP endpoints, the window's browser tools and the
+desktop's SSH proxy are never registered on it. It binds to loopback by
+default; a reverse proxy is what exposes it.
+
 ## Host catalog readiness
 
 A host's **catalog readiness** means this client has successfully applied its

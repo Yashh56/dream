@@ -15,6 +15,7 @@ import {
   projectFromRow,
   projectToCatalogRow,
 } from "../shared/persisted-state-codec.js";
+import { readDeviceSessions } from "./auth/session-store.js";
 import { readDelegatedTasks } from "./delegation-store.js";
 import { readProviderSession } from "./provider-session-store.js";
 import { readRunQueue } from "./run-store.js";
@@ -567,6 +568,7 @@ export function searchChatMessages(database, query, { limit = 50 } = {}) {
  * @type {Record<string, (database: import("node:sqlite").DatabaseSync, payload: any) => unknown>}
  */
 export const catalogReads = {
+  "device-sessions": (database) => readDeviceSessions(database),
   "transcript-page": readTranscriptPage,
   "delegated-tasks": (database, { chatId }) =>
     readDelegatedTasks(database, chatId),

@@ -533,6 +533,7 @@ const rewindSavedPromptsMigration = (databasePath, tasksTableSql) => {
   const database = getPersistedStateDatabase({ databasePath });
   database.exec(`
     DROP TABLE saved_prompts;
+    DROP TABLE device_sessions;
     DROP TABLE delegated_tasks;
     DROP TABLE chat_runs;
     DROP TABLE chat_queues;
