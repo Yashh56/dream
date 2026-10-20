@@ -471,6 +471,12 @@ export const WorktreeActionDialog = ({
         branch={project.worktree.branch}
         model={model}
         modelSpeed={modelSpeed}
+        onCompleted={() => {
+          // The comparison predates the commit: show the spinner until
+          // the review phase reloads it, not the files just committed.
+          setCompare(null);
+          setCompareLoading(true);
+        }}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
             setPhase("review");
