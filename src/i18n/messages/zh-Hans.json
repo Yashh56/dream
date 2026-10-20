@@ -454,7 +454,6 @@
     "includePlaceholder": "要包含的文件，例如 src, *.ts",
     "exclude": "要排除的文件",
     "excludePlaceholder": "要排除的文件，例如 *.test.ts",
-    "hint": "搜索项目中所有文件的内容。",
     "summary": "{files, plural, other {# 个文件}}中有{matches, plural, other {# 个结果}}",
     "noResults": "未找到结果。",
     "truncated": "仅显示前 {count, number} 个结果。缩小搜索范围以查看其余结果。",

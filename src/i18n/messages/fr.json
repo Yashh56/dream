@@ -454,7 +454,6 @@
     "includePlaceholder": "Fichiers à inclure, p. ex. src, *.ts",
     "exclude": "Fichiers à exclure",
     "excludePlaceholder": "Fichiers à exclure, p. ex. *.test.ts",
-    "hint": "Recherche dans le contenu de tous les fichiers du projet.",
     "summary": "{matches, plural, one {# résultat} other {# résultats}} dans {files, plural, one {# fichier} other {# fichiers}}",
     "noResults": "Aucun résultat trouvé.",
     "truncated": "Affichage des {count, number} premiers résultats. Affinez la recherche pour voir la suite.",

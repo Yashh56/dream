@@ -223,8 +223,6 @@ export const ProjectSearchView = ({
   let status: ReactNode = null;
   if (search.status === "error") {
     status = <span className="text-destructive">{search.message}</span>;
-  } else if (search.status === "idle") {
-    status = t("hint");
   } else if (search.status === "done" && search.response.matchCount === 0) {
     status = t("noResults");
   } else if (response) {
