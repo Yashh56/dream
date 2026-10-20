@@ -10,8 +10,12 @@
  * A catalog refused for its host's identity (host-catalog-lifecycle.ts)
  * disconnects it: nothing of a host that is not the one meant is used.
  */
+
+import { connectionSupervisor } from "@/lib/connections/runtime";
+import type { ConnectionStatus } from "@/lib/connections/supervisor";
 import { getDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
+import { forgetHostSocketClient } from "@/lib/host-socket";
 import type { HostConnectionState } from "@/types/ide";
 import {
   findHostConnection,
@@ -66,6 +70,17 @@ export const createHostActions = (
   | "openProjectOnHost"
   | "removeSshHost"
 > => {
+  // An SSH host's connection state is the main process's (it owns the ssh
+  // session); the supervisor hears it from here.
+  const SUPERVISED: Record<HostConnectionState, ConnectionStatus> = {
+    connected: "ready",
+    connecting: "connecting",
+    disconnected: "offline",
+    failed: "offline",
+    idle: "offline",
+    reconnecting: "reconnecting",
+  };
+
   const setHost = (
     hostId: string,
     patch: Partial<{
@@ -73,7 +88,14 @@ export const createHostActions = (
       error: string | null;
       loaded: boolean;
     }>,
-  ) =>
+  ) => {
+    if (patch.state) {
+      connectionSupervisor.set(
+        hostId,
+        SUPERVISED[patch.state],
+        patch.error ?? null,
+      );
+    }
     set((state) => ({
       hosts: {
         ...state.hosts,
@@ -84,6 +106,7 @@ export const createHostActions = (
         },
       },
     }));
+  };
 
   const catalogs = hostCatalogLifecycle(set, get);
   const connecting = new Map<
@@ -109,6 +132,8 @@ export const createHostActions = (
       stopFollowing(hostId);
       await getDesktopApi()?.disconnectHost(hostId);
       setHost(hostId, { error: error.message, loaded: false, state: "failed" });
+      // Not a connection that will come back by retrying.
+      connectionSupervisor.set(hostId, "incompatible", error.message);
       throw error;
     }
   };
@@ -259,6 +284,8 @@ export const createHostActions = (
       await getDesktopApi()?.disconnectHost(hostId);
       // Out of this window only: the host's catalog is not told.
       forgetLoadedHost(hostId);
+      forgetHostSocketClient(hostId);
+      connectionSupervisor.forget(hostId);
       set((state) => {
         const { [hostId]: _removed, ...hosts } = state.hosts;
         const removed = applyWorkspaceRemoval(

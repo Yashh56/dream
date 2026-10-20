@@ -328,7 +328,13 @@ export type HostRoute =
   /** The host inside this app. */
   | { id: string; kind: "local" }
   /** An SSH host from Settings, by its id there. */
-  | { id: string; kind: "ssh"; sshHostId: string };
+  | { id: string; kind: "ssh"; sshHostId: string }
+  /**
+   * The paired host that serves this page (a browser client): its origin.
+   * Unlike `local`, it is pinned like any route: a different host there is
+   * refused.
+   */
+  | { id: string; kind: "origin"; origin: string };
 
 /**
  * A host this client has verified (electron/shared/host-connections.js):

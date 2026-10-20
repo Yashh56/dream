@@ -19,7 +19,9 @@ const createSocket = () => {
         channel = null;
       };
     },
-    send: (message: HostSocketMessage) => sent.push(message),
+    send: (message: HostSocketMessage) => {
+      sent.push(message);
+    },
     sent,
   };
 };

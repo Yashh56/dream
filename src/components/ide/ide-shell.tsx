@@ -168,10 +168,11 @@ export const IdeShell = () => {
   }, []);
 
   // Each host's catalog changes made elsewhere (another window, the host
-  // itself): the local host's always, an SSH host's once it is loaded.
+  // itself): the home host's always, an SSH host's once it is loaded. A
+  // browser client follows its home host the same way; it lends no browser
+  // and has no SSH hosts, which are the desktop's.
   useEffect(() => {
-    if (!getDesktopApi()) return;
-
+    const desktop = Boolean(getDesktopApi());
     const watching = new Map<string, () => void>();
     const follow = (
       hosts: ReturnType<typeof useIdeStore.getState>["hosts"],
@@ -187,7 +188,9 @@ export const IdeShell = () => {
         const stopCatalog = watchHostCatalog(hostId);
         // An SSH host's agents use this window's browser.
         const stopBrowser =
-          hostId === LOCAL_HOST_ID ? null : watchHostBrowser(hostId);
+          hostId === LOCAL_HOST_ID || !desktop
+            ? null
+            : watchHostBrowser(hostId);
         watching.set(hostId, () => {
           stopCatalog();
           stopBrowser?.();

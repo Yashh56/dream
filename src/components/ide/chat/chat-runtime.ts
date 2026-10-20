@@ -18,7 +18,12 @@ import {
   refreshChatQueue,
   useChatQueueStore,
 } from "@/lib/chat-queue";
-import { hostApiPath, resolveRequestHost } from "@/lib/host-routing";
+import {
+  hostRequestOptions,
+  reportHostResponse,
+} from "@/lib/connections/host-endpoint";
+import { connectionSupervisor } from "@/lib/connections/runtime";
+import { resolveRequestHost } from "@/lib/host-routing";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import { resolveEffectiveMcpServers } from "@/lib/mcp-servers";
 import type {
@@ -186,18 +191,59 @@ const toHostChatId = (sessionId: string) =>
     ? sessionId.slice(CHAT_ID_PREFIX.length)
     : sessionId;
 
+/**
+ * The transport's network: never follows a redirect (the request carries a
+ * host's credential), and tells the connection supervisor what the host
+ * answered. The host is named by the header the request options set.
+ */
+const CHAT_HOST_HEADER = "x-dream-chat-host";
+const chatFetch: typeof fetch = async (input, init) => {
+  const headers = new Headers(init?.headers);
+  const hostId = headers.get(CHAT_HOST_HEADER);
+  headers.delete(CHAT_HOST_HEADER);
+  try {
+    const response = await fetch(input, {
+      ...init,
+      headers,
+      redirect: "error",
+    });
+    if (hostId) reportHostResponse(hostId, response);
+    return response;
+  } catch (error) {
+    if (
+      hostId &&
+      !(error instanceof DOMException && error.name === "AbortError")
+    ) {
+      connectionSupervisor.report(
+        hostId,
+        "unreachable",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    throw error;
+  }
+};
+
+/** The URL, credential and headers of a chat request to `hostId`. */
+const chatRequestOptions = (hostId: string, path: string) => {
+  const options = hostRequestOptions(hostId, path);
+  return {
+    ...options,
+    headers: { ...options.headers, [CHAT_HOST_HEADER]: hostId },
+  };
+};
+
 const transport = new DefaultChatTransport<UIMessage>({
   api: "/api/chat",
+  fetch: chatFetch,
   // A turn runs on the host, detached from the request: reconnecting asks
   // for the running turn's stream from its start (204 when none runs).
   prepareReconnectToStreamRequest: ({ id }) => {
     const chatId = toHostChatId(id);
-    return {
-      api: hostApiPath(
-        resolveRequestHost({ chatId }),
-        `/api/chat/${encodeURIComponent(chatId)}/stream`,
-      ),
-    };
+    return chatRequestOptions(
+      resolveRequestHost({ chatId }),
+      `/api/chat/${encodeURIComponent(chatId)}/stream`,
+    );
   },
   prepareSendMessagesRequest: ({
     body,
@@ -206,8 +252,8 @@ const transport = new DefaultChatTransport<UIMessage>({
     messages: requestMessages,
     trigger,
   }) => ({
-    // To the host of the chat's project.
-    api: hostApiPath(
+    // To the host of the chat's project, with its credential.
+    ...chatRequestOptions(
       resolveRequestHost({ chatId: toHostChatId(id) }),
       "/api/chat",
     ),
@@ -530,6 +576,24 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
       scheduleEviction(session);
       if (pendingResumes.delete(chatId)) resumeHostTurn(session);
     });
+};
+
+/**
+ * Follows every running turn again, on a fresh stream: after the client was
+ * suspended or offline, a stream that still looks open may be dead. A
+ * stream being followed is dropped (only this window stops following it;
+ * the host's turn runs on) and resumed from the host; one whose turn is
+ * running but not followed is resumed.
+ */
+export const reattachChatStreams = () => {
+  for (const session of sessions.values()) {
+    if (isChatProcessing(session.chat) || resuming.has(session.chatId)) {
+      pendingResumes.add(session.chatId);
+      void session.chat.stop();
+    } else {
+      resumeHostTurn(session);
+    }
+  }
 };
 
 /**

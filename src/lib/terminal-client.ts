@@ -120,8 +120,13 @@ export const createTerminalClient = ({
     receive,
   });
 
+  // Input typed while disconnected waits only briefly: after an outage it
+  // is dropped, not replayed into a shell that may have moved on.
   const send = (type: string, payload: object) =>
-    socket.send({ channel: TERMINAL_CHANNEL, type, ...payload });
+    socket.send(
+      { channel: TERMINAL_CHANNEL, type, ...payload },
+      { replay: type !== "input" },
+    );
 
   const listen = <Listener>(listeners: Set<Listener>, listener: Listener) => {
     listeners.add(listener);

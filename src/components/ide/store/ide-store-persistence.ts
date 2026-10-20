@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { apiClient, type CatalogResponse } from "@/lib/api-client";
-import { getDesktopApi } from "@/lib/electron";
+import { getClientPlatform } from "@/lib/connections/platform";
+import { connectionSupervisor } from "@/lib/connections/runtime";
 import { LOCAL_HOST_ID, resolveRequestHost } from "@/lib/host-routing";
 import type {
   ChatConfig,
@@ -8,6 +9,10 @@ import type {
   PersistedWorkspace,
   ProjectConfig,
 } from "@/types/ide";
+import {
+  acceptHostDescriptor,
+  normalizeHostConnections,
+} from "../../../../electron/shared/host-connections.js";
 import {
   createEmptyPersistedState,
   decodePersistedState,
@@ -30,12 +35,15 @@ import {
 } from "./workspace-save";
 
 // Where persisted state lives. The client's workspace (config, saved
-// prompts, which projects are open on which host, their UI) is the main
-// process's, over IPC. Projects, chats and transcripts are each host's
-// catalog, over that host's API (catalog-sync.ts keeps them in step). The
-// local host's catalog loads with the workspace; an SSH host's when it
-// connects. Until then its projects show as their workspace rows cached
-// them (codec mergeWorkspaceAndCatalog, snapshotHostIds).
+// prompts, which projects are open on which host, their UI) is the
+// client's own: the main process's database on the desktop, IndexedDB in
+// a browser (connections/workspace-storage.ts). Projects, chats and
+// transcripts are each host's catalog, over that host's API
+// (catalog-sync.ts keeps them in step). The home host's catalog loads with
+// the workspace; an SSH host's when it connects. Until then its projects
+// show as their workspace rows cached them (codec mergeWorkspaceAndCatalog,
+// snapshotHostIds). A browser client whose home host cannot be reached at
+// startup shows the home host's projects that way too, until it can.
 
 const STATE_LOAD_TIMEOUT_MS = 8000;
 /**
@@ -52,15 +60,6 @@ const STARTUP_LOAD_ATTEMPTS = 3;
  */
 let workspaceLoaded = false;
 export const isWorkspaceLoaded = () => workspaceLoaded;
-
-const requireDesktopApi = () => {
-  const desktopApi = getDesktopApi();
-  if (!desktopApi) {
-    throw new Error("Dream desktop API is unavailable.");
-  }
-
-  return desktopApi;
-};
 
 const withTimeout = async <T>(
   promise: Promise<T>,
@@ -182,19 +181,75 @@ export const loadPersistedIdeState = async (): Promise<PersistedIdeState> => {
   return createEmptyPersistedState();
 };
 
+/**
+ * The home host's projects as its workspace rows cached them, as a catalog
+ * with no chats: what a browser client shows while its home host is away.
+ */
+const snapshotCatalog = (workspace: PersistedWorkspace): CatalogResponse => ({
+  chats: [],
+  projects: workspace.workspaceProjects
+    .filter(
+      (entry) =>
+        entry.hostId === LOCAL_HOST_ID &&
+        typeof entry.snapshot?.path === "string" &&
+        entry.snapshot.path.trim() !== "",
+    )
+    .map((entry) => ({ ...entry.snapshot, id: entry.projectId })),
+});
+
+/**
+ * The home host's catalog at startup. On the desktop it is this app's own
+ * host, so the load waits for it (and is retried). A browser client's is
+ * across the network: when it cannot be had (offline, not paired) the
+ * workspace still opens, from the snapshot, and `null` says the catalog
+ * is still to come.
+ */
+const loadHomeCatalog = async (
+  workspace: PersistedWorkspace,
+): Promise<CatalogResponse | null> => {
+  const platform = getClientPlatform();
+  if (platform.kind === "desktop") {
+    return loadCatalog(LOCAL_HOST_ID, STARTUP_LOAD_TIMEOUT_MS);
+  }
+  let catalog: CatalogResponse;
+  try {
+    catalog = await loadCatalog(LOCAL_HOST_ID, STATE_LOAD_TIMEOUT_MS);
+  } catch (error) {
+    console.warn("The home host's catalog is not available yet.", error);
+    return null;
+  }
+  // Whose catalog this is, before any of it is shown: the origin may now
+  // serve another host than the one this client paired with.
+  const { error } = acceptHostDescriptor(
+    normalizeHostConnections(workspace.hostConnections),
+    {
+      connectionId: LOCAL_HOST_ID,
+      descriptor: catalog.host,
+      homeRoute: platform.homeRoute,
+      labelOf: () => platform.homeLabel,
+    },
+  );
+  if (error) {
+    connectionSupervisor.set(LOCAL_HOST_ID, "incompatible", error);
+    return null;
+  }
+  return catalog;
+};
+
 const loadOnce = async (): Promise<PersistedIdeState> => {
-  const desktopApi = requireDesktopApi();
+  const storage = getClientPlatform().workspace;
   {
     const workspace = await withTimeout(
-      desktopApi.loadState(),
+      storage.load(),
       STARTUP_LOAD_TIMEOUT_MS,
       "Timed out loading persisted Dream state.",
     );
     loadedWorkspace = workspace;
     savedWorkspace = recordLoadedWorkspace(workspace);
-    const catalog = await loadCatalog(LOCAL_HOST_ID, STARTUP_LOAD_TIMEOUT_MS);
+    const loadedCatalog = await loadHomeCatalog(workspace);
+    const catalog = loadedCatalog ?? snapshotCatalog(workspace);
     loadedRunningChatIds = catalog.runningChatIds ?? [];
-    loadedLocalHost = catalog.host;
+    loadedLocalHost = loadedCatalog?.host;
     // SSH hosts still in Settings show their projects from the snapshot.
     const snapshotHostIds = normalizeSshHosts(
       (workspace.settings as { sshHosts?: unknown } | undefined)?.sshHosts,
@@ -216,6 +271,9 @@ const loadOnce = async (): Promise<PersistedIdeState> => {
         .filter((project) => getProjectHostId(project) === LOCAL_HOST_ID)
         .map((project) => project.id),
     );
+    // A catalog shown from the snapshot is not the host's: nothing of it
+    // is synced or saved there until the real one has loaded.
+    if (!loadedCatalog) return state;
     getCatalogSync(LOCAL_HOST_ID).reset({
       chats: state.chats.filter((chat) => localProjectIds.has(chat.projectId)),
       closedProjects: state.closedProjects.filter((project) =>
@@ -298,8 +356,8 @@ export const savePersistedWorkspace = (
     new Set(loadedHostIds),
   );
   if (!changes) return;
-  void requireDesktopApi()
-    .saveWorkspaceChanges(changes)
+  void getClientPlatform()
+    .workspace.saveChanges(changes)
     .catch((error: unknown) => {
       console.warn("Unable to save the Dream workspace.", error);
       // Sent again with the next save.

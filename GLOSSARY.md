@@ -168,6 +168,26 @@ catalog whose project or chat IDs collide with another host's. The local
 route is never refused. Device and session IDs belong to remote
 authorization, which is a separate concern.
 
+## Home host
+
+The host a client's `local` connection reaches. On the desktop it is the
+host inside the app (route `local`, never refused). In a browser it is the
+paired host serving the page (route `origin`), pinned like any address.
+Projects without a `hostId` live on the home host.
+
+## Connection runtime
+
+The client's way to reach its hosts (`src/lib/connections/`). The **client
+platform** (desktop or web) supplies the workspace storage (main-process IPC
+or IndexedDB), the home route and desktop-only services. The **host
+endpoint** layer is the only place a credential is attached: the launch
+token on the desktop, the session cookie in a browser. It accepts only a
+host's `/api/` paths and never follows a redirect. The **connection
+supervisor** keeps each host's connection state (`connecting`, `ready`,
+`reconnecting`, `unauthorized`, `incompatible`, `offline`), apart from
+catalog readiness, and turns lifecycle signals into resumes: sockets
+replaced, catalogs refetched, running turns followed again.
+
 ## Device session
 
 A paired device's credential on one host (`electron/host/auth/`). A

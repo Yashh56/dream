@@ -76,17 +76,23 @@ describe("createHttpTransport", () => {
       branches: [],
       currentBranch: "main",
     });
-    expect(fetchImpl).toHaveBeenCalledWith("/api/project-git-branches", {
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("/api/project-git-branches");
+    expect(init).toMatchObject({
       body: JSON.stringify({ projectPath: "/p" }),
-      // Every request names this window, so a host can stamp its changes.
-      headers: {
-        "Content-Type": "application/json",
-        [CLIENT_ID_HEADER]: CLIENT_ID,
-      },
-      keepalive: undefined,
+      credentials: "same-origin",
       method: "POST",
-      signal: undefined,
+      // A request carrying a host's credential never follows a redirect.
+      redirect: "error",
     });
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    // Every request names this window, so a host can stamp its changes.
+    expect(headers.get(CLIENT_ID_HEADER)).toBe(CLIENT_ID);
   });
 
   test("an error status becomes an ApiError carrying the server's reason", async () => {
@@ -140,9 +146,9 @@ describe("fetchApiBlob", () => {
       vi.fn(async () => new Response("Not a file: x", { status: 400 })),
     );
     try {
-      await expect(fetchApiBlob("/api/project-file-raw?x")).rejects.toThrow(
-        "Not a file: x",
-      );
+      await expect(
+        fetchApiBlob({ hostId: "local", path: "/api/project-file-raw?x" }),
+      ).rejects.toThrow("Not a file: x");
     } finally {
       vi.unstubAllGlobals();
     }

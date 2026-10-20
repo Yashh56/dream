@@ -12,6 +12,7 @@ import { findProjectForPath, getChatsForProject } from "./ide-state";
 import { createBrowserActions } from "./store/browser-actions";
 import { createCatalogActions } from "./store/catalog-actions";
 import { createChatActions } from "./store/chat-actions";
+import { followConnections } from "./store/connection-follow";
 import { createGitWriteActions } from "./store/git-write-actions";
 import {
   getBrowserTabsForProject,
@@ -23,6 +24,7 @@ import {
   getLoadedLocalHost,
   getLoadedRunningChatIds,
   getLoadedWorkspace,
+  isHostLoaded,
   isWorkspaceLoaded,
   loadPersistedIdeState,
   pushPersistedCatalogs,
@@ -221,12 +223,16 @@ export const useIdeStore = create<IdeState>((set, get) => ({
     // Saves the local host's identity as this client's `local` connection.
     // Its catalog is already in: the local host is this app's own, so it
     // is never refused, only recorded.
-    try {
-      hostCatalogLifecycle(set, get).accept(LOCAL_HOST_ID, {
-        host: getLoadedLocalHost(),
-      });
-    } catch (error) {
-      console.warn("Unable to record the local host's identity.", error);
+    // A browser client whose home host was away at startup records it
+    // when its catalog comes in (store/connection-follow.ts).
+    if (isHostLoaded(LOCAL_HOST_ID)) {
+      try {
+        hostCatalogLifecycle(set, get).accept(LOCAL_HOST_ID, {
+          host: getLoadedLocalHost(),
+        });
+      } catch (error) {
+        console.warn("Unable to record the local host's identity.", error);
+      }
     }
 
     void get().resumeHosts(
@@ -247,6 +253,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 }));
 
 useIdeStore.subscribe(transcriptCache.observe);
+followConnections(useIdeStore);
 
 // The Files panel sessions follow the store: a files refresh reads clean
 // files again, and a project that is no longer open takes its session with

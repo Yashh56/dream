@@ -74,11 +74,10 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   T3 Code V2 comparison: durable host scheduling, provider continuity,
   transcript pagination, protocol replay tests and delegation.
 
-- `tasks/remote-connections.md` tracks CONN-01 and CONN-02 (host identity,
-  pairing and device sessions; implemented) and proposes CONN-03 through
-  CONN-11: phone/browser
-  access over Tailscale, host identity and device sessions, shared connection
-  runtime, unattended hosting, multiple routes, Dream Connect, native mobile,
+- `tasks/remote-connections.md` tracks CONN-01 to CONN-03 (host identity,
+  pairing and device sessions, the shared connection runtime; implemented)
+  and proposes CONN-04 through CONN-11: the browser client, Tailscale
+  setup, unattended hosting, multiple routes, Dream Connect, native mobile,
   push notifications and a host-owned browser.
 
 Module names and current ownership live in ../../GLOSSARY.md.

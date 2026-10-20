@@ -6,7 +6,7 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 and CONN-02 implemented; CONN-03 through CONN-11 proposed. Task numbers
+Status: CONN-01 to CONN-03 implemented; CONN-04 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -315,7 +315,7 @@ project-specific grants are outside this plan.
 
 ## CONN-03: Shared connection runtime and platform services
 
-Status: proposed
+Status: implemented (desktop walkthrough pending; see Validation)
 
 Problem and trigger: API authorization, socket URLs, workspace loading and SSH
 actions currently assume `window.dream` and a local same-origin API.
@@ -347,8 +347,99 @@ Validation: pending; run existing host socket, routing, catalog-sync, transcript
 and scheduler checks; inspect a dropped stream and delayed response during
 connection replacement. Include two clients editing the same host catalog.
 
+Agreed scope (as implemented):
+
+- `src/lib/connections/`:
+  - `platform.ts` chooses the client once: desktop (the preload bridge,
+    launch token, main-process workspace) or web (a page served by a paired
+    host, which is its home host). The browser gets no fake desktop bridge.
+  - `workspace-storage.ts` is the workspace port: desktop IPC, or IndexedDB
+    (`dream-workspace`) applying the same change sets with main's SQL rules
+    (config keys, saved prompts with first `createdAt`, upsert/move/remove
+    rows).
+  - `host-endpoint.ts` resolves each host's URL, headers and credentials
+    mode and is the only path that attaches a credential. `hostFetch`,
+    `hostRequestOptions` (chat transport) and `hostWebSocketUrl` cover JSON
+    routes, raw file loads, chat streams and the host socket. Only `/api/`
+    paths are accepted and redirects are errors. The global `window.fetch`
+    patch (`installApiSessionGuard`) is removed.
+  - `supervisor.ts` keeps per-host state (`connecting`, `ready`,
+    `reconnecting`, `unauthorized`, `incompatible`, `offline`), separate from
+    catalog readiness, and the lifecycle port (visibility, back/forward
+    cache, `online`). A browser client's home host is judged by its own
+    requests and probed with `GET /api/remote/session`; desktop SSH hosts
+    follow main's status events and identity refusals.
+  - `runtime.ts` starts it from `main.tsx`; `forget.ts` signs a browser
+    client out of its home host and clears its workspace and socket.
+- The `local` connection is the client's **home host**. On the desktop its
+  route is `local` (recorded, never refused). In a browser it is an
+  `origin` route, pinned like any address: a different host at that origin
+  is refused before its catalog is shown (`HostRoute` gained `origin`;
+  `acceptHostDescriptor` takes `homeRoute`).
+- Startup (`ide-store-persistence.ts`) loads the workspace from the
+  platform port. A browser client whose home host is unreachable,
+  unauthorized or a different host opens from the cached workspace rows.
+  Nothing from that cache is synced to a host; the catalog is loaded when
+  the host becomes `ready` (`store/connection-follow.ts`).
+- Resuming (`online`, or foreground after 15 s hidden): every host socket is
+  replaced, catalogs of the home host and connected SSH hosts are refetched,
+  and running turns are followed on fresh streams (`reattachChatStreams`
+  drops only this window's observer). A replaced socket's late messages are
+  ignored. Terminal input waits at most 5 s for a socket, then is dropped
+  rather than replayed (`replay: false`). A host refusing this client stops
+  the socket's retries until its state clears. Chat submissions already
+  retry by durable request id; nothing else is replayed.
+- The shell now watches its home host's catalog without Electron too
+  (browser relay and SSH status stay desktop-only).
+
+Validation (2026-10-20): `pnpm typecheck`, `pnpm lint`, `pnpm test` (173
+files, 1197 passed, 4 skipped) and `pnpm check:scratch` pass. Existing
+tests updated: the HTTP transport call shape (credentials mode, redirect,
+Headers), `fetchApiBlob`'s request argument and the relay test's fake
+`send`. No new tests were added.
+
+A scratch harness outside the checkout served the built renderer (`pnpm
+vite:build`) at `http://127.0.0.1:7391` in the built-in browser. It forwarded
+`/api` to a daemon's remote listener and added a paired device's bearer token
+in place of the cookie, which needs HTTPS. Observed:
+- Boot without Electron: no warnings. The workspace was created in
+  IndexedDB, and the saved connection pinned the daemon's host ID through
+  an `origin` route. Settings read the host's providers; the host's project
+  opened. The workspace restored after reload, and the host socket opened.
+- Every request went to the host's `/api` paths through the endpoint layer.
+- A rename by another client arrived live over the socket, before and after
+  socket replacement and after offline recovery.
+- `online`: new socket ticket, session probe and catalog refetch.
+- Offline start (harness dropped `/api`): the project, chat and model
+  opened from the cache with one warning. Back online, the catalog loaded
+  and the panels recovered without a reload.
+- Credential refused (401): one ticket attempt, one probe, one catalog read,
+  then no retries for 15 s. The page kept its project and drafts.
+- Same origin, different daemon: refused with the identity message. The
+  cached project stayed, nothing was pushed to the new host, and the saved
+  connection still named the first host.
+
+Not yet inspected:
+- The desktop app itself (Electron was not running): local and SSH
+  projects, terminals and chat streams over the new endpoint layer.
+- The visibility path, because the built-in browser pins
+  `document.visibilityState`; `online` exercised the same resume handler.
+- A dropped chat stream and a delayed response during socket replacement,
+  since no agent turn was run.
+- The 5 s terminal-input window and `forgetHomeConnection`, which has no
+  UI yet.
+- Two browser clients editing one catalog; the other client here was a
+  script.
+
+Known limits: messages still name the home host by its address, and the
+footer labels it "Local" in a browser. The identity refusal tells a browser
+user to remove and re-add the host, where signing out and pairing again is
+the remedy. Connection state has no UI yet. These are CONN-04's.
+
 Remaining/deferred: ordered route failover is CONN-07. Keep the runtime in the
 current tree initially; package it for native use in CONN-09 if needed.
+Serving the client from the remote listener, the pairing page, connection
+state in the UI and browser-specific labels are CONN-04.
 
 ## CONN-04: Browser client and phone layout
 
@@ -653,7 +744,8 @@ First implementation slice: CONN-01, followed by CONN-02. Establish identity and
 authorization while the application remains desktop-compatible, then use those
 contracts for the browser client. Keep each candidate independently reviewable.
 
-Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 and
-CONN-02 implemented (desktop walkthrough and real-browser HTTPS checks
-pending); CONN-03 through CONN-11 proposed, next is CONN-03. Preserve the user's no-new-tests and no-dev-server constraints; commits
-and pushes require explicit confirmation.
+Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
+CONN-03 implemented (desktop walkthrough and real-browser HTTPS checks
+pending); CONN-04 through CONN-11 proposed, next is CONN-04. Preserve the
+user's no-new-tests and no-dev-server constraints; commits and pushes require
+explicit confirmation.

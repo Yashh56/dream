@@ -15,6 +15,11 @@
 //     already has, so one host never shows up twice;
 //   - never another host: a changed route does not change its host. The
 //     local route is the exception, being this app's own host by definition.
+//
+// The `local` connection id is the client's home host: the host inside the
+// desktop app (route `local`), or, for a browser client, the paired host
+// that serves its page (route `origin`). Only the first is exempt from
+// pinning; an origin can be reassigned like any address.
 // Matching ids are a consistency check, not authentication: the route
 // (this app's own process, an authenticated SSH session) is what vouches
 // for the host. Routes that cannot will verify the fingerprint's key.
@@ -54,6 +59,8 @@ const normalizeRoute = (value) => {
   const id = nonEmpty(value.id);
   if (!id) return null;
   if (value.kind === "local") return { id, kind: "local" };
+  const origin = nonEmpty(value.origin);
+  if (value.kind === "origin" && origin) return { id, kind: "origin", origin };
   const sshHostId = nonEmpty(value.sshHostId);
   if (value.kind === "ssh" && sshHostId) return { id, kind: "ssh", sshHostId };
   return null;
@@ -105,15 +112,34 @@ export const normalizeHostConnections = (value) => {
   return connections;
 };
 
+/** The desktop app's home route: its own host. */
+export const LOCAL_ROUTE = Object.freeze({
+  id: LOCAL_CONNECTION_ID,
+  kind: "local",
+});
+
 /**
- * The route a connection id stands for today: the local host, or the SSH
- * host of that id in Settings.
- * @param {string} connectionId
+ * A browser client's home route: the paired host serving `origin`.
+ * @param {string} origin
  * @returns {HostRoute}
  */
-export const routeForConnectionId = (connectionId) =>
+export const originRoute = (origin) => ({
+  id: `origin:${origin}`,
+  kind: "origin",
+  origin,
+});
+
+/**
+ * The route a connection id stands for today: the home host's route
+ * (`homeRoute`, the desktop's own host unless told otherwise), or the SSH
+ * host of that id in Settings.
+ * @param {string} connectionId
+ * @param {HostRoute} [homeRoute]
+ * @returns {HostRoute}
+ */
+export const routeForConnectionId = (connectionId, homeRoute = LOCAL_ROUTE) =>
   connectionId === LOCAL_CONNECTION_ID
-    ? { id: LOCAL_CONNECTION_ID, kind: "local" }
+    ? homeRoute
     : { id: `ssh:${connectionId}`, kind: "ssh", sshHostId: connectionId };
 
 /**
@@ -145,18 +171,28 @@ export const forgetHostConnection = (connections, connectionId) =>
  *   connectionId: string,
  *   descriptor: unknown,
  *   labelOf: (connectionId: string) => string,
+ *   homeRoute?: HostRoute,
  *   now?: () => string,
  * }} options
  *   `labelOf`: what the user calls a connection, for messages.
+ *   `homeRoute`: how this client reaches its home host (`local`).
  * @returns {{ connections: SavedHostConnection[], error: string | null }}
  */
 export const acceptHostDescriptor = (
   connections,
-  { connectionId, descriptor, labelOf, now = () => new Date().toISOString() },
+  {
+    connectionId,
+    descriptor,
+    labelOf,
+    homeRoute = LOCAL_ROUTE,
+    now = () => new Date().toISOString(),
+  },
 ) => {
   const refuse = (/** @type {string} */ error) => ({ connections, error });
   const host = isRecord(descriptor) ? descriptor : {};
-  const isLocal = connectionId === LOCAL_CONNECTION_ID;
+  const route = routeForConnectionId(connectionId, homeRoute);
+  // This app's own host: recorded, never refused.
+  const isLocal = route.kind === "local";
   const saved = findHostConnection(connections, connectionId);
 
   // Before anything is read from it: a host this app cannot talk to.
@@ -177,7 +213,6 @@ export const acceptHostDescriptor = (
       : { connections, error: null };
   }
 
-  const route = routeForConnectionId(connectionId);
   if (saved) {
     const sameHost =
       saved.hostId === hostId &&

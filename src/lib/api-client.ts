@@ -123,9 +123,8 @@ import type {
   terminalStopRequestSchema,
 } from "../../electron/api/terminals/schemas.js";
 import type { toolApprovalResponseSchema } from "../../electron/api/tool-approvals.js";
-import { API_SESSION_TOKEN_HEADER, getApiSessionToken } from "./api-session";
-import { CLIENT_ID, CLIENT_ID_HEADER } from "./client-id";
-import { hostApiPath, resolveRequestHost } from "./host-routing";
+import { hostFetch } from "./connections/host-endpoint";
+import { resolveRequestHost } from "./host-routing";
 
 // ── Responses the renderer declares ─────────────────────────────────────
 
@@ -754,26 +753,26 @@ export interface ApiTransportRequest {
 /** Sends one request; resolves with the JSON body or throws `ApiError`. */
 export type ApiTransport = (request: ApiTransportRequest) => Promise<unknown>;
 
+/**
+ * Sends each request to its host (named, or resolved from the body) with
+ * that host's endpoint and credential (connections/host-endpoint.ts).
+ * `fetchImpl` replaces the network, for tests.
+ */
 export const createHttpTransport =
-  (fetchImpl: typeof fetch = (...args) => fetch(...args)): ApiTransport =>
-  async ({ body, hostId, keepalive, method, path: route, signal }) => {
-    const path = hostApiPath(hostId ?? resolveRequestHost(body), route);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    const token = getApiSessionToken();
-    if (token) {
-      headers[API_SESSION_TOKEN_HEADER] = token;
-    }
-    headers[CLIENT_ID_HEADER] = CLIENT_ID;
-
-    const response = await fetchImpl(path, {
-      body: JSON.stringify(body ?? {}),
-      headers,
-      keepalive,
-      method,
-      signal,
-    });
+  (fetchImpl?: typeof fetch): ApiTransport =>
+  async ({ body, hostId, keepalive, method, path, signal }) => {
+    const response = await hostFetch(
+      hostId ?? resolveRequestHost(body),
+      path,
+      {
+        body: JSON.stringify(body ?? {}),
+        headers: { "Content-Type": "application/json" },
+        keepalive,
+        method,
+        signal,
+      },
+      fetchImpl,
+    );
     if (!response.ok) {
       const reason = await response.text().catch(() => "");
       throw new ApiError(path, response.status, reason.trim());
@@ -802,48 +801,57 @@ export const createApiClient = (transport: ApiTransport): ApiClient => {
   return client as ApiClient;
 };
 
-/** The app's client, over HTTP to the local API server. */
+/** The app's client, over HTTP to each host (connections/host-endpoint.ts). */
 export const apiClient = createApiClient(createHttpTransport());
 
-// ── Raw file URLs ───────────────────────────────────────────────────────
+// ── Raw file loads ──────────────────────────────────────────────────────
+
+/** A raw route on a host: what fetchApiBlob loads. */
+export interface RawHostRequest {
+  hostId: string;
+  /** The route and its query, an `/api/...` path. */
+  path: string;
+}
 
 /**
  * A raw route for the project at `projectPath`, on `hostId` when given,
  * otherwise on the host of the open project at that path.
  */
-const rawRouteUrl = (
+const rawRoute = (
   route: string,
   projectPath: string,
   filePath: string,
   hostId?: string,
-) =>
-  `${hostApiPath(hostId ?? resolveRequestHost({ projectPath }), route)}?projectPath=${encodeURIComponent(projectPath)}&filePath=${encodeURIComponent(filePath)}`;
+): RawHostRequest => ({
+  hostId: hostId ?? resolveRequestHost({ projectPath }),
+  path: `${route}?projectPath=${encodeURIComponent(projectPath)}&filePath=${encodeURIComponent(filePath)}`,
+});
 
-/** A project file's bytes, for `<img src>` and blob loads. */
+/** A project file's bytes. */
 export const getProjectFileRawUrl = (
   projectPath: string,
   filePath: string,
   hostId?: string,
-) => rawRouteUrl("/api/project-file-raw", projectPath, filePath, hostId);
+) => rawRoute("/api/project-file-raw", projectPath, filePath, hostId);
 
 /** A file's bytes as committed at HEAD. */
 export const getProjectGitFileAtHeadRawUrl = (
   projectPath: string,
   filePath: string,
-) => rawRouteUrl("/api/project-git-file-at-head-raw", projectPath, filePath);
+) => rawRoute("/api/project-git-file-at-head-raw", projectPath, filePath);
 
 /**
- * Loads one of the raw file URLs above as a blob, failing with `ApiError`
- * the way the JSON routes do.
+ * Loads one of the raw routes above as a blob, with its host's credential,
+ * failing with `ApiError` the way the JSON routes do.
  */
 export const fetchApiBlob = async (
-  url: string,
+  { hostId, path }: RawHostRequest,
   { signal }: ApiCallOptions = {},
 ): Promise<Blob> => {
-  const response = await fetch(url, { signal });
+  const response = await hostFetch(hostId, path, { signal });
   if (!response.ok) {
     const reason = await response.text().catch(() => "");
-    throw new ApiError(url, response.status, reason.trim());
+    throw new ApiError(path, response.status, reason.trim());
   }
   return response.blob();
 };

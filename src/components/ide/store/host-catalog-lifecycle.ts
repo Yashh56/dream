@@ -6,6 +6,7 @@
  * host's. A catalog that fails is never applied.
  */
 import type { CatalogResponse } from "@/lib/api-client";
+import { getClientPlatform } from "@/lib/connections/platform";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import {
   acceptHostDescriptor,
@@ -67,7 +68,7 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
 
   const labelOf = (connectionId: string) =>
     connectionId === LOCAL_HOST_ID
-      ? "This computer"
+      ? getClientPlatform().homeLabel
       : (get().settings.sshHosts.find((host) => host.id === connectionId)
           ?.label ?? connectionId);
 
@@ -86,6 +87,7 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
     const accepted = acceptHostDescriptor(state.hostConnections, {
       connectionId: hostId,
       descriptor: catalog.host,
+      homeRoute: getClientPlatform().homeRoute,
       labelOf,
     });
     if (accepted.error) throw new HostIdentityError(accepted.error);
@@ -150,8 +152,7 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
       const promise = Promise.resolve()
         .then(async () => {
           controller.signal.throwIfAborted();
-          if (hostId === LOCAL_HOST_ID || isHostLoaded(hostId))
-            await get().reloadCatalog(hostId);
+          if (isHostLoaded(hostId)) await get().reloadCatalog(hostId);
           else await get().loadHostCatalog(hostId);
           controller.signal.throwIfAborted();
           readiness(hostId, true, null);

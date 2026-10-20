@@ -4,9 +4,15 @@ import { App } from "./app";
 import { AppErrorBoundary } from "./components/app-error-boundary";
 import "./app/fonts";
 import "./app/globals.css";
-import { installApiSessionGuard } from "./lib/api-session";
+import { hostFetch } from "./lib/connections/host-endpoint";
+import { startConnectionRuntime } from "./lib/connections/runtime";
+import { LOCAL_HOST_ID } from "./lib/host-routing";
 
-installApiSessionGuard();
+// A browser client asks its home host whether its session still holds
+// (at start and whenever it comes back); the desktop's is its own process.
+startConnectionRuntime({
+  probeHome: () => hostFetch(LOCAL_HOST_ID, "/api/remote/session"),
+});
 
 const rootElement = document.getElementById("root");
 
