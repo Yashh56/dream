@@ -1,6 +1,7 @@
 import { Search, Settings } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { useCompactLayout } from "@/lib/use-compact-layout";
 import { cn } from "@/lib/utils";
 import { useChatSearchStore } from "./chat-search";
 import { HistoryNavButtons } from "./header/history-nav-buttons";
@@ -18,6 +19,7 @@ export const IdeHeader = () => {
   const appReady = useIdeStore((s) => s.appReady);
   const isMacOs = useIdeStore((s) => s.isMacOs);
   const isElectron = useIdeStore((s) => s.isElectron);
+  const compact = useCompactLayout();
   const setSettingsOpen = useIdeStore((s) => s.setSettingsOpen);
   const setSettingsSection = useIdeStore((s) => s.setSettingsSection);
 
@@ -47,7 +49,9 @@ export const IdeHeader = () => {
 
         <WorkspaceSwitcher />
 
-        <HistoryNavButtons />
+        {/* Back and forward through projects and chats: the room is the
+            project tabs' on a phone. */}
+        {compact ? null : <HistoryNavButtons />}
 
         <ProjectTabs />
 

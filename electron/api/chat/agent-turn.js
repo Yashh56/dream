@@ -560,6 +560,9 @@ export const streamAgentTurn = ({ execute, messages, ...turnOptions }) => {
     },
     execute: async ({ writer }) => {
       const turn = createAgentTurn({ writer, ...turnOptions });
+      // Establish the response identity before metadata can create a temporary
+      // message on a client following the turn through resumeStream().
+      writer.write({ type: "start" });
       turn.metadata();
       try {
         await execute(turn);

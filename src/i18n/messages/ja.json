@@ -1073,5 +1073,27 @@
       "textEditing": "テキスト編集（コピー、貼り付け、元に戻す）",
       "system": "オペレーティングシステム"
     }
+  },
+  "remote": {
+    "pairTitle": "このデバイスをペアリング",
+    "pairDescription": "{host} のペアリングリンクを使うか、表示されたコードを入力してください。",
+    "pairing": "ペアリング中…",
+    "codeLabel": "ペアリングコード",
+    "deviceNameLabel": "デバイス名",
+    "deviceNameHint": "ホスト側でこの名前を確認してデバイスを承認します。",
+    "pair": "ペアリング",
+    "cancel": "キャンセル",
+    "waitingForConfirm": "ホストで「{device}」が承認されるのを待っています…",
+    "pairFailed": "このデバイスをペアリングできませんでした。",
+    "offline": "{host} に接続できません。このデバイスに保存された内容を表示しています。",
+    "reconnecting": "{host} に再接続しています…",
+    "incompatible": "{host} は、このデバイスをペアリングしたホストではありません。",
+    "signOut": "サインアウト",
+    "deviceTitle": "このデバイス",
+    "deviceDescription": "{host} とペアリング済みです。サインアウトすると、このデバイスのアクセス権とこのブラウザに保存された内容が削除されます。",
+    "openFolder": "フォルダを開く",
+    "openFolderTitle": "{host} のフォルダを開く",
+    "folderPath": "フォルダのパス",
+    "runsOnHost": "{host} で実行"
   }
 }

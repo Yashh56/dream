@@ -1073,5 +1073,27 @@
       "textEditing": "文本编辑（复制、粘贴、撤销）",
       "system": "操作系统"
     }
+  },
+  "remote": {
+    "pairTitle": "配对此设备",
+    "pairDescription": "使用 {host} 的配对链接，或输入其显示的代码。",
+    "pairing": "正在配对…",
+    "codeLabel": "配对码",
+    "deviceNameLabel": "设备名称",
+    "deviceNameHint": "主机上的人会按此名称确认此设备。",
+    "pair": "配对",
+    "cancel": "取消",
+    "waitingForConfirm": "正在等待主机确认“{device}”…",
+    "pairFailed": "无法配对此设备。",
+    "offline": "无法连接 {host}。正在显示此设备保存的内容。",
+    "reconnecting": "正在重新连接 {host}…",
+    "incompatible": "{host} 不是此设备配对的主机。",
+    "signOut": "退出登录",
+    "deviceTitle": "此设备",
+    "deviceDescription": "已与 {host} 配对。退出登录会移除此设备的访问权限以及此浏览器保存的内容。",
+    "openFolder": "打开文件夹",
+    "openFolderTitle": "在 {host} 上打开文件夹",
+    "folderPath": "文件夹路径",
+    "runsOnHost": "运行于 {host}"
   }
 }

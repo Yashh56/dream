@@ -1073,5 +1073,27 @@
       "textEditing": "chỉnh sửa văn bản (sao chép, dán, hoàn tác)",
       "system": "hệ điều hành"
     }
+  },
+  "remote": {
+    "pairTitle": "Ghép nối thiết bị này",
+    "pairDescription": "Dùng liên kết ghép nối từ {host} hoặc nhập mã được hiển thị.",
+    "pairing": "Đang ghép nối…",
+    "codeLabel": "Mã ghép nối",
+    "deviceNameLabel": "Tên thiết bị",
+    "deviceNameHint": "Người ở máy chủ sẽ xác nhận thiết bị này theo tên này.",
+    "pair": "Ghép nối",
+    "cancel": "Hủy",
+    "waitingForConfirm": "Đang chờ xác nhận “{device}” trên máy chủ…",
+    "pairFailed": "Không thể ghép nối thiết bị này.",
+    "offline": "Không thể kết nối tới {host}. Đang hiển thị nội dung thiết bị này đã lưu.",
+    "reconnecting": "Đang kết nối lại tới {host}…",
+    "incompatible": "{host} không phải máy chủ mà thiết bị này đã ghép nối.",
+    "signOut": "Đăng xuất",
+    "deviceTitle": "Thiết bị này",
+    "deviceDescription": "Đã ghép nối với {host}. Đăng xuất sẽ xóa quyền truy cập của thiết bị này và nội dung trình duyệt này đã lưu.",
+    "openFolder": "Mở thư mục",
+    "openFolderTitle": "Mở thư mục trên {host}",
+    "folderPath": "Đường dẫn thư mục",
+    "runsOnHost": "Chạy trên {host}"
   }
 }

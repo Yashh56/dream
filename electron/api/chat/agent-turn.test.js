@@ -430,7 +430,7 @@ test("usage formatting passes an AI SDK usage object through and drops junk", ()
 
 // ── the stream ────────────────────────────────────────────────────────
 
-test("streamAgentTurn writes request metadata first, closes parts, and formats errors", async () => {
+test("streamAgentTurn starts before request metadata, closes parts, and formats errors", async () => {
   const response = streamAgentTurn({
     provider: "opencode",
     label: "OpenCode",
@@ -444,12 +444,13 @@ test("streamAgentTurn writes request metadata first, closes parts, and formats e
     },
   });
   const chunks = await readChunks(response);
-  assert.deepEqual(types(chunks).slice(0, 3), [
+  assert.deepEqual(types(chunks).slice(0, 4), [
+    "start",
     "message-metadata",
     "text-start",
     "text-delta",
   ]);
-  assert.deepEqual(chunks[0].messageMetadata, {
+  assert.deepEqual(chunks[1].messageMetadata, {
     createdAt: "t0",
     provider: "opencode",
   });

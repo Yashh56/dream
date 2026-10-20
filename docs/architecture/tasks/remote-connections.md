@@ -6,7 +6,7 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-03 implemented; CONN-04 through CONN-11 proposed. Task numbers
+Status: CONN-01 to CONN-04 implemented; CONN-05 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -443,7 +443,8 @@ state in the UI and browser-specific labels are CONN-04.
 
 ## CONN-04: Browser client and phone layout
 
-Status: proposed
+Status: implemented (real phones and the desktop walkthrough pending; see
+Validation)
 
 Problem and trigger: a reachable API alone cannot provide a usable client on a
 phone, and workspace startup currently requires Electron IPC.
@@ -477,8 +478,136 @@ Validation: pending; inspect the running development app and built assets on
 iOS Safari, Android Chrome and desktop browsers. Follow the development-tools
 guide for UI inspection; do not start a dev server.
 
+Agreed scope (as implemented):
+
+- The host serves the client. `electron/api/client-assets.js` is the remote
+  listener's not-found handler, not a route, so the route policy is
+  unchanged. It serves one directory's regular files: no `..`, no dotfiles,
+  no symlink out of the directory, nothing under `/api`, and only GET and
+  HEAD.
+  - `/assets/*` are immutable for a year. Everything else, including
+    `index.html`, is revalidated on every load, so an upgraded host's client
+    reaches the browser on its next load.
+  - Page paths fall back to `index.html`.
+  - `index.html` carries a CSP: scripts from `'self'` plus the inline boot
+    script's hash and `'wasm-unsafe-eval'`, `connect-src 'self'`,
+    `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'none'`.
+  - There is no service worker, and API responses stay `no-store`.
+  - The daemon gained `--client-dir`. It defaults to the runtime's `client/`,
+    or `dist/` in a checkout. `scripts/build-host-runtime.mjs` copies `dist/`
+    into `client/` and requires a renderer build; the host-runtime release
+    job now runs `pnpm vite:build` first.
+- Pairing in the browser:
+  - `src/lib/connections/pairing.ts` reads and removes `#pair=` from the
+    address bar before sending anything, exchanges it as `clientKind:
+    "web"` (the cookie is set), or requests and polls a code claim.
+  - `src/components/remote/pairing-screen.tsx` is shown by `app.tsx` instead
+    of the IDE when a browser client is opened from a pairing link or its
+    home host is `unauthorized` (never paired, revoked, expired).
+  - The device name defaults to `<device> · <browser>`.
+- Connection state in the UI:
+  - `ConnectionBanner` shows offline, reconnecting and incompatible (with
+    Sign out) for a browser client.
+  - `ProjectHostLabel` names the home host with a connection dot instead of
+    "Local".
+  - Settings shows a "This device" block with Sign out
+    (`forgetHomeConnection`) and hides SSH hosts, which are the desktop's.
+  - Origin-route identity refusals tell a browser user to sign out and pair
+    again.
+- Desktop-only services:
+  - Terminals no longer require the desktop bridge (start, stop, input,
+    output, shell detection), since they run on the host over its socket.
+  - "Open folder" in a browser opens `OpenHomeFolderDialog`, which browses
+    the home host through its directory API (`HostFolderBrowser` treats a
+    ready home host as connected). "Open on SSH host" is desktop-only.
+  - The webview browser panel and its rail button are desktop-only (CONN-11).
+  - Clipboard, downloads and external links already fell back to browser
+    APIs.
+  - Window controls and the updater already rendered nothing without the
+    bridge.
+- Phone layout (`src/lib/use-compact-layout.ts`, below 640px; the desktop
+  window's minimum width is 1180px, so it never applies there):
+  - The shell uses `h-dvh` and safe-area padding; `index.html` sets
+    `viewport-fit=cover` and `interactive-widget=resizes-content`, so the
+    keyboard resizes the page rather than covering the composer.
+  - The workspace shows one chat with no column minimum
+    (`WorkspaceChatStack` gained `minColumnWidth`).
+  - A compact bar (`workspace/compact-bar.tsx`) holds history and new chat on
+    the left, and Git, files, terminal and stash on the right; each panel
+    opens as a full sheet. The right panel starts closed when the compact
+    layout takes over.
+  - The header drops the back and forward arrows.
+  - Settings shows its section list or one section full width, with Back.
+  - Files shows the tree or the open file full width, with Back.
+- Small shared fixes found at 360px:
+  - Provider cards wrap their version and update badge.
+  - The sparkle field clips horizontally (`overflow-x: clip`), so a running
+    turn no longer makes the chat column scroll sideways (on the desktop
+    too).
+- Approvals: the host already takes and deletes a pending approval before
+  awaiting it, so a second response gets `not-found` and the losing client
+  shows "approval expired". Exactly one decision is accepted.
+- New `remote` message namespace in all 11 locales.
+
+Validation (2026-10-20): `pnpm typecheck`, `pnpm lint`, `pnpm test` (173
+files, 1197 passed, 4 skipped) and `pnpm check:scratch` pass. No new tests
+were added.
+
+A scratch daemon served the built client from its own remote listener at
+`http://127.0.0.1:7401`; Chromium treats loopback as secure, so the real
+`__Host-` cookie was used. A control script stood in for the operator, and the
+built-in browser was the client.
+
+- Static serving:
+  - Traversal (`..%2f`, `..%5c`), dot directories, POST, unknown assets and
+    unknown API paths were refused.
+  - `/pair` and `/.env` returned the app page, not a file.
+  - Hashed assets were immutable, `index.html` was `no-cache` with the CSP,
+    and the page ran under the CSP with no console errors.
+- Pairing by link: a web session was recorded as "Windows · Chrome", the
+  fragment left the address bar, and the IDE loaded on the cookie.
+- Pairing by code at 360px: the device waited as "Test phone"; the operator
+  listed the claim and confirmed it, and the device restarted paired into its
+  cached project.
+- Phone layout, in 360x740 and 412x860 frames (a test proxy stripped only
+  the anti-framing headers):
+  - empty state, Settings list and sections (Providers);
+  - a project opening to its chat;
+  - the Files tree, then a file, then Back;
+  - Git changes, with a host-generated commit message and an expanded diff
+    that wraps;
+  - three real Claude turns: submit, streaming, Stop shown while running,
+    tool chips and replies;
+  - no horizontal overflow while a turn ran, after the sparkle fix.
+- Two clients on one host: the second frame showed each turn live.
+- Resume mid-turn (`online` fired while streaming): the host held the
+  prompt exactly once and the turn completed.
+- Revoking the session on the host sent both clients to the pairing screen.
+
+Not yet inspected:
+- Real iOS Safari and Android Chrome: the keyboard, safe areas and
+  `interactive-widget`. Frames in desktop Chromium approximate width only.
+- An approval card at phone width: Claude's Ask mode allowed every command
+  tried, so no approval was raised.
+- The desktop app itself: the shared components changed, though compact
+  never applies there.
+- The terminal sheet with typing, and "Open folder" through the host
+  directory dialog in a browser.
+- Real Tailscale HTTPS, which is CONN-05.
+
+Known limits:
+- Once, just-submitted prompts showed no user bubble until reload in both
+  clients, though the host stored them. This did not recur after later
+  rebuilds; watch for it.
+- A second tab of the same browser stays on the pairing screen after another
+  tab re-pairs, until it is reloaded.
+- The global "Open folder" shortcut does nothing in a browser.
+- Terminal and editor ergonomics on phones are the native milestone's.
+
 Remaining/deferred: native push is CONN-10; streamed browser control is CONN-11.
 Full phone terminal/editor ergonomics follow in the native client milestone.
+Exposing the listener over Tailscale HTTPS, the desktop's pairing UI (QR
+code, code confirmation, device list) and CLI commands are CONN-05.
 
 ## CONN-05: Tailscale and direct access setup
 
@@ -745,7 +874,7 @@ authorization while the application remains desktop-compatible, then use those
 contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
-CONN-03 implemented (desktop walkthrough and real-browser HTTPS checks
-pending); CONN-04 through CONN-11 proposed, next is CONN-04. Preserve the
-user's no-new-tests and no-dev-server constraints; commits and pushes require
+CONN-04 implemented (desktop walkthrough, real phones and real HTTPS pending);
+CONN-05 through CONN-11 proposed, next is CONN-05. Preserve the user's
+no-new-tests and no-dev-server constraints; commits and pushes require
 explicit confirmation.

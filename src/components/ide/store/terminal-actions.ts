@@ -1,4 +1,3 @@
-import { getDesktopApi } from "@/lib/electron";
 import { terminalClient } from "@/lib/terminal-client";
 import {
   createProjectTerminalSessionId,
@@ -39,8 +38,6 @@ export const createTerminalActions = (
     const project = get().getActiveProject();
     if (!project) return;
 
-    const desktopApi = getDesktopApi();
-    if (!desktopApi) return;
     const sessionId = getBrowserTerminalSessionId(project.id);
     resetTerminalScrollback(sessionId);
 
@@ -61,8 +58,6 @@ export const createTerminalActions = (
     const project = get().getActiveProject();
     if (!project) return;
 
-    const desktopApi = getDesktopApi();
-    if (!desktopApi) return;
     const sessionId = getBrowserTerminalSessionId(project.id);
     resetTerminalScrollback(sessionId);
 
@@ -113,9 +108,6 @@ export const createTerminalActions = (
     const { projects, settings } = get();
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
-
-    const desktopApi = getDesktopApi();
-    if (!desktopApi) return;
 
     const sessionId = createProjectTerminalSessionId(projectId);
     resetTerminalScrollback(sessionId);
@@ -297,9 +289,6 @@ export const createTerminalActions = (
     });
     deleteTerminalScrollback(sessionId);
 
-    const desktopApi = getDesktopApi();
-    if (desktopApi) {
-      await terminalClient.stop(sessionId);
-    }
+    await terminalClient.stop(sessionId);
   },
 });

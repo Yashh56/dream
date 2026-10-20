@@ -1,7 +1,3 @@
-// Opening, closing and switching projects. The document operations live in
-// workspace-document.ts; these wrappers add what is runtime-only (terminal
-// sessions, the per-project runtime maps, the "finished while away" marks).
-import { getDesktopApi } from "@/lib/electron";
 import { terminalClient } from "@/lib/terminal-client";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { deleteTerminalScrollback } from "../terminal-scrollback";
@@ -75,10 +71,8 @@ export const createProjectLifecycleActions = (
   stopProjectTerminals: async (projectId: string) => {
     const terminalSessionIds =
       get().projectTerminalSessionIds?.[projectId] ?? [];
-    const desktopApi = getDesktopApi();
     const stops = terminalSessionIds.map(async (sessionId) => {
       deleteTerminalScrollback(sessionId);
-      if (!desktopApi) return;
       try {
         await terminalClient.stop(sessionId);
       } catch (error) {

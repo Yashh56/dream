@@ -1073,5 +1073,27 @@
       "textEditing": "text editing (copy, paste, undo)",
       "system": "the operating system"
     }
+  },
+  "remote": {
+    "pairTitle": "Pair this device",
+    "pairDescription": "Use the pairing link from {host}, or enter the code it shows.",
+    "pairing": "Pairing…",
+    "codeLabel": "Pairing code",
+    "deviceNameLabel": "Device name",
+    "deviceNameHint": "Someone on the host confirms this device by this name.",
+    "pair": "Pair",
+    "cancel": "Cancel",
+    "waitingForConfirm": "Waiting for “{device}” to be confirmed on the host…",
+    "pairFailed": "Could not pair this device.",
+    "offline": "Can't reach {host}. Showing what this device saved.",
+    "reconnecting": "Reconnecting to {host}…",
+    "incompatible": "{host} is not the host this device was paired with.",
+    "signOut": "Sign out",
+    "deviceTitle": "This device",
+    "deviceDescription": "Paired with {host}. Signing out removes this device's access and what this browser saved.",
+    "openFolder": "Open folder",
+    "openFolderTitle": "Open a folder on {host}",
+    "folderPath": "Folder path",
+    "runsOnHost": "Runs on {host}"
   }
 }

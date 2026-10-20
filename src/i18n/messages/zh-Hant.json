@@ -1073,5 +1073,27 @@
       "textEditing": "文字編輯（複製、貼上、復原）",
       "system": "作業系統"
     }
+  },
+  "remote": {
+    "pairTitle": "配對此裝置",
+    "pairDescription": "使用 {host} 的配對連結，或輸入其顯示的代碼。",
+    "pairing": "正在配對…",
+    "codeLabel": "配對碼",
+    "deviceNameLabel": "裝置名稱",
+    "deviceNameHint": "主機上的人會依此名稱確認此裝置。",
+    "pair": "配對",
+    "cancel": "取消",
+    "waitingForConfirm": "正在等待主機確認「{device}」…",
+    "pairFailed": "無法配對此裝置。",
+    "offline": "無法連線至 {host}。正在顯示此裝置儲存的內容。",
+    "reconnecting": "正在重新連線至 {host}…",
+    "incompatible": "{host} 不是此裝置配對的主機。",
+    "signOut": "登出",
+    "deviceTitle": "此裝置",
+    "deviceDescription": "已與 {host} 配對。登出會移除此裝置的存取權以及此瀏覽器儲存的內容。",
+    "openFolder": "開啟資料夾",
+    "openFolderTitle": "在 {host} 上開啟資料夾",
+    "folderPath": "資料夾路徑",
+    "runsOnHost": "執行於 {host}"
   }
 }

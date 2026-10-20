@@ -10,14 +10,18 @@ import {
   getApiErrorMessage,
   type HostDirectoriesResponse,
 } from "@/lib/api-client";
+import { getClientPlatform } from "@/lib/connections/platform";
+import { useConnectionState } from "@/lib/connections/use-connection-state";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { cn } from "@/lib/utils";
 import { useIdeStore } from "../ide-store";
 
 /**
- * The folders of an SSH host, for picking a project folder there: starts at
- * the host's home, a click goes into a folder (and makes it the path to
- * open), Up goes back out. Lists through the host's own API, so the host
- * must be connected; until it is, offers to connect.
+ * The folders of a host, for picking a project folder there: starts at the
+ * host's home, a click goes into a folder (and makes it the path to open),
+ * Up goes back out. Lists through the host's own API, so the host must be
+ * reachable: an SSH host connected (until it is, it offers to connect), the
+ * home host ready (a browser client has no other way to pick a folder).
  */
 export const HostFolderBrowser = ({
   hostId,
@@ -35,7 +39,12 @@ export const HostFolderBrowser = ({
       hostId,
   );
   const connectHost = useIdeStore((state) => state.connectHost);
-  const connected = runtime?.state === "connected";
+  const home = hostId === LOCAL_HOST_ID;
+  const homeState = useConnectionState(LOCAL_HOST_ID);
+  const connected = home
+    ? homeState.status === "ready"
+    : runtime?.state === "connected";
+  const hostLabel = home ? getClientPlatform().homeLabel : label;
 
   const [listing, setListing] = useState<HostDirectoriesResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,12 +86,20 @@ export const HostFolderBrowser = ({
     if (next) onPathChange(next.path);
   };
 
+  if (!connected && home) {
+    return (
+      <div className="flex h-56 items-center justify-center rounded-md border px-4 text-center text-muted-foreground text-sm">
+        <Spinner className="size-4" />
+      </div>
+    );
+  }
+
   if (!connected) {
     const busy =
       runtime?.state === "connecting" || runtime?.state === "reconnecting";
     return (
       <div className="flex h-56 flex-col items-center justify-center gap-3 rounded-md border px-4 text-center text-muted-foreground text-sm">
-        <span>{t("connectToBrowse", { host: label })}</span>
+        <span>{t("connectToBrowse", { host: hostLabel })}</span>
         <Button
           disabled={busy}
           onClick={() => void connectHost(hostId)}

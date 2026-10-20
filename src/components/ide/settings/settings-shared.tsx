@@ -92,7 +92,7 @@ export const ProviderStatusCard = ({
   return (
     <div className="rounded-lg border border-surface-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-950">
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
             {icon ??
               (logoSrc ? (
@@ -105,7 +105,7 @@ export const ProviderStatusCard = ({
               ) : null)}
             <p className="font-medium text-sm">{label}</p>
           </div>
-          <p className="flex items-center gap-2 text-muted-foreground text-sm">
+          <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
             {runtimeLabel}
             {displayVersion ? (
               <span className="rounded-full border border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-2 py-0.5 font-mono text-[11px] text-muted-foreground leading-none">
@@ -137,7 +137,7 @@ export const ProviderStatusCard = ({
             ) : null}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <div className="flex size-6 items-center justify-center">
             {loading ? <Spinner className="size-3.5" /> : action}
           </div>

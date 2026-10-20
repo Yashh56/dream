@@ -624,6 +624,8 @@ export const streamClaudeResponse = async ({
       turn.merge(
         toUIMessageStream({
           stream: textResult.stream,
+          // The shared turn writer already started this response.
+          sendStart: false,
           messageMetadata: ({ part }) => {
             if (part.type === "finish-step") {
               const sessionId =

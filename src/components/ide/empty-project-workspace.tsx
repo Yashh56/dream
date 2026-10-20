@@ -36,6 +36,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { getDesktopApi } from "@/lib/electron";
 import { getConnectedProviders } from "@/lib/ide-defaults";
 import type { ProjectConfig } from "@/types/ide";
+import { OpenHomeFolderDialog } from "../remote/open-home-folder-dialog";
 import { ProjectTabIcon } from "./header/project-tab-icon";
 import { useIdeStore } from "./ide-store";
 import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
@@ -196,11 +197,14 @@ export const EmptyProjectWorkspace = () => {
 
   const sshHostsT = useTranslations("sshHosts");
   const [openOnHostOpen, setOpenOnHostOpen] = useState(false);
+  // A browser client picks a folder of its host, not of this device.
+  const [openHomeFolderOpen, setOpenHomeFolderOpen] = useState(false);
+  const desktop = Boolean(getDesktopApi());
 
   const handleOpenFolder = useCallback(async () => {
     const desktopApi = getDesktopApi();
     if (!desktopApi) {
-      window.alert(emptyT("electronRequired"));
+      setOpenHomeFolderOpen(true);
       return;
     }
 
@@ -210,7 +214,7 @@ export const EmptyProjectWorkspace = () => {
     }
 
     addProject(selectedPath);
-  }, [addProject, emptyT]);
+  }, [addProject]);
 
   const handleOpenProviders = useCallback(() => {
     setSettingsSection("providers");
@@ -273,25 +277,31 @@ export const EmptyProjectWorkspace = () => {
             <FolderOpen className="size-4" />
             {emptyT("openFolder")}
           </Button>
-          <Button
-            onClick={() => {
-              if (sshHosts.length === 0) {
-                setSettingsSection("sshHosts");
-                setSettingsOpen(true);
-                return;
-              }
-              setOpenOnHostOpen(true);
-            }}
-            size="lg"
-            variant="outline"
-          >
-            <Server className="size-4" />
-            {sshHostsT("openOnHost")}
-          </Button>
+          {desktop ? (
+            <Button
+              onClick={() => {
+                if (sshHosts.length === 0) {
+                  setSettingsSection("sshHosts");
+                  setSettingsOpen(true);
+                  return;
+                }
+                setOpenOnHostOpen(true);
+              }}
+              size="lg"
+              variant="outline"
+            >
+              <Server className="size-4" />
+              {sshHostsT("openOnHost")}
+            </Button>
+          ) : null}
         </div>
         <OpenOnHostDialog
           onOpenChange={setOpenOnHostOpen}
           open={openOnHostOpen}
+        />
+        <OpenHomeFolderDialog
+          onOpenChange={setOpenHomeFolderOpen}
+          open={openHomeFolderOpen}
         />
 
         {recentProjects.length > 0 ? (

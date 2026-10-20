@@ -1,5 +1,6 @@
 import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
+import { hasDesktopApi } from "@/lib/electron";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 import type { ProjectConfig } from "@/types/ide";
@@ -144,7 +145,9 @@ export const RightPanelViews = (props: RightPanelViewsProps) => {
                 />
               </RightPanelViewSlot>
             ) : null}
-            {visitedPersistentViews.has("browser") ? (
+            {/* The webview browser is the desktop window's (a host-owned
+                browser for every client is CONN-11). */}
+            {visitedPersistentViews.has("browser") && hasDesktopApi() ? (
               <RightPanelViewSlot active={rightPanelView === "browser"}>
                 <BrowserPanel
                   active={

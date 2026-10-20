@@ -8,6 +8,7 @@ import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { terminalClient } from "@/lib/terminal-client";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
+import { ConnectionBanner } from "../remote/connection-banner";
 import { startActivityNotifications } from "./activity-notifications";
 import { AppScreenshotToast } from "./app-screenshot-toast";
 import { ChatRuntimeHost } from "./chat/chat-runtime-host";
@@ -221,9 +222,10 @@ export const IdeShell = () => {
   }, []);
 
   // Desktop event listeners
+  // Terminal output and status, from every host's socket (a browser client
+  // has terminals too); the webview browser's errors, on the desktop.
   useEffect(() => {
     const desktopApi = getDesktopApi();
-    if (!desktopApi) return;
 
     const removeTerminalData = terminalClient.onData((event) => {
       const { generation, sequence, sessionId } = event;
@@ -253,7 +255,7 @@ export const IdeShell = () => {
       }
     });
 
-    const removeBrowserError = desktopApi.onBrowserError((event) => {
+    const removeBrowserError = desktopApi?.onBrowserError((event) => {
       setBrowserError(
         `${String(event.code)}${event.description ? `: ${event.description}` : ""}`,
       );
@@ -262,7 +264,7 @@ export const IdeShell = () => {
     return () => {
       removeTerminalData();
       removeTerminalStatus();
-      removeBrowserError();
+      removeBrowserError?.();
     };
   }, [
     setTerminalStatus,
@@ -300,7 +302,10 @@ export const IdeShell = () => {
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-surface-50 dark:bg-surface-900 text-foreground">
+    // The dynamic viewport height and the safe areas: a phone's browser bars
+    // and keyboard (index.html resizes content for it) and its notch never
+    // cover the header or the composer. Both are zero on the desktop.
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-surface-50 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] text-foreground dark:bg-surface-900">
       {!appReady && <AppLoadingScreen />}
       <ChatRuntimeHost />
       <GlobalShortcuts />
@@ -367,6 +372,7 @@ export const IdeShell = () => {
       ) : null}
 
       <PersistenceBlockedBanner />
+      <ConnectionBanner />
       <AppScreenshotToast />
       {stateHydrated ? <ChatSearchDialog /> : null}
       <SshPromptDialog />

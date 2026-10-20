@@ -1073,5 +1073,27 @@
       "textEditing": "die Textbearbeitung (Kopieren, Einfügen, Rückgängig)",
       "system": "das Betriebssystem"
     }
+  },
+  "remote": {
+    "pairTitle": "Dieses Gerät koppeln",
+    "pairDescription": "Verwende den Kopplungslink von {host} oder gib den dort angezeigten Code ein.",
+    "pairing": "Wird gekoppelt…",
+    "codeLabel": "Kopplungscode",
+    "deviceNameLabel": "Gerätename",
+    "deviceNameHint": "Jemand auf dem Host bestätigt dieses Gerät unter diesem Namen.",
+    "pair": "Koppeln",
+    "cancel": "Abbrechen",
+    "waitingForConfirm": "Warte darauf, dass „{device}“ auf dem Host bestätigt wird…",
+    "pairFailed": "Dieses Gerät konnte nicht gekoppelt werden.",
+    "offline": "{host} ist nicht erreichbar. Angezeigt wird, was dieses Gerät gespeichert hat.",
+    "reconnecting": "Verbindung zu {host} wird wiederhergestellt…",
+    "incompatible": "{host} ist nicht der Host, mit dem dieses Gerät gekoppelt wurde.",
+    "signOut": "Abmelden",
+    "deviceTitle": "Dieses Gerät",
+    "deviceDescription": "Gekoppelt mit {host}. Beim Abmelden werden der Zugriff dieses Geräts und die in diesem Browser gespeicherten Daten entfernt.",
+    "openFolder": "Ordner öffnen",
+    "openFolderTitle": "Ordner auf {host} öffnen",
+    "folderPath": "Ordnerpfad",
+    "runsOnHost": "Läuft auf {host}"
   }
 }

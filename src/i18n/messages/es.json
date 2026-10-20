@@ -1073,5 +1073,27 @@
       "textEditing": "la edición de texto (copiar, pegar, deshacer)",
       "system": "el sistema operativo"
     }
+  },
+  "remote": {
+    "pairTitle": "Vincular este dispositivo",
+    "pairDescription": "Usa el enlace de vinculación de {host} o introduce el código que muestra.",
+    "pairing": "Vinculando…",
+    "codeLabel": "Código de vinculación",
+    "deviceNameLabel": "Nombre del dispositivo",
+    "deviceNameHint": "Alguien en el host confirma este dispositivo con este nombre.",
+    "pair": "Vincular",
+    "cancel": "Cancelar",
+    "waitingForConfirm": "Esperando a que se confirme “{device}” en el host…",
+    "pairFailed": "No se pudo vincular este dispositivo.",
+    "offline": "No se puede conectar con {host}. Se muestra lo que guardó este dispositivo.",
+    "reconnecting": "Reconectando con {host}…",
+    "incompatible": "{host} no es el host con el que se vinculó este dispositivo.",
+    "signOut": "Cerrar sesión",
+    "deviceTitle": "Este dispositivo",
+    "deviceDescription": "Vinculado con {host}. Al cerrar sesión se eliminan el acceso de este dispositivo y lo que guardó este navegador.",
+    "openFolder": "Abrir carpeta",
+    "openFolderTitle": "Abrir una carpeta en {host}",
+    "folderPath": "Ruta de la carpeta",
+    "runsOnHost": "Se ejecuta en {host}"
   }
 }

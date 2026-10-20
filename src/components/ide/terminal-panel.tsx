@@ -7,7 +7,6 @@ import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import { type HTMLAttributes, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { getDesktopApi } from "@/lib/electron";
 import { terminalClient } from "@/lib/terminal-client";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -442,10 +441,6 @@ export const TerminalPanel = ({
     );
 
     const inputSubscription = terminal.onData((data) => {
-      if (!getDesktopApi()) {
-        return;
-      }
-
       if (isUserTerminalInput(data)) {
         markTerminalSessionTouched(sessionId);
       }

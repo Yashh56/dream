@@ -26,6 +26,7 @@ import {
 } from "../host/auth/route-policy.js";
 import { hasScope } from "../host/auth/scopes.js";
 import { registerHostRoutes, serveApp } from "./app.js";
+import { createClientAssets } from "./client-assets.js";
 import { HOST_SOCKET_PATH } from "./host-socket-routes.js";
 import {
   clearSessionCookie,
@@ -99,10 +100,19 @@ export const closableOnRevoke = (response, principal, auth) => {
 /**
  * @param {object} deps the host services, as startApiServer takes them, with
  *   `auth` (host/auth/host-auth.js) required.
- * @param {{ origins: () => string[], trustForwardedHost: boolean }} options
+ * @param {{
+ *   origins: () => string[],
+ *   trustForwardedHost: boolean,
+ *   clientAssets?: ((c: import("hono").Context) => Response | Promise<Response>) | null,
+ * }} options
  *   `origins`: where clients load from (each `scheme://host[:port]`).
+ *   `clientAssets`: serves the browser client for every request no route
+ *   answered (client-assets.js); without it those are 404s.
  */
-export function createRemoteApiApp(deps, { origins, trustForwardedHost }) {
+export function createRemoteApiApp(
+  deps,
+  { origins, trustForwardedHost, clientAssets = null },
+) {
   const { auth, activity } = deps;
   if (!auth) throw new Error("The remote listener needs the host's auth.");
   const app = new Hono();
@@ -182,6 +192,9 @@ export function createRemoteApiApp(deps, { origins, trustForwardedHost }) {
     remote: true,
   });
   assertRoutePolicy(app, { middlewarePaths: ["/*", "/api/*"] });
+  // Not a route: the client's files answer what no route did, and never
+  // anything under /api (an unknown API path stays a 404).
+  app.notFound(clientAssets ?? ((c) => c.text("Not found.", 404)));
   return app;
 }
 
@@ -195,7 +208,10 @@ export function createRemoteApiApp(deps, { origins, trustForwardedHost }) {
  *   port: number,
  *   publicOrigins?: string[],
  *   trustForwardedHost?: boolean,
+ *   clientDirectory?: string | null,
  * }} options
+ *   `clientDirectory`: the browser client's build, served at the
+ *   listener's root (client-assets.js); none when absent or missing.
  * @returns {Promise<{ port: number, origins: string[], close: () => Promise<void> }>}
  */
 export async function startRemoteApiServer(
@@ -205,6 +221,7 @@ export async function startRemoteApiServer(
     port,
     publicOrigins = [],
     trustForwardedHost = false,
+    clientDirectory = null,
   },
 ) {
   const configured = publicOrigins.map((value) => {
@@ -214,6 +231,7 @@ export async function startRemoteApiServer(
   });
   let origins = configured;
   const app = createRemoteApiApp(deps, {
+    clientAssets: await createClientAssets(clientDirectory),
     origins: () => origins,
     trustForwardedHost,
   });

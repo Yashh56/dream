@@ -1073,5 +1073,27 @@
       "textEditing": "la modifica del testo (copia, incolla, annulla)",
       "system": "il sistema operativo"
     }
+  },
+  "remote": {
+    "pairTitle": "Associa questo dispositivo",
+    "pairDescription": "Usa il link di associazione di {host} oppure inserisci il codice che mostra.",
+    "pairing": "Associazione in corso…",
+    "codeLabel": "Codice di associazione",
+    "deviceNameLabel": "Nome del dispositivo",
+    "deviceNameHint": "Qualcuno sull’host conferma questo dispositivo con questo nome.",
+    "pair": "Associa",
+    "cancel": "Annulla",
+    "waitingForConfirm": "In attesa che “{device}” venga confermato sull’host…",
+    "pairFailed": "Impossibile associare questo dispositivo.",
+    "offline": "Impossibile raggiungere {host}. Viene mostrato ciò che ha salvato questo dispositivo.",
+    "reconnecting": "Riconnessione a {host}…",
+    "incompatible": "{host} non è l’host con cui è stato associato questo dispositivo.",
+    "signOut": "Esci",
+    "deviceTitle": "Questo dispositivo",
+    "deviceDescription": "Associato a {host}. Uscendo vengono rimossi l’accesso di questo dispositivo e ciò che ha salvato questo browser.",
+    "openFolder": "Apri cartella",
+    "openFolderTitle": "Apri una cartella su {host}",
+    "folderPath": "Percorso della cartella",
+    "runsOnHost": "In esecuzione su {host}"
   }
 }

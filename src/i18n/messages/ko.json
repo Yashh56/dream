@@ -1073,5 +1073,27 @@
       "textEditing": "텍스트 편집(복사, 붙여넣기, 실행 취소)",
       "system": "운영 체제"
     }
+  },
+  "remote": {
+    "pairTitle": "이 기기 페어링",
+    "pairDescription": "{host}의 페어링 링크를 사용하거나 표시된 코드를 입력하세요.",
+    "pairing": "페어링 중…",
+    "codeLabel": "페어링 코드",
+    "deviceNameLabel": "기기 이름",
+    "deviceNameHint": "호스트에서 이 이름으로 기기를 확인합니다.",
+    "pair": "페어링",
+    "cancel": "취소",
+    "waitingForConfirm": "호스트에서 “{device}”을(를) 확인하기를 기다리는 중…",
+    "pairFailed": "이 기기를 페어링하지 못했습니다.",
+    "offline": "{host}에 연결할 수 없습니다. 이 기기에 저장된 내용을 표시합니다.",
+    "reconnecting": "{host}에 다시 연결하는 중…",
+    "incompatible": "{host}은(는) 이 기기와 페어링한 호스트가 아닙니다.",
+    "signOut": "로그아웃",
+    "deviceTitle": "이 기기",
+    "deviceDescription": "{host}과(와) 페어링되었습니다. 로그아웃하면 이 기기의 접근 권한과 이 브라우저에 저장된 내용이 삭제됩니다.",
+    "openFolder": "폴더 열기",
+    "openFolderTitle": "{host}에서 폴더 열기",
+    "folderPath": "폴더 경로",
+    "runsOnHost": "{host}에서 실행"
   }
 }

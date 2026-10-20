@@ -208,7 +208,9 @@ export const acceptHostDescriptor = (
     // keeps routing by its id; not for one saved as a particular host.
     return saved && !isLocal
       ? refuse(
-          `“${labelOf(connectionId)}” did not identify itself, so it cannot be confirmed as the host saved for it. Update the Dream host there, or remove its custom host command so Dream installs a matching one.`,
+          route.kind === "origin"
+            ? `“${labelOf(connectionId)}” did not identify itself, so it cannot be confirmed as the host this device paired with. Update the Dream host there.`
+            : `“${labelOf(connectionId)}” did not identify itself, so it cannot be confirmed as the host saved for it. Update the Dream host there, or remove its custom host command so Dream installs a matching one.`,
         )
       : { connections, error: null };
   }
@@ -219,7 +221,9 @@ export const acceptHostDescriptor = (
       (!saved.fingerprint || !fingerprint || saved.fingerprint === fingerprint);
     if (!sameHost && !isLocal) {
       return refuse(
-        `“${labelOf(connectionId)}” now reaches a different Dream host than the one saved for it, so its projects were not loaded from there. If that machine was replaced, remove this host and add it again.`,
+        route.kind === "origin"
+          ? `“${labelOf(connectionId)}” now serves a different Dream host than the one this device paired with, so its projects were not loaded. If that host was replaced, sign out and pair this device again.`
+          : `“${labelOf(connectionId)}” now reaches a different Dream host than the one saved for it, so its projects were not loaded from there. If that machine was replaced, remove this host and add it again.`,
       );
     }
     if (

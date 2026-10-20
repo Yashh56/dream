@@ -1,6 +1,7 @@
 import { Files, Globe, Inbox, TerminalSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { memo } from "react";
+import { hasDesktopApi } from "@/lib/electron";
 import type { RightPanelView } from "@/types/ide";
 import { GitNavButton } from "../git-panel/nav-button";
 import { useShortcutTitle } from "../shortcuts/shortcut-keys";
@@ -53,14 +54,17 @@ const WorkspaceRightRailImpl = ({
       >
         <Files className="size-4" />
       </WorkspaceNavButton>
-      <WorkspaceNavButton
-        active={rightVisible && rightPanelView === "browser"}
-        accent={browserHiddenWithActiveTab}
-        onClick={() => onSelectRightPanelView("browser")}
-        title={browserTitle}
-      >
-        <Globe className="size-4" />
-      </WorkspaceNavButton>
+      {/* The webview browser is the desktop window's. */}
+      {hasDesktopApi() ? (
+        <WorkspaceNavButton
+          active={rightVisible && rightPanelView === "browser"}
+          accent={browserHiddenWithActiveTab}
+          onClick={() => onSelectRightPanelView("browser")}
+          title={browserTitle}
+        >
+          <Globe className="size-4" />
+        </WorkspaceNavButton>
+      ) : null}
       <WorkspaceNavButton
         aria-label={t("terminal")}
         active={rightVisible && rightPanelView === "terminal"}

@@ -9,12 +9,14 @@
 //     lib/persisted-state-worker.js   its state-writing worker thread
 //     lib/persisted-state-read-worker.js   its state-reading worker threads
 //     lib/drizzle/              the database migrations
+//     client/                   the browser client (the renderer build, dist/)
 //     node_modules/node-pty/    the one native addon, this platform's build
 //     VERSION
 //
 //   node scripts/build-host-runtime.mjs [--out dir] [--archive]
 //
-// With --archive it also writes dream-host-<version>-<os>-<arch>.tar.gz next
+// Run `pnpm vite:build` first: the browser client a host serves to paired
+// devices is that build. With --archive it also writes dream-host-<version>-<os>-<arch>.tar.gz next
 // to the output folder. Agent CLIs (claude, codex, opencode) are not part of
 // it: the host runs whichever ones are installed on its machine.
 import { execFileSync } from "node:child_process";
@@ -91,6 +93,13 @@ writeFileSync(
 cpSync(path.join(root, "electron/drizzle"), path.join(lib, "drizzle"), {
   recursive: true,
 });
+
+// 2b. The browser client a paired device loads from the host.
+const client = path.join(root, "dist");
+if (!existsSync(path.join(client, "index.html"))) {
+  throw new Error("No renderer build in dist/: run `pnpm vite:build` first.");
+}
+cpSync(client, path.join(out, "client"), { recursive: true });
 
 // 3. node-pty: its JavaScript and this platform's native build only.
 const ptyRoot = path.dirname(require.resolve("node-pty/package.json"));

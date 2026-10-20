@@ -1073,5 +1073,27 @@
       "textEditing": "a edição de texto (copiar, colar, desfazer)",
       "system": "o sistema operacional"
     }
+  },
+  "remote": {
+    "pairTitle": "Emparelhar este dispositivo",
+    "pairDescription": "Use o link de emparelhamento de {host} ou digite o código exibido.",
+    "pairing": "Emparelhando…",
+    "codeLabel": "Código de emparelhamento",
+    "deviceNameLabel": "Nome do dispositivo",
+    "deviceNameHint": "Alguém no host confirma este dispositivo por este nome.",
+    "pair": "Emparelhar",
+    "cancel": "Cancelar",
+    "waitingForConfirm": "Aguardando a confirmação de “{device}” no host…",
+    "pairFailed": "Não foi possível emparelhar este dispositivo.",
+    "offline": "Não foi possível acessar {host}. Mostrando o que este dispositivo salvou.",
+    "reconnecting": "Reconectando a {host}…",
+    "incompatible": "{host} não é o host com o qual este dispositivo foi emparelhado.",
+    "signOut": "Sair",
+    "deviceTitle": "Este dispositivo",
+    "deviceDescription": "Emparelhado com {host}. Ao sair, o acesso deste dispositivo e o que este navegador salvou são removidos.",
+    "openFolder": "Abrir pasta",
+    "openFolderTitle": "Abrir uma pasta em {host}",
+    "folderPath": "Caminho da pasta",
+    "runsOnHost": "Executa em {host}"
   }
 }

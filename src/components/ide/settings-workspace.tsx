@@ -49,7 +49,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { APP_LOCALES, type AppLocale, LOCALE_LABELS } from "@/i18n/config";
-import { getDesktopApi } from "@/lib/electron";
+import { forgetHomeConnection } from "@/lib/connections/forget";
+import { getClientPlatform } from "@/lib/connections/platform";
 import {
   getModelOptionsForProvider,
   getModelsForProvider,
@@ -62,6 +63,7 @@ import {
 } from "@/lib/opencode-model-groups";
 import { terminalClient } from "@/lib/terminal-client";
 import { ACCENT_COLORS, BASE_COLORS, useUiStore } from "@/lib/ui-store";
+import { useCompactLayout } from "@/lib/use-compact-layout";
 import { cn } from "@/lib/utils";
 import type {
   AccentColor,
@@ -156,6 +158,14 @@ export const SettingsWorkspace = () => {
   const localeT = useTranslations("locale");
   const providerT = useTranslations("provider");
   const settingsT = useTranslations("settings");
+  const remoteT = useTranslations("remote");
+  // A browser client: SSH hosts are the desktop's; signing out is its own.
+  const platform = getClientPlatform();
+  const [signingOut, setSigningOut] = useState(false);
+  // A phone-sized window shows the section list, or one section, full width:
+  // Back returns from a section to the list.
+  const compact = useCompactLayout();
+  const [compactList, setCompactList] = useState(true);
   const promptsT = useTranslations("savedPrompts");
   const skillsT = useTranslations("skills");
   const shortcutsT = useTranslations("shortcuts");
@@ -236,11 +246,6 @@ export const SettingsWorkspace = () => {
     let cancelled = false;
 
     const loadTerminalShells = async () => {
-      const desktopApi = getDesktopApi();
-      if (!desktopApi) {
-        return;
-      }
-
       const shells = await terminalClient.detectShells();
       if (!cancelled) {
         setTerminalShellOptions(shells);
@@ -519,7 +524,11 @@ export const SettingsWorkspace = () => {
           <Button
             aria-label={chatT("back")}
             className="size-8 text-muted-foreground hover:text-foreground [-webkit-app-region:no-drag]"
-            onClick={() => setSettingsOpen(false)}
+            onClick={() =>
+              compact && !compactList
+                ? setCompactList(true)
+                : setSettingsOpen(false)
+            }
             size="icon"
             title={chatT("back")}
             variant="ghost"
@@ -533,8 +542,23 @@ export const SettingsWorkspace = () => {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-64 shrink-0 flex-col p-3">
-          <div className="space-y-1">
+        <nav
+          className={cn(
+            "flex-col p-3",
+            !compact
+              ? "flex w-64 shrink-0"
+              : compactList
+                ? "flex w-full"
+                : "hidden",
+          )}
+        >
+          {/* A section chosen on a phone replaces the list. */}
+          <div
+            className="space-y-1"
+            onClickCapture={() => {
+              if (compact) setCompactList(false);
+            }}
+          >
             <button
               className={cn(
                 "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
@@ -625,21 +649,23 @@ export const SettingsWorkspace = () => {
                 {settingsT("mcpServers")}
               </span>
             </button>
-            <button
-              className={cn(
-                "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
-                settingsSection === "sshHosts"
-                  ? "font-semibold text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setSettingsSection("sshHosts")}
-              type="button"
-            >
-              <span className="flex items-center gap-2">
-                <Server className="size-4" />
-                {sshHostsT("settingsTitle")}
-              </span>
-            </button>
+            {platform.kind === "desktop" ? (
+              <button
+                className={cn(
+                  "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
+                  settingsSection === "sshHosts"
+                    ? "font-semibold text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSettingsSection("sshHosts")}
+                type="button"
+              >
+                <span className="flex items-center gap-2">
+                  <Server className="size-4" />
+                  {sshHostsT("settingsTitle")}
+                </span>
+              </button>
+            ) : null}
             <button
               className={cn(
                 "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
@@ -656,12 +682,47 @@ export const SettingsWorkspace = () => {
               </span>
             </button>
           </div>
-          <div className="mt-auto px-3 py-2 font-mono text-muted-foreground text-xs">
+          {platform.kind === "web" ? (
+            <div className="mt-auto grid gap-2 px-3 py-2 text-xs">
+              <span className="font-medium text-foreground text-sm">
+                {remoteT("deviceTitle")}
+              </span>
+              <span className="text-muted-foreground">
+                {remoteT("deviceDescription", { host: platform.homeLabel })}
+              </span>
+              <Button
+                className="w-fit"
+                disabled={signingOut}
+                onClick={() => {
+                  setSigningOut(true);
+                  void forgetHomeConnection().finally(() =>
+                    window.location.replace("/"),
+                  );
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {remoteT("signOut")}
+              </Button>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              "px-3 py-2 font-mono text-muted-foreground text-xs",
+              platform.kind === "desktop" && "mt-auto",
+            )}
+          >
             v{appVersion}
           </div>
         </nav>
 
-        <div className="relative min-w-0 flex-1">
+        <div
+          className={cn(
+            "relative min-w-0 flex-1",
+            compact && compactList && "hidden",
+          )}
+        >
           {/* Same top fade as the chat transcript, so content scrolling
               under the header dissolves instead of cutting off. The right
               inset keeps the scrollbar uncovered. */}
@@ -1478,7 +1539,7 @@ export const SettingsWorkspace = () => {
 
               {settingsSection === "skills" ? <SkillsSettingsSection /> : null}
 
-              {settingsSection === "sshHosts" ? (
+              {settingsSection === "sshHosts" && platform.kind === "desktop" ? (
                 <SshHostsSettingsSection />
               ) : null}
 

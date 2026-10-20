@@ -16,7 +16,9 @@
 // Remote access (serve and ensure): --remote-port <n> also serves paired
 // devices on that loopback port (api/remote-app.js); --remote-origin <url>
 // (repeatable) names the origin a reverse proxy serves it at, and
-// --trust-forwarded-host lets that proxy name the host. Pairing is always
+// --trust-forwarded-host lets that proxy name the host. --client-dir <dir>
+// is the browser client it serves at its root: by default the runtime's own
+// `client/` (or the checkout's `dist/`). Pairing is always
 // required. Settings, Tailscale setup and pairing commands are CONN-05's.
 import { spawn } from "node:child_process";
 import { closeSync, readFileSync } from "node:fs";
@@ -44,6 +46,15 @@ import {
 } from "./run-directory.js";
 
 const CLI_ENTRY = fileURLToPath(new URL("./dream-host.js", import.meta.url));
+/* global __DREAM_HOST_VERSION__ */
+// The browser client: beside lib/ in a runtime (scripts/build-host-runtime.mjs),
+// the renderer build in a checkout.
+const DEFAULT_CLIENT_DIRECTORY = fileURLToPath(
+  new URL(
+    typeof __DREAM_HOST_VERSION__ === "string" ? "../client/" : "../../dist/",
+    import.meta.url,
+  ),
+);
 const START_TIMEOUT_MS = 20_000;
 const STOP_TIMEOUT_MS = 10_000;
 const POLL_MS = 100;
@@ -52,7 +63,6 @@ export const EXIT_NOT_RUNNING = 3;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/* global __DREAM_HOST_VERSION__ */
 // The packaged runtime has its version built in (scripts/build-host-runtime.mjs);
 // from a checkout it comes from package.json.
 const readAppVersion = () => {
@@ -166,6 +176,7 @@ async function ensure({ home, runDirectory, values, env, write }) {
       args.push("--remote-origin", origin);
     }
     if (values["trust-forwarded-host"]) args.push("--trust-forwarded-host");
+    if (values["client-dir"]) args.push("--client-dir", values["client-dir"]);
     const child = spawn(process.execPath, args, {
       cwd: home,
       detached: true,
@@ -229,6 +240,9 @@ async function serve({ home, runDirectory, values, log }) {
       port: remotePort,
       publicOrigins: values["remote-origin"] ?? [],
       trustForwardedHost: Boolean(values["trust-forwarded-host"]),
+      clientDirectory: path.resolve(
+        values["client-dir"] ?? DEFAULT_CLIENT_DIRECTORY,
+      ),
     });
     log(
       `Serving paired devices on 127.0.0.1:${remote.port} for ${remote.origins.join(", ")}.`,
@@ -343,6 +357,7 @@ export async function runDaemonCli(
         "remote-origin": { multiple: true, type: "string" },
         "remote-port": { type: "string" },
         "trust-forwarded-host": { type: "boolean" },
+        "client-dir": { type: "string" },
       },
     });
   } catch (error) {
@@ -354,7 +369,7 @@ export async function runDaemonCli(
   const command = COMMANDS[name];
   if (!command) {
     stderr.write(
-      "Usage: dream-host <ensure|serve|status|stop|version> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host]\n",
+      "Usage: dream-host <ensure|serve|status|stop|version> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host] [--client-dir dir]\n",
     );
     return 2;
   }

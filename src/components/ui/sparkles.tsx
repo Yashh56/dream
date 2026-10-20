@@ -133,7 +133,10 @@ function ensureSparklesStyles() {
       left: 0; right: 0;
       height: var(--sp-h, 360px);
       pointer-events: none;
-      overflow: visible;
+      /* Particles rise above the field; sideways they stop at its edges, so
+         a narrow column (a phone's chat) never scrolls sideways under them. */
+      overflow-x: clip;
+      overflow-y: visible;
       z-index: 3;
     }
     .sparkles-field.sparkles-field-top {

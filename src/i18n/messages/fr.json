@@ -1073,5 +1073,27 @@
       "textEditing": "l’édition de texte (copier, coller, annuler)",
       "system": "le système d’exploitation"
     }
+  },
+  "remote": {
+    "pairTitle": "Associer cet appareil",
+    "pairDescription": "Utilisez le lien d’association de {host} ou saisissez le code qu’il affiche.",
+    "pairing": "Association…",
+    "codeLabel": "Code d’association",
+    "deviceNameLabel": "Nom de l’appareil",
+    "deviceNameHint": "Une personne sur l’hôte confirme cet appareil sous ce nom.",
+    "pair": "Associer",
+    "cancel": "Annuler",
+    "waitingForConfirm": "En attente de la confirmation de « {device} » sur l’hôte…",
+    "pairFailed": "Impossible d’associer cet appareil.",
+    "offline": "Impossible de joindre {host}. Affichage de ce que cet appareil a enregistré.",
+    "reconnecting": "Reconnexion à {host}…",
+    "incompatible": "{host} n’est pas l’hôte auquel cet appareil a été associé.",
+    "signOut": "Se déconnecter",
+    "deviceTitle": "Cet appareil",
+    "deviceDescription": "Associé à {host}. La déconnexion retire l’accès de cet appareil et ce que ce navigateur a enregistré.",
+    "openFolder": "Ouvrir un dossier",
+    "openFolderTitle": "Ouvrir un dossier sur {host}",
+    "folderPath": "Chemin du dossier",
+    "runsOnHost": "S’exécute sur {host}"
   }
 }

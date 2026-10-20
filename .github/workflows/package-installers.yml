@@ -517,6 +517,10 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
         run: pnpm install --frozen-lockfile
 
+      # The browser client the host serves to paired devices.
+      - name: Build renderer
+        run: pnpm vite:build
+
       - name: Build host runtime
         run: node scripts/build-host-runtime.mjs --out release/host --archive
 

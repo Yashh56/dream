@@ -188,6 +188,15 @@ supervisor** keeps each host's connection state (`connecting`, `ready`,
 catalog readiness, and turns lifecycle signals into resumes: sockets
 replaced, catalogs refetched, running turns followed again.
 
+## Browser client
+
+Dream's renderer in a plain browser, served by a paired host's remote
+listener (`electron/api/client-assets.js`). Its home host is that origin;
+its workspace is in IndexedDB; it pairs on the pairing screen
+(`src/components/remote/`) and signs out from Settings. It has no SSH hosts
+and no webview browser. Below 640px wide it uses the **compact layout**: one
+chat, and the project's panels as full sheets (`use-compact-layout.ts`).
+
 ## Device session
 
 A paired device's credential on one host (`electron/host/auth/`). A
