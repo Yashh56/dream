@@ -109,6 +109,12 @@ const GitCommitBoxImpl = ({
     <div className="space-y-3 border-b border-surface-200 px-3 py-3 dark:border-surface-800">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <label
+          className="mr-auto font-medium text-xs"
+          htmlFor={`commit-message-${projectId}`}
+        >
+          {gitT("commitMessage")}
+        </label>
+        <label
           className="flex items-center gap-2 text-xs"
           htmlFor={`commit-include-unstaged-${projectId}`}
         >
@@ -135,9 +141,9 @@ const GitCommitBoxImpl = ({
       <div className="relative">
         <Textarea
           aria-busy={generating}
-          aria-label={gitT("commitMessage")}
           className="max-h-40 min-h-16 resize-none text-sm"
           disabled={submitting !== null}
+          id={`commit-message-${projectId}`}
           onChange={(event) => draft.setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={generating ? "" : gitT("enterCommitMessage")}
@@ -157,7 +163,9 @@ const GitCommitBoxImpl = ({
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
 
       <div className="flex items-center gap-2">
-        {hasChanges ? <GitChangesDeltaSummary changes={changes} /> : null}
+        {hasChanges ? (
+          <GitChangesDeltaSummary changes={changes} showFileIcon />
+        ) : null}
         <Button
           className="ml-auto"
           disabled={busy || !canCommit}

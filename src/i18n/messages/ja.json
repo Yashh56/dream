@@ -454,7 +454,6 @@
     "includePlaceholder": "含めるファイル (例: src, *.ts)",
     "exclude": "除外するファイル",
     "excludePlaceholder": "除外するファイル (例: *.test.ts)",
-    "hint": "プロジェクト内のすべてのファイルの内容を検索します。",
     "summary": "{files, plural, other {# 個のファイル}}に{matches, plural, other {# 件の結果}}",
     "noResults": "結果が見つかりません。",
     "truncated": "最初の {count, number} 件の結果を表示しています。残りを表示するには検索を絞り込んでください。",

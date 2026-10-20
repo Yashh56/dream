@@ -1,3 +1,4 @@
+import { File } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type {
   ProjectGitStatusEntry,
@@ -41,16 +42,22 @@ export const GitDeltaSummary = ({
 export const GitChangesDeltaSummary = ({
   changes,
   showFileCount = true,
+  showFileIcon = false,
 }: {
   changes: ProjectGitStatusEntry[];
   showFileCount?: boolean;
+  /** Prefix the file count with a file icon. */
+  showFileIcon?: boolean;
 }) => {
   const uiT = useTranslations("ui");
 
   return (
     <div className="flex shrink-0 items-center gap-2 font-mono text-xs tabular-nums">
       {showFileCount ? (
-        <span className="text-muted-foreground">
+        <span className="flex items-center gap-1 text-muted-foreground">
+          {showFileIcon ? (
+            <File aria-hidden="true" className="size-3.5 shrink-0" />
+          ) : null}
           {uiT("fileCount", { count: changes.length })}
         </span>
       ) : null}
