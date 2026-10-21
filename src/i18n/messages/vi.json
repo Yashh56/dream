@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch} có {count} commit chưa có trong {base}. Chúng vẫn được giữ trên nhánh."
   },
   "git": {
+    "aheadAndBehind": "phía trước, {behind} phía sau",
+    "destination": "Điểm đến",
+    "pushChanges": "Đẩy các thay đổi",
+    "unableToPreviewCommits": "Không thể xem trước các commit.",
     "autoGenerateMessage": "Tự động tạo tin nhắn",
     "autoGeneratePrDetails": "Tự động tạo chi tiết PR",
     "commit": "Commit",

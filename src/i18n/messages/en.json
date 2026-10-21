@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch} has {count, plural, one {# commit} other {# commits}} not yet in {base}. They stay on the branch."
   },
   "git": {
+    "aheadAndBehind": "ahead, {behind} behind",
+    "destination": "Destination",
+    "pushChanges": "Push changes",
+    "unableToPreviewCommits": "Unable to preview commits.",
     "autoGenerateMessage": "Auto generate message",
     "autoGeneratePrDetails": "Auto generate PR details",
     "commit": "Commit",

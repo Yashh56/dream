@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch}에 아직 {base}에 없는 커밋이 {count}개 있습니다. 이 커밋은 브랜치에 남습니다."
   },
   "git": {
+    "aheadAndBehind": "앞, {behind} 뒤",
+    "destination": "목적지",
+    "pushChanges": "변경 사항 푸시",
+    "unableToPreviewCommits": "커밋을 미리 볼 수 없습니다.",
     "autoGenerateMessage": "메시지 자동 생성",
     "autoGeneratePrDetails": "PR 세부정보 자동 생성",
     "commit": "커밋",

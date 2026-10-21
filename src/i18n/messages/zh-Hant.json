@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch} 有 {count} 個提交尚未進入 {base}。它們會保留在該分支上。"
   },
   "git": {
+    "aheadAndBehind": "個提交領先，落後 {behind} 個提交",
+    "destination": "目標",
+    "pushChanges": "推送更改",
+    "unableToPreviewCommits": "無法預覽提交。",
     "autoGenerateMessage": "自動產生訊息",
     "autoGeneratePrDetails": "自動產生 PR 詳細信息",
     "commit": "提交",

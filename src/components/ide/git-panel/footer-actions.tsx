@@ -28,6 +28,7 @@ import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { getPullRequestBranchError } from "../git-actions/branch-utils";
 import { CreatePrDialog } from "../git-actions/create-pr-dialog";
+import { PushDialog } from "../git-actions/push-dialog";
 import { GitMenuDeltaSummary } from "../git-actions/summary";
 import { getStatusFileCount, hasPushableCommits } from "../git-actions/utils";
 import {
@@ -103,6 +104,7 @@ const GitFooterActionsImpl = ({
   const showGitPanel = useShowGitPanel(projectId);
   const [openingRepository, setOpeningRepository] = useState(false);
   const [createPrOpen, setCreatePrOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
   const [worktreeDialogOpen, setWorktreeDialogOpen] = useState(false);
   // Kept after close, so a closing dialog does not switch modes mid-animation.
   const [worktreeAction, setWorktreeAction] =
@@ -125,23 +127,6 @@ const GitFooterActionsImpl = ({
     );
   const worktreeMergeBase =
     worktreeProject?.worktree.baseRef ?? status?.baseBranch ?? null;
-
-  const handlePush = useCallback(async () => {
-    if (gitBusy || !canPush) {
-      return;
-    }
-
-    const outcome = await useIdeStore.getState().pushProject(projectId);
-    if (outcome.ok) {
-      toast.success(
-        gitT("pushedTo", {
-          target: outcome.result.upstreamBranch ?? outcome.result.branch,
-        }),
-      );
-    } else {
-      toast.error(getApiErrorMessage(outcome.error, gitT("unableToPush")));
-    }
-  }, [canPush, gitBusy, gitT, projectId]);
 
   const handleSync = async (action: "fetch" | "pull") => {
     if (gitBusy) return;
@@ -211,9 +196,7 @@ const GitFooterActionsImpl = ({
       </DropdownMenuItem>
       <DropdownMenuItem
         disabled={!canPush || gitBusy}
-        onClick={() => {
-          void handlePush();
-        }}
+        onClick={() => setPushOpen(true)}
       >
         <UploadCloud className="size-4" />
         {status.upstreamBranch ? gitT("push") : gitT("publishBranch")}
@@ -332,6 +315,18 @@ const GitFooterActionsImpl = ({
         {menu}
       </DropdownMenu>
 
+      {pushOpen ? (
+        <PushDialog
+          branch={status.branch}
+          hostId={project.hostId}
+          onOpenChange={setPushOpen}
+          open
+          projectId={projectId}
+          projectPath={projectPath}
+          refreshToken={gitRefreshKey}
+          status={status}
+        />
+      ) : null}
       {createPrOpen ? (
         <CreatePrDialog
           branch={status.branch}

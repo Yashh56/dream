@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch} tiene {count, plural, one {# confirmación} other {# confirmaciones}} que aún no están en {base}. Se conservan en la rama."
   },
   "git": {
+    "aheadAndBehind": "adelante, {behind} detrás",
+    "destination": "Destino",
+    "pushChanges": "Enviar cambios",
+    "unableToPreviewCommits": "No se pueden obtener vistas previas de las confirmaciones.",
     "autoGenerateMessage": "Generar mensaje automáticamente",
     "autoGeneratePrDetails": "Generar detalles de PR automáticamente",
     "commit": "Confirmar",

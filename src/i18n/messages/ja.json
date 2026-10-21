@@ -694,6 +694,10 @@
     "unmergedCommitsKept": "{branch} には {base} にまだ含まれていないコミットが {count} 件あります。これらはブランチに残ります。"
   },
   "git": {
+    "aheadAndBehind": "前、{behind} 後ろ",
+    "destination": "送信先",
+    "pushChanges": "変更をプッシュする",
+    "unableToPreviewCommits": "コミットをプレビューできません。",
     "autoGenerateMessage": "メッセージを自動生成",
     "autoGeneratePrDetails": "PR 詳細を自動生成",
     "commit": "コミット",
