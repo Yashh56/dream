@@ -208,6 +208,16 @@ held by its **state lock** (`<state db>.host-lock`,
 `electron/host/state-lock.js`). An existing workspace moved out of the
 state database once, from a backed-up copy, leaving the original untouched.
 
+## Host service
+
+The host installed to run without the desktop (`electron/host/service/`):
+its own `serve`, supervised by the platform's service manager (a
+`systemd --user` unit, a LaunchAgent, or a Task Scheduler logon task) and
+restarted if it fails. `dream-host service` installs, starts, stops,
+restarts, reports and uninstalls it; `<home>/service.json` names the service
+of a host home, which `ensure` starts instead of spawning a second host.
+Uninstalling keeps the host's data and identity.
+
 ## Remote access
 
 Whether a host serves paired devices, and how (`electron/host/remote-access/`).

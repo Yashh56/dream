@@ -41,6 +41,7 @@ import { acquireStateLock } from "./state-lock.js";
  *   clientDirectory?: string | null,
  *   tailscale?: ReturnType<typeof createTailscale>,
  *   kind?: string,
+ *   onShutdownRequest?: (reason: string) => void,
  * }} options
  *   `dataDirectory`: where the host keeps its files.
  *   `diagnosticsEnabled`: whether terminal flow-control diagnostics are served.
@@ -61,6 +62,9 @@ import { acquireStateLock } from "./state-lock.js";
  *   default).
  *   `kind`: what runs this host (`desktop`, `daemon`), named in its state
  *   lock so a second host can say who has the data.
+ *   `onShutdownRequest`: a daemon's own shutdown, asked for over the local
+ *   API (`POST /api/host/shutdown`, the launch token's holder only): a
+ *   clean stop that flushes writes, where a signal cannot (Windows).
  *
  * Throws StateLockedError (state-lock.js) when another process already runs
  * a host on the same state database.
@@ -75,6 +79,7 @@ export function createHost({
   clientDirectory = null,
   tailscale = createTailscale(),
   kind = "host",
+  onShutdownRequest,
 }) {
   configureHostDataDirectory(dataDirectory);
   // One host per state database: its catalog has one writer.
@@ -198,6 +203,7 @@ export function createHost({
   const services = () => ({
     activity,
     auth,
+    onShutdownRequest,
     remoteAccess,
     catalog,
     delegation,

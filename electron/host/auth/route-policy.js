@@ -29,6 +29,8 @@ const PULL_REQUEST_READS = new Set([
 
 /** Never served by the remote listener. */
 export const LOCAL_ONLY_ROUTES = Object.freeze([
+  // A daemon's clean stop, for its local operator.
+  "POST /api/host/shutdown",
   // Process id and platform: the descriptor is the remote's view of a host.
   "GET /api/host-info",
   // Agent CLIs on this host, with run-scoped or launch credentials.

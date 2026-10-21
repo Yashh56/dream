@@ -45,6 +45,11 @@ import {
   removeHostRecord,
   writeHostRecord,
 } from "./run-directory.js";
+import {
+  createServiceManager,
+  readInstalledServiceName,
+} from "./service/service.js";
+import { runServiceCommand } from "./service-cli.js";
 
 const CLI_ENTRY = fileURLToPath(new URL("./dream-host.js", import.meta.url));
 /* global __DREAM_HOST_VERSION__ */
@@ -151,6 +156,31 @@ async function ensure({ home, runDirectory, values, env, write }) {
     return 0;
   }
 
+  // Installed as a service: its manager runs the host, not this launcher
+  // (a second process would only find the state lock taken).
+  const serviceName = readInstalledServiceName(home);
+  const service = (() => {
+    if (!serviceName) return null;
+    try {
+      return createServiceManager({ env, home, name: serviceName });
+    } catch {
+      return null;
+    }
+  })();
+  if (service?.isInstalled() && service.servesHome(home)) {
+    await service.start().catch(() => undefined);
+    const started = await waitForDaemon(runDirectory);
+    if (!started) {
+      write({
+        error:
+          "The host service did not start; run `dream-host service status`.",
+      });
+      return 1;
+    }
+    write({ ...describe(started, { withToken: true }), reused: true });
+    return 0;
+  }
+
   const release = acquireStartLock(runDirectory);
   if (!release) {
     // Another launcher is starting one; use it.
@@ -221,6 +251,9 @@ async function serve({ home, runDirectory, values, log }) {
   const version = readAppVersion();
   const { createHost } = await import("./index.js");
   const host = createHost({
+    kind: "daemon",
+    // `dream-host stop`: a clean shutdown over the local API.
+    onShutdownRequest: (reason) => void shutdown(reason),
     clientDirectory: path.resolve(
       values["client-dir"] ?? DEFAULT_CLIENT_DIRECTORY,
     ),
@@ -314,21 +347,49 @@ async function serve({ home, runDirectory, values, log }) {
   return new Promise(() => {});
 }
 
-async function stop({ runDirectory, write }) {
+/**
+ * Stops the running daemon of `runDirectory`; resolves with what happened.
+ * It is asked first (it closes, flushing its writes and releasing its lock);
+ * only one that does not exit in time is signalled, which on Windows ends
+ * it at once.
+ */
+const stopRunningDaemon = async (runDirectory) => {
   const running = await probeDaemon(runDirectory);
-  if (!running) {
-    write({ running: false, stopped: false });
-    return EXIT_NOT_RUNNING;
+  if (!running) return { running: false, stopped: false };
+  const waitForExit = async (ms) => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline && isProcessAlive(running.pid)) {
+      await sleep(POLL_MS);
+    }
+    return !isProcessAlive(running.pid);
+  };
+  let clean = false;
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${running.port}/api/host/shutdown`,
+      {
+        headers: { [API_SESSION_TOKEN_HEADER]: running.token },
+        method: "POST",
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    clean = response.ok && (await waitForExit(STOP_TIMEOUT_MS));
+  } catch {
+    // An older daemon without the route, or one not answering.
   }
-
-  process.kill(running.pid, "SIGTERM");
-  const deadline = Date.now() + STOP_TIMEOUT_MS;
-  while (Date.now() < deadline && isProcessAlive(running.pid)) {
-    await sleep(POLL_MS);
+  if (!clean && isProcessAlive(running.pid)) {
+    process.kill(running.pid, "SIGTERM");
+    await waitForExit(STOP_TIMEOUT_MS);
   }
   const stopped = !isProcessAlive(running.pid);
-  write({ pid: running.pid, running: !stopped, stopped });
-  return stopped ? 0 : 1;
+  return { clean, pid: running.pid, running: !stopped, stopped };
+};
+
+async function stop({ runDirectory, write }) {
+  const result = await stopRunningDaemon(runDirectory);
+  write(result);
+  if (!result.pid) return EXIT_NOT_RUNNING;
+  return result.stopped ? 0 : 1;
 }
 
 async function status({ runDirectory, write }) {
@@ -366,6 +427,26 @@ const remoteCommand =
     });
 for (const name of REMOTE_COMMANDS) COMMANDS[name] = remoteCommand(name);
 
+COMMANDS.service = async ({
+  args,
+  env,
+  home,
+  runDirectory,
+  values,
+  write,
+  stdout,
+}) =>
+  runServiceCommand({
+    args,
+    env,
+    home,
+    print: (line) => stdout.write(`${line}\n`),
+    probe: () => probeDaemon(runDirectory),
+    stopDaemon: async () => (await stopRunningDaemon(runDirectory)).stopped,
+    values,
+    write,
+  });
+
 /**
  * Runs one command. Resolves with the exit code (`serve` never resolves).
  * @param {string[]} argv
@@ -394,6 +475,8 @@ export async function runDaemonCli(
         origin: { type: "string" },
         scopes: { type: "string" },
         tailscale: { type: "boolean" },
+        env: { multiple: true, type: "string" },
+        "service-name": { type: "string" },
       },
     });
   } catch (error) {
@@ -405,7 +488,7 @@ export async function runDaemonCli(
   const command = COMMANDS[name];
   if (!command) {
     stderr.write(
-      "Usage: dream-host <ensure|serve|status|stop|version|remote|pair|claims|confirm|deny|devices|revoke> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host] [--client-dir dir]\n",
+      "Usage: dream-host <ensure|serve|status|stop|version|service|remote|pair|claims|confirm|deny|devices|revoke> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host] [--client-dir dir]\n",
     );
     return 2;
   }

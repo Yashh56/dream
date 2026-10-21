@@ -80,10 +80,19 @@ export function registerHostRoutes(
     hostSocket,
     terminals,
     remoteAccess,
+    onShutdownRequest,
   },
   { remote, pairingUrls },
 ) {
   if (!remote) {
+    // A daemon asked to stop by its local operator (`dream-host stop`):
+    // answered first, then the host closes and flushes its writes.
+    if (onShutdownRequest) {
+      app.post("/api/host/shutdown", (c) => {
+        setTimeout(() => onShutdownRequest("requested"), 0);
+        return c.json({ shuttingDown: true });
+      });
+    }
     registerHostInfoRoute(app, getHostInfo);
     if (delegation)
       app.all(ORCHESTRATION_MCP_PATH, (c) => delegation.handle(c.req.raw));

@@ -6,7 +6,7 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slice 1 of 4);
+Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slices 1-2 of 4);
 CONN-07 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
@@ -757,8 +757,8 @@ public managed tunnels are CONN-08.
 
 ## CONN-06: Host lifecycle independent of the desktop
 
-Status: in progress: slice 1 of 4 (storage ownership) implemented; the
-service, desktop attach and updates remain
+Status: in progress: slices 1 and 2 of 4 (storage ownership, the service)
+implemented; desktop attach and updates remain
 
 Problem and trigger: local host work ends when Electron quits; the existing SSH
 daemon is detached but is not an installed startup service.
@@ -869,6 +869,91 @@ Known consequence: an SSH host's daemons of different protocol versions
 share one data directory, so a newer one now waits for the older to stop
 rather than writing beside it. No protocol change exists yet; slice 4's
 update path must stop the older daemon first.
+
+Slice 2, the service (implemented):
+- `electron/host/service/service.js`: one manager, three adapters, all
+  running the host's own `serve` in the foreground with idle shutdown off,
+  so the service manager supervises the real process:
+  - Linux: `systemd --user` unit (`~/.config/systemd/user/<name>.service`,
+    `Restart=on-failure`, log appended to `<home>/logs/service.log`). It
+    starts at login, or at boot with `loginctl enable-linger`, and status
+    says which.
+  - macOS: LaunchAgent (`~/Library/LaunchAgents/ai.dreamdream.<name>.plist`,
+    `RunAtLoad`, restarted after an unsuccessful exit), loaded with
+    `launchctl bootstrap gui/<uid>`; starts at login.
+  - Windows: Task Scheduler logon task for this user (interactive,
+    least privilege, no time limit, restart on failure every minute). Its
+    action is `wscript` running `<home>/service.vbs`, which sets the
+    captured environment and runs the host hidden, appending to the log
+    and returning its exit code. Starts at login.
+  - The environment keeps the installing shell's PATH (SSH session
+    variables dropped as for daemons), `ELECTRON_RUN_AS_NODE` when present,
+    and only the variables named with `--env`, whose values the definition
+    stores (owner-only).
+  - `<home>/service.json` records which service runs a home's host.
+- `electron/host/service-cli.js`: `dream-host service install|start|stop|
+  restart|status|uninstall [--data-dir] [--env NAME]... [--service-name]
+  [--json]`.
+  - `install` replaces a running `ensure` daemon of the same home.
+  - `stop` ends the service before stopping the host, so a deliberate stop
+    is not restarted.
+  - `restart` reports that running turns are marked interrupted (the
+    queue's existing rule: review, then retry explicitly).
+  - `status` combines the manager's state (with Task Scheduler's result
+    codes named), when it starts, the running host's version, pid, port
+    and start time, and the log's last lines when the host is down.
+  - `uninstall` removes only the definition; data, identity and records
+    stay.
+- `ensure` starts an installed service for its home instead of spawning a
+  second host.
+- `POST /api/host/shutdown` (local listener only, launch token; listed in
+  `LOCAL_ONLY_ROUTES`) lets `dream-host stop` close a daemon cleanly,
+  flushing its writes and releasing its state lock. It falls back to a
+  signal, which on Windows ends the process at once.
+
+Validation, slice 2 (2026-10-21): `pnpm typecheck`, `pnpm lint`, `pnpm test`
+(173 files, 1199 passed, 4 skipped) and `pnpm check:scratch` pass. One full
+run failed the `run-scheduler.test.js` timing test seen in CONN-02; the
+next full run passed. No new tests were added.
+
+Generated definitions for all three platforms, from the real adapters with a
+recording runner (20 checks):
+- the `serve` arguments, PATH captured, and secrets left out unless named;
+- unit, plist, launcher and task XML contents;
+- the install command sequences.
+
+Windows, a real logon task (`Dream host (dream-host-test)`) running the real
+host from this checkout:
+- install: running, version 0.29.0 on its port;
+- `ensure` reused it, and later started the stopped service through
+  `service.json`;
+- restart: a new process;
+- a deliberate stop was not restarted after 70 s;
+- uninstall: the task deleted, data, logs, runs and identity kept;
+- `stop` closed cleanly (`clean: true`, no lock left).
+
+Linux, real `systemd --user` in WSL Ubuntu (systemd 249, Node 22.14), with
+a stub standing in for the host (its node-pty is built for Windows here):
+- `systemd-analyze --user verify` accepted the unit;
+- enabled and running, with its arguments and captured PATH;
+- stop delivered SIGTERM; start and restart worked;
+- a SIGKILL was restarted by `Restart=on-failure`;
+- uninstall removed the unit and kept the home;
+- status reported login start, since lingering is off.
+
+Found and fixed during these checks:
+- `schtasks /End` ends the launcher but not the host beneath it, so `stop`
+  also stops the host through its record.
+- `ensure` must start the service installed for its home, hence
+  `service.json`.
+- A hard kill on Windows lost queued writes and left the lock, hence the
+  shutdown route.
+
+Not yet inspected:
+- macOS: the plist and `launchctl` sequence were checked only as generated.
+- Whether the Windows launcher shows no console window, and the task
+  starting at an actual login or reboot.
+- The real host as a Linux service, which needs a Linux runtime build.
 
 Remaining/deferred: sleeping hardware is unreachable; wake-on-LAN is not included.
 
@@ -1063,7 +1148,7 @@ contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
-pending). CONN-06 in progress: slice 1 (storage ownership) implemented; next
-is slice 2, the service installer. CONN-07 through CONN-11 proposed. Preserve
+pending). CONN-06 in progress: slices 1 (storage ownership) and 2 (the
+service) implemented; next is slice 3, desktop attach. CONN-07 through CONN-11 proposed. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.
