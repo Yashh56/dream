@@ -28,6 +28,7 @@ import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { getPullRequestBranchError } from "../git-actions/branch-utils";
 import { CreatePrDialog } from "../git-actions/create-pr-dialog";
+import { GitMenuDeltaSummary } from "../git-actions/summary";
 import { getStatusFileCount, hasPushableCommits } from "../git-actions/utils";
 import {
   WorktreeActionDialog,
@@ -225,6 +226,7 @@ const GitFooterActionsImpl = ({
       >
         <GitCommitHorizontal className="size-4" />
         {gitT("commit")}
+        <GitMenuDeltaSummary status={status} />
       </DropdownMenuItem>
       <DropdownMenuItem
         disabled={!canPush || gitBusy}
@@ -234,6 +236,12 @@ const GitFooterActionsImpl = ({
       >
         <UploadCloud className="size-4" />
         {status.upstreamBranch ? gitT("push") : gitT("publishBranch")}
+        {status.upstreamBranch && status.aheadCount > 0 ? (
+          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-muted-foreground text-xs tabular-nums group-focus/dropdown-menu-item:text-accent-foreground">
+            <ArrowUp className="size-3" />
+            {status.aheadCount}
+          </span>
+        ) : null}
       </DropdownMenuItem>
       <DropdownMenuItem
         disabled={!status.remoteName || gitBusy}
@@ -326,7 +334,11 @@ const GitFooterActionsImpl = ({
           render={
             <Button
               aria-label={gitT("gitActions")}
-              className="text-muted-foreground"
+              className={
+                !gitBusy && (hasChanges || canPush)
+                  ? "text-primary hover:text-primary"
+                  : "text-muted-foreground"
+              }
               size="icon-sm"
               title={gitT("gitActions")}
               variant="ghost"

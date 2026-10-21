@@ -246,6 +246,11 @@ export function createStateSaveQueue({ databasePath }) {
   };
 
   return {
+    /**
+     * Settles once every write queued before it has: what a read that must
+     * see them (a catalog load after a window's last saves) waits for.
+     */
+    settled: () => enqueue("open", null),
     mutateRunQueue: (payload) => enqueue("run-queue", payload),
     saveProviderSession: (payload) => enqueue("save-provider-session", payload),
     /** A device session write (host/auth/session-store.js). */

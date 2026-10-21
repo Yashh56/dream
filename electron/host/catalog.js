@@ -100,11 +100,17 @@ export function createHostCatalog({
       }
       return result;
     },
-    /** Every project and chat, raw, and the chats with a turn running. */
-    list: async () => ({
-      ...(await read("catalog")),
-      runningChatIds: getRunningChatIds(),
-    }),
+    /**
+     * Every project and chat, raw, and the chats with a turn running. Read
+     * after the writes queued before it (a reloaded window's last changes).
+     */
+    list: async () => {
+      await getWriter().settled?.();
+      return {
+        ...(await read("catalog")),
+        runningChatIds: getRunningChatIds(),
+      };
+    },
 
     /**
      * One chat, raw, or null.

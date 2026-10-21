@@ -37,6 +37,7 @@ import {
 import { createDevLogger, publishDevSession } from "./dev-inspection.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import { getHelloUrl } from "./hello.js";
+import { configureHostDataDirectory } from "./host/host-paths.js";
 import { createHost } from "./host/index.js";
 import {
   closePersistedStateDatabase,
@@ -61,6 +62,7 @@ import { createSshHostManager } from "./ssh/ssh-hosts.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { createThemeStore } from "./theme-store.js";
 import { initializeAutoUpdater } from "./updater.js";
+import { prepareWorkspaceDatabase } from "./workspace-database.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,6 +135,32 @@ app.setPath("userData", APP_USER_DATA_PATH);
 // Keep Chromium caches per process so parallel launches do not lock user data.
 app.setPath("sessionData", APP_SESSION_DATA_PATH);
 
+// The desktop's workspace and its local host's catalog are separate files,
+// each with its own writer (workspace-database.js): the desktop's save
+// queue writes the workspace, the host its catalog. Set up before either
+// writer starts; an existing workspace moves out of the state database
+// once, from a backed-up copy.
+configureHostDataDirectory(APP_USER_DATA_PATH);
+const STATE_DATABASE_PATH = resolveStateDatabasePath();
+let WORKSPACE_DATABASE_PATH = STATE_DATABASE_PATH;
+let workspaceSeparate = false;
+try {
+  const prepared = prepareWorkspaceDatabase({
+    stateDatabasePath: STATE_DATABASE_PATH,
+  });
+  WORKSPACE_DATABASE_PATH = prepared.workspaceDatabasePath;
+  workspaceSeparate = true;
+  if (prepared.migrated) {
+    console.log(
+      `Moved the workspace to ${prepared.workspaceDatabasePath} (backup: ${prepared.backupPath}).`,
+    );
+  }
+} catch (error) {
+  // The workspace stays where it was, with the one shared writer it had:
+  // nothing is lost, and the move is tried again at the next start.
+  console.error("Could not move the workspace to its own database:", error);
+}
+
 // The local host: projects on this machine are served by the same host
 // module an SSH host runs as a daemon. It keeps its files in userData.
 const host = createHost({
@@ -140,21 +168,27 @@ const host = createHost({
   clientDirectory: path.join(__dirname, "..", "dist"),
   dataDirectory: APP_USER_DATA_PATH,
   diagnosticsEnabled: !app.isPackaged,
-  // The host's catalog writes share the workspace's save queue: one writer
-  // per database file, and a reloaded renderer waits for them (state:load).
-  getStateWriter: () => ({
-    applyCatalogChanges: (changes) =>
-      getStateSaveQueue().applyCatalogChanges(changes),
-    mutateRunQueue: (operation) =>
-      getStateSaveQueue().mutateRunQueue(operation),
-    ready: () => getStateSaveQueue().ready(),
-    saveChatMessages: (payload) =>
-      getStateSaveQueue().saveChatMessages(payload),
-    saveProviderSession: (payload) =>
-      getStateSaveQueue().saveProviderSession(payload),
-    writeDeviceSession: (operation) =>
-      getStateSaveQueue().writeDeviceSession(operation),
-  }),
+  kind: "desktop",
+  // Only while the workspace could not move out: then the host's catalog
+  // writes share the workspace's queue, one writer for the one file.
+  ...(workspaceSeparate
+    ? {}
+    : {
+        getStateWriter: () => ({
+          applyCatalogChanges: (changes) =>
+            getStateSaveQueue().applyCatalogChanges(changes),
+          mutateRunQueue: (operation) =>
+            getStateSaveQueue().mutateRunQueue(operation),
+          ready: () => getStateSaveQueue().ready(),
+          saveChatMessages: (payload) =>
+            getStateSaveQueue().saveChatMessages(payload),
+          saveProviderSession: (payload) =>
+            getStateSaveQueue().saveProviderSession(payload),
+          settled: () => getStateSaveQueue().settled(),
+          writeDeviceSession: (operation) =>
+            getStateSaveQueue().writeDeviceSession(operation),
+        }),
+      }),
   version: dreamVersion,
   // Requests for SSH-host projects go through the local API to the host's
   // forwarded port (api/host-proxy-routes.js).
@@ -169,7 +203,8 @@ let helloView = null;
 // The saved theme preferences (theme-store.js), and the window's
 // background painted from them.
 const themes = createThemeStore({
-  load: loadPersistedThemePreference,
+  load: () =>
+    loadPersistedThemePreference({ databasePath: WORKSPACE_DATABASE_PATH }),
   save: (preferences) => {
     getStateSaveQueue()
       .saveConfigValue(themePreferenceConfigValue(preferences))
@@ -564,14 +599,13 @@ ipcMain.on(DESKTOP_SYNC_CHANNELS.apiSessionToken, (event) => {
   event.returnValue = apiSessionToken;
 });
 
-// SQLite state reads and writes stay off the main thread so even a large
-// completed chat cannot delay input-event delivery. The queue runs them in
-// order: workspace changes, catalog changes, transcripts and the workspace
-// load a reloaded window makes.
+// The workspace's reads and writes stay off the main thread. The queue runs
+// them in order: workspace changes, config values and the workspace load a
+// reloaded window makes. (The host's catalog has its own writer.)
 let stateSaveQueue = null;
 const getStateSaveQueue = () =>
   (stateSaveQueue ??= createStateSaveQueue({
-    databasePath: resolveStateDatabasePath(),
+    databasePath: WORKSPACE_DATABASE_PATH,
   }));
 
 ipcMain.on(DESKTOP_SYNC_CHANNELS.initialThemePreferences, (event) => {
@@ -648,7 +682,9 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const persisted = readOrCreatePersistedInstallId();
+    const persisted = readOrCreatePersistedInstallId({
+      databasePath: WORKSPACE_DATABASE_PATH,
+    });
     installId = persisted.installId;
     if (persisted.created) {
       getStateSaveQueue()

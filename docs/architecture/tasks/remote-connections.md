@@ -6,7 +6,8 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-05 implemented; CONN-06 through CONN-11 proposed. Task numbers
+Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slice 1 of 4);
+CONN-07 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -756,7 +757,8 @@ public managed tunnels are CONN-08.
 
 ## CONN-06: Host lifecycle independent of the desktop
 
-Status: proposed
+Status: in progress: slice 1 of 4 (storage ownership) implemented; the
+service, desktop attach and updates remain
 
 Problem and trigger: local host work ends when Electron quits; the existing SSH
 daemon is detached but is not an installed startup service.
@@ -790,6 +792,83 @@ Completion criteria:
 
 Validation: pending; exercise install, desktop attach, quit, restart, update and
 uninstall on each supported OS using copies of existing desktop data.
+
+Agreed scope: four slices, in dependency order.
+1. Storage ownership (implemented below).
+2. The service: `dream-host service install|start|stop|restart|status|uninstall`
+   with Windows (Task Scheduler at logon), macOS (LaunchAgent) and Linux
+   (`systemd --user`, linger documented for boot) adapters, PATH preserved.
+3. Desktop modes: desktop-owned or service-owned, with the desktop attaching
+   to a service host (an edge proxy for its SSH hosts and the browser relay).
+4. Staged, verified, recoverable runtime updates.
+
+Slice 1, storage ownership (implemented):
+- `electron/workspace-database.js`: the desktop's workspace (`config`,
+  `saved_prompts`, `workspace_projects`) lives in `<name>.workspace.db`
+  beside the host's state database (`dream.workspace.db`, or
+  `dev.workspace.db` under the development `DREAM_DB_PATH`). The same schema
+  and migrations apply to both; each uses only its own tables. The
+  workspace tables left in the state database are frozen, neither read nor
+  written.
+- The one-time move runs synchronously at desktop startup, before either
+  writer opens a file:
+  1. `VACUUM INTO` from a read-only connection makes
+     `backups/<name>-before-workspace-split-<time>.db` (consistent, WAL
+     included), migrated to the current schema and kept as one file.
+  2. The three tables are copied from it into
+     `<name>.workspace.db.partial`, with a
+     `workspaceDatabase.migratedFrom` marker.
+  3. The partial file is renamed into place.
+  The state database is never written. An interruption leaves only the
+  partial file, discarded and redone at the next start. If the move fails,
+  the desktop logs it and keeps the previous arrangement (one shared queue
+  on one file), so nothing is lost and it is tried again next time.
+- Writers: the desktop's save queue now writes only the workspace (changes,
+  config values, theme, install ID); the local host has its own writer for
+  its catalog. `catalog.list` waits for the host writer's queue (a new
+  `settled()` barrier), so a reloaded window's catalog read still sees
+  every catalog write queued before it.
+- `electron/host/state-lock.js`: one host per state database.
+  `createHost` takes `<state db>.host-lock` (exclusive create; pid, kind,
+  start time) and releases it on close. A live holder makes a second host
+  throw `StateLockedError`, naming the holder; a dead holder's lock is taken
+  over. The desktop names itself `desktop`.
+
+Validation, slice 1 (2026-10-21): `pnpm typecheck`, `pnpm lint`, `pnpm test`
+(173 files, 1199 passed, 4 skipped) and `pnpm check:scratch` pass. One full
+run failed `host-proxy-routes.test.js` with the "bad port" fetch error last
+seen in CONN-01; it passed three runs in isolation and the next full run. No
+new tests were added.
+
+Scratch checks on read-only `VACUUM INTO` snapshots of this machine's real
+`dev.db` (40 MB) and `dream.db` (320 MB):
+- An interrupted move's partial file was discarded and the move completed
+  (0.3 s and 1.7 s).
+- The state database was byte-identical afterwards.
+- A single-file backup existed and kept the catalog (27 and 296 chats).
+- Every workspace row moved: `config` 36 and 34 (plus the marker),
+  `saved_prompts` 1 and 1, `workspace_projects` 36 and 62.
+- The workspace loaded identically from its new file, which holds no
+  catalog rows.
+- A second start changed nothing.
+- A second holder of the lock was refused; a dead holder's lock was taken
+  over.
+
+The desktop's arrangement on the migrated `dev.db` copy:
+- the host listed the real catalog (32 projects, 27 chats) and the workspace
+  loaded 36 rows;
+- a catalog list issued right after an unawaited write saw it;
+- both writers committed concurrently;
+- a second host started in another process was refused with
+  `StateLockedError`, and allowed once the first closed.
+
+Not yet inspected: the desktop app itself performing the move on its real
+data at its next start (the running dev session predates this).
+
+Known consequence: an SSH host's daemons of different protocol versions
+share one data directory, so a newer one now waits for the older to stop
+rather than writing beside it. No protocol change exists yet; slice 4's
+update path must stop the older daemon first.
 
 Remaining/deferred: sleeping hardware is unreachable; wake-on-LAN is not included.
 
@@ -984,6 +1063,7 @@ contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
-pending); CONN-06 through CONN-11 proposed, next is CONN-06. Preserve the
-user's no-new-tests and no-dev-server constraints; commits and pushes require
-explicit confirmation.
+pending). CONN-06 in progress: slice 1 (storage ownership) implemented; next
+is slice 2, the service installer. CONN-07 through CONN-11 proposed. Preserve
+the user's no-new-tests and no-dev-server constraints; commits and pushes
+require explicit confirmation.

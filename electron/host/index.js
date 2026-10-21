@@ -28,6 +28,7 @@ import { loadHostIdentity } from "./identity.js";
 import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
 import { createRemoteAccess } from "./remote-access/remote-access.js";
 import { createTailscale } from "./remote-access/tailscale.js";
+import { acquireStateLock } from "./state-lock.js";
 
 /**
  * @param {{
@@ -39,6 +40,7 @@ import { createTailscale } from "./remote-access/tailscale.js";
  *   resolveRemoteHost?: (hostId: string) => { baseUrl: string, token: string } | null,
  *   clientDirectory?: string | null,
  *   tailscale?: ReturnType<typeof createTailscale>,
+ *   kind?: string,
  * }} options
  *   `dataDirectory`: where the host keeps its files.
  *   `diagnosticsEnabled`: whether terminal flow-control diagnostics are served.
@@ -57,6 +59,11 @@ import { createTailscale } from "./remote-access/tailscale.js";
  *   renderer build); its remote listener serves it.
  *   `tailscale`: the Tailscale adapter remote access uses (the real CLI by
  *   default).
+ *   `kind`: what runs this host (`desktop`, `daemon`), named in its state
+ *   lock so a second host can say who has the data.
+ *
+ * Throws StateLockedError (state-lock.js) when another process already runs
+ * a host on the same state database.
  */
 export function createHost({
   dataDirectory,
@@ -67,8 +74,13 @@ export function createHost({
   resolveRemoteHost,
   clientDirectory = null,
   tailscale = createTailscale(),
+  kind = "host",
 }) {
   configureHostDataDirectory(dataDirectory);
+  // One host per state database: its catalog has one writer.
+  const releaseStateLock = acquireStateLock(resolveStateDatabasePath(), {
+    kind,
+  });
   // Before anything else: a host that cannot say who it is serves nobody.
   const identity = loadHostIdentity(dataDirectory);
 
@@ -314,6 +326,7 @@ export function createHost({
       // is refused rather than starting new reader threads.
       await readPool?.close();
       await ownWriter?.flushAndClose();
+      releaseStateLock();
     },
   };
 }

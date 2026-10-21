@@ -197,6 +197,17 @@ its workspace is in IndexedDB; it pairs on the pairing screen
 and no webview browser. Below 640px wide it uses the **compact layout**: one
 chat, and the project's panels as full sheets (`use-compact-layout.ts`).
 
+## Workspace database
+
+The desktop's own SQLite file (`<name>.workspace.db`,
+`electron/workspace-database.js`): its config and settings, saved prompts
+and workspace rows. It sits beside the host's state database, which holds
+the catalog. Each file has one writer: the desktop's save queue for the
+workspace, the host's for the catalog. One host runs per state database,
+held by its **state lock** (`<state db>.host-lock`,
+`electron/host/state-lock.js`). An existing workspace moved out of the
+state database once, from a backed-up copy, leaving the original untouched.
+
 ## Remote access
 
 Whether a host serves paired devices, and how (`electron/host/remote-access/`).
