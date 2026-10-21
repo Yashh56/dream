@@ -4,14 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { createMcpServer, type McpServerInput } from "@/lib/mcp-servers";
 import type { McpServerConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
@@ -120,19 +113,10 @@ export const McpServersSection = () => {
       ) : (
         <div className="overflow-hidden rounded-md border bg-white dark:bg-surface-950">
           <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent dark:hover:bg-transparent">
-                <TableHead className="w-24">
-                  {settingsT("mcpEnabled")}
-                </TableHead>
-                <TableHead>{settingsT("mcpName")}</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
             <TableBody>
               {servers.map((server) => (
                 <TableRow key={server.id}>
-                  <TableCell>
+                  <TableCell className="w-24">
                     <Switch
                       aria-label={settingsT("mcpEnabled")}
                       checked={server.enabled}

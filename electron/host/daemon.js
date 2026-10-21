@@ -32,6 +32,7 @@ import {
 import { createDaemonEnvironment } from "./daemon-environment.js";
 import { createIdleMonitor, DEFAULT_IDLE_TIMEOUT_MS } from "./idle-monitor.js";
 import { HOST_PROTOCOL_VERSION } from "./protocol.js";
+import { REMOTE_COMMANDS, runRemoteCommand } from "./remote-cli.js";
 import {
   acquireStartLock,
   ensurePrivateDirectory,
@@ -219,7 +220,14 @@ async function serve({ home, runDirectory, values, log }) {
 
   const version = readAppVersion();
   const { createHost } = await import("./index.js");
-  const host = createHost({ dataDirectory, trackActivity: true, version });
+  const host = createHost({
+    clientDirectory: path.resolve(
+      values["client-dir"] ?? DEFAULT_CLIENT_DIRECTORY,
+    ),
+    dataDirectory,
+    trackActivity: true,
+    version,
+  });
   const token = createApiSessionToken();
   const port = await host.listen({
     apiToken: token,
@@ -240,13 +248,21 @@ async function serve({ home, runDirectory, values, log }) {
       port: remotePort,
       publicOrigins: values["remote-origin"] ?? [],
       trustForwardedHost: Boolean(values["trust-forwarded-host"]),
-      clientDirectory: path.resolve(
-        values["client-dir"] ?? DEFAULT_CLIENT_DIRECTORY,
-      ),
     });
     log(
       `Serving paired devices on 127.0.0.1:${remote.port} for ${remote.origins.join(", ")}.`,
     );
+  } else {
+    // Remote access as saved (`dream-host remote on`), if it is on.
+    const access = await host.startRemoteAccess();
+    if (access.enabled) {
+      log(
+        access.ready
+          ? `Remote access ready at ${access.origin}.`
+          : `Remote access is on but not ready: ${access.problem?.message ?? "starting"}`,
+      );
+      remote = access.listening ? { port: access.port } : null;
+    }
   }
 
   const { fingerprint, hostId } = host.getHostDescriptor();
@@ -336,6 +352,20 @@ async function version({ write }) {
 
 const COMMANDS = { ensure, serve, status, stop, version };
 
+/** A remote-access command, against the running daemon (remote-cli.js). */
+const remoteCommand =
+  (name) =>
+  async ({ args, runDirectory, values, write, stdout }) =>
+    runRemoteCommand({
+      args,
+      name,
+      print: (line) => stdout.write(`${line}\n`),
+      record: await probeDaemon(runDirectory),
+      values,
+      write,
+    });
+for (const name of REMOTE_COMMANDS) COMMANDS[name] = remoteCommand(name);
+
 /**
  * Runs one command. Resolves with the exit code (`serve` never resolves).
  * @param {string[]} argv
@@ -358,6 +388,12 @@ export async function runDaemonCli(
         "remote-port": { type: "string" },
         "trust-forwarded-host": { type: "boolean" },
         "client-dir": { type: "string" },
+        "https-port": { type: "string" },
+        json: { type: "boolean" },
+        name: { type: "string" },
+        origin: { type: "string" },
+        scopes: { type: "string" },
+        tailscale: { type: "boolean" },
       },
     });
   } catch (error) {
@@ -365,11 +401,11 @@ export async function runDaemonCli(
     return 2;
   }
 
-  const [name] = parsed.positionals;
+  const [name, ...args] = parsed.positionals;
   const command = COMMANDS[name];
   if (!command) {
     stderr.write(
-      "Usage: dream-host <ensure|serve|status|stop|version> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host] [--client-dir dir]\n",
+      "Usage: dream-host <ensure|serve|status|stop|version|remote|pair|claims|confirm|deny|devices|revoke> [--home dir] [--data-dir dir] [--idle-timeout seconds] [--port n] [--remote-port n] [--remote-origin url]... [--trust-forwarded-host] [--client-dir dir]\n",
     );
     return 2;
   }
@@ -380,8 +416,10 @@ export async function runDaemonCli(
 
   try {
     return await command({
+      args,
       env,
       home,
+      stdout,
       log: (line) => stdout.write(`[dream-host] ${line}\n`),
       runDirectory,
       values: parsed.values,

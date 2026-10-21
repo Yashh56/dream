@@ -11,6 +11,7 @@ import {
   RotateCw,
   Server,
   Settings,
+  Smartphone,
   Sun,
   Trash2,
 } from "lucide-react";
@@ -89,6 +90,7 @@ import {
   SettingsSwitchRow,
 } from "./settings";
 import { KeyboardShortcutsSection } from "./settings/keyboard-shortcuts-section";
+import { RemoteAccessSection } from "./settings/remote-access-section";
 import { SkillsSettingsSection } from "./skills/skills-settings-section";
 import { SshHostsSettingsSection } from "./ssh/ssh-hosts-settings-section";
 import { WORKSPACE_VIEWPORT_BACKGROUND } from "./workspace";
@@ -663,6 +665,24 @@ export const SettingsWorkspace = () => {
                 <span className="flex items-center gap-2">
                   <Server className="size-4" />
                   {sshHostsT("settingsTitle")}
+                </span>
+              </button>
+            ) : null}
+            {/* This computer's remote access: the desktop's to give. */}
+            {platform.kind === "desktop" ? (
+              <button
+                className={cn(
+                  "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
+                  settingsSection === "remoteAccess"
+                    ? "font-semibold text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setSettingsSection("remoteAccess")}
+                type="button"
+              >
+                <span className="flex items-center gap-2">
+                  <Smartphone className="size-4" />
+                  {remoteT("accessTitle")}
                 </span>
               </button>
             ) : null}
@@ -1541,6 +1561,10 @@ export const SettingsWorkspace = () => {
 
               {settingsSection === "sshHosts" && platform.kind === "desktop" ? (
                 <SshHostsSettingsSection />
+              ) : null}
+              {settingsSection === "remoteAccess" &&
+              platform.kind === "desktop" ? (
+                <RemoteAccessSection />
               ) : null}
 
               {settingsSection === "chats" ? (

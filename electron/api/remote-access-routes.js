@@ -112,9 +112,16 @@ export { clearSessionCookie };
  *   routes). `pairingUrls`: where a pairing link may be opened, for the
  *   fragment a new pairing has (the remote listener's public origins).
  */
+export const remoteAccessEnableSchema = z.object({
+  httpsPort: z.number().int().min(1).max(65_535).optional(),
+  mode: z.enum(["tailscale", "origin"]).optional(),
+  origin: z.string().max(500).optional(),
+  port: z.number().int().min(1).max(65_535).optional(),
+});
+
 export function registerRemoteAccessRoutes(
   app,
-  { auth, describeHost, remote, pairingUrls = () => [] },
+  { auth, describeHost, remote, pairingUrls = () => [], remoteAccess = null },
 ) {
   const principalOf = (c) => c.get("principal") ?? LOCAL_PRINCIPAL;
 
@@ -237,5 +244,30 @@ export function registerRemoteAccessRoutes(
         session: await auth.revoke(principalOf(c), sessionId),
       })),
     ),
+  );
+
+  // Whether and how paired devices reach this host (host/remote-access/):
+  // this machine's own business, so only on the local listener, for its
+  // local operator. A paired device never turns its own access on or off.
+  if (remote || !remoteAccess) return;
+  app.post("/api/remote/access", (c) =>
+    handleJsonRoute(c, emptyRequestSchema, () => remoteAccess.status(), {
+      missingBody: {},
+    }),
+  );
+  app.post("/api/remote/access/enable", (c) =>
+    handleJsonRoute(c, remoteAccessEnableSchema, (options) =>
+      remoteAccess.enable(options),
+    ),
+  );
+  app.post("/api/remote/access/disable", (c) =>
+    handleJsonRoute(c, emptyRequestSchema, () => remoteAccess.disable(), {
+      missingBody: {},
+    }),
+  );
+  app.post("/api/remote/access/check", (c) =>
+    handleJsonRoute(c, emptyRequestSchema, () => remoteAccess.refresh(), {
+      missingBody: {},
+    }),
   );
 }

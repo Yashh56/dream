@@ -26,6 +26,8 @@ import { createHostCatalog } from "./catalog.js";
 import { configureHostDataDirectory } from "./host-paths.js";
 import { loadHostIdentity } from "./identity.js";
 import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
+import { createRemoteAccess } from "./remote-access/remote-access.js";
+import { createTailscale } from "./remote-access/tailscale.js";
 
 /**
  * @param {{
@@ -35,6 +37,8 @@ import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
  *   version?: string | null,
  *   getStateWriter?: () => object,
  *   resolveRemoteHost?: (hostId: string) => { baseUrl: string, token: string } | null,
+ *   clientDirectory?: string | null,
+ *   tailscale?: ReturnType<typeof createTailscale>,
  * }} options
  *   `dataDirectory`: where the host keeps its files.
  *   `diagnosticsEnabled`: whether terminal flow-control diagnostics are served.
@@ -49,6 +53,10 @@ import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
  *   pool, which opens the file once the writer is `ready`.
  *   `resolveRemoteHost`: other hosts this one forwards requests to (the
  *   local host, for SSH-host projects); none on a daemon.
+ *   `clientDirectory`: the browser client paired devices load (the
+ *   renderer build); its remote listener serves it.
+ *   `tailscale`: the Tailscale adapter remote access uses (the real CLI by
+ *   default).
  */
 export function createHost({
   dataDirectory,
@@ -57,6 +65,8 @@ export function createHost({
   version = null,
   getStateWriter,
   resolveRemoteHost,
+  clientDirectory = null,
+  tailscale = createTailscale(),
 }) {
   configureHostDataDirectory(dataDirectory);
   // Before anything else: a host that cannot say who it is serves nobody.
@@ -150,9 +160,33 @@ export function createHost({
   let server = null;
   let remoteServer = null;
   /** What both listeners serve, besides their own guards. */
+  // Whether and how paired devices reach this host; the listener it starts
+  // is this host's remote listener (below).
+  const remoteAccess = createRemoteAccess({
+    close: async () => {
+      const closing = remoteServer;
+      remoteServer = null;
+      await closing?.close();
+    },
+    dataDirectory,
+    hostId: () => identity.hostId,
+    listen: async (options) => {
+      if (!server) throw new Error("Start the host's local listener first.");
+      if (remoteServer) await remoteServer.close();
+      remoteServer = null;
+      remoteServer = await startRemoteApiServer(services(), {
+        clientDirectory,
+        ...options,
+      });
+      return { origins: remoteServer.origins, port: remoteServer.port };
+    },
+    tailscale,
+  });
+
   const services = () => ({
     activity,
     auth,
+    remoteAccess,
     catalog,
     delegation,
     getHostDescriptor,
@@ -183,6 +217,8 @@ export function createHost({
      * being answered.
      */
     isBusy: () =>
+      // Remote access on: paired devices may arrive at any time.
+      remoteAccess.status().enabled ||
       hostSocket.getClientCount() > 0 ||
       processSessions.hasActiveSessions() ||
       turns.runningChatIds().length > 0 ||
@@ -233,9 +269,21 @@ export function createHost({
     async listenRemote(options) {
       if (!server) throw new Error("Start the host's local listener first.");
       if (remoteServer) throw new Error("The remote listener is running.");
-      remoteServer = await startRemoteApiServer(services(), options);
+      remoteServer = await startRemoteApiServer(services(), {
+        clientDirectory,
+        ...options,
+      });
       return { origins: remoteServer.origins, port: remoteServer.port };
     },
+
+    /**
+     * Remote access as configured (host/remote-access/): call after
+     * `listen`, once. Starts the remote listener when access is on.
+     */
+    startRemoteAccess: () => remoteAccess.start(),
+
+    /** Remote access: status, enable, disable, refresh. */
+    remoteAccess,
 
     /** Stops serving paired devices; local work carries on. */
     async closeRemote() {
@@ -255,6 +303,7 @@ export function createHost({
         setBrowserToolRelay(null);
       }
       await processSessions.stopAllProcesses();
+      await remoteAccess.close();
       const closingRemote = remoteServer;
       remoteServer = null;
       await closingRemote?.close();

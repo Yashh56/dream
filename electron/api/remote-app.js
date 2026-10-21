@@ -102,16 +102,24 @@ export const closableOnRevoke = (response, principal, auth) => {
  *   `auth` (host/auth/host-auth.js) required.
  * @param {{
  *   origins: () => string[],
+ *   advertisedOrigins?: () => string[],
  *   trustForwardedHost: boolean,
  *   clientAssets?: ((c: import("hono").Context) => Response | Promise<Response>) | null,
  * }} options
  *   `origins`: where clients load from (each `scheme://host[:port]`).
+ *   `advertisedOrigins`: the ones pairing links name (never loopback when
+ *   there is a public one); `origins` when absent.
  *   `clientAssets`: serves the browser client for every request no route
  *   answered (client-assets.js); without it those are 404s.
  */
 export function createRemoteApiApp(
   deps,
-  { origins, trustForwardedHost, clientAssets = null },
+  {
+    origins,
+    advertisedOrigins = origins,
+    trustForwardedHost,
+    clientAssets = null,
+  },
 ) {
   const { auth, activity } = deps;
   if (!auth) throw new Error("The remote listener needs the host's auth.");
@@ -188,7 +196,7 @@ export function createRemoteApiApp(
 
   registerHostRoutes(app, deps, {
     pairingUrls: (fragment) =>
-      origins().map((origin) => `${origin}/pair#${fragment}`),
+      advertisedOrigins().map((origin) => `${origin}/pair#${fragment}`),
     remote: true,
   });
   assertRoutePolicy(app, { middlewarePaths: ["/*", "/api/*"] });
@@ -229,18 +237,25 @@ export async function startRemoteApiServer(
     if (!origin) throw new Error(`Not an origin: ${value}`);
     return origin;
   });
-  let origins = configured;
+  // Accepted: the public origins and the listener's own loopback address
+  // (what a reverse proxy on this machine may name as the Host). Advertised
+  // in pairing links: the public origins only, so another device is never
+  // sent to 127.0.0.1; loopback only when there is no public origin at all
+  // (trying the listener on this machine).
+  let accepted = configured;
+  let advertised = configured;
   const app = createRemoteApiApp(deps, {
+    advertisedOrigins: () => advertised,
     clientAssets: await createClientAssets(clientDirectory),
-    origins: () => origins,
+    origins: () => accepted,
     trustForwardedHost,
   });
   const server = await serveApp(app, { hostname, port });
-  if (origins.length === 0) {
-    origins = [
-      `http://127.0.0.1:${server.port}`,
-      `http://localhost:${server.port}`,
-    ];
-  }
-  return { ...server, origins };
+  const loopback = [
+    `http://127.0.0.1:${server.port}`,
+    `http://localhost:${server.port}`,
+  ];
+  accepted = [...configured, ...loopback];
+  advertised = configured.length > 0 ? configured : loopback;
+  return { ...server, origins: advertised };
 }

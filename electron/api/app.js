@@ -79,6 +79,7 @@ export function registerHostRoutes(
     getHostInfo,
     hostSocket,
     terminals,
+    remoteAccess,
   },
   { remote, pairingUrls },
 ) {
@@ -114,6 +115,7 @@ export function registerHostRoutes(
       describeHost: getHostDescriptor,
       pairingUrls,
       remote,
+      remoteAccess: remoteAccess ?? null,
     });
   }
   registerHostSocketRoutes(app, { ...hostSocket, auth, upgradeWebSocket });
@@ -128,7 +130,7 @@ export function registerHostRoutes(
  */
 export function serveApp(app, { hostname, port, onListening }) {
   const webSocketServer = new WebSocketServer({ noServer: true });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = serve(
       {
         fetch: app.fetch,
@@ -137,6 +139,7 @@ export function serveApp(app, { hostname, port, onListening }) {
         websocket: { server: webSocketServer },
       },
       (info) => {
+        server.off("error", failToListen);
         onListening?.(info.port);
         resolve({
           port: info.port,
@@ -150,6 +153,13 @@ export function serveApp(app, { hostname, port, onListening }) {
         });
       },
     );
+    // A port already in use (or not allowed) fails this listener, not the
+    // process: the caller reports it.
+    const failToListen = (error) => {
+      webSocketServer.close();
+      reject(error);
+    };
+    server.once("error", failToListen);
   });
 }
 

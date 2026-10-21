@@ -112,6 +112,12 @@ import type {
   providerUsageLimitsRequestSchema,
 } from "../../electron/api/providers/schemas.js";
 import type {
+  remoteAccessEnableSchema,
+  remoteClaimAnswerRequestSchema,
+  remotePairingCreateRequestSchema,
+  remoteSessionRevokeRequestSchema,
+} from "../../electron/api/remote-access-routes.js";
+import type {
   createSkillRequestSchema,
   readSkillRequestSchema,
   setSkillEnabledRequestSchema,
@@ -127,6 +133,56 @@ import { hostFetch } from "./connections/host-endpoint";
 import { resolveRequestHost } from "./host-routing";
 
 // ── Responses the renderer declares ─────────────────────────────────────
+
+/** Whether and how paired devices reach a host (host/remote-access/). */
+export interface RemoteAccessStatus {
+  enabled: boolean;
+  mode: "tailscale" | "origin";
+  /** The listener's loopback port. */
+  port: number | null;
+  httpsPort: number;
+  listening: boolean;
+  /** The public origin, only once a request through it reached this host. */
+  origin: string | null;
+  ready: boolean;
+  /** The reverse proxy's address the user entered (mode "origin"). */
+  requestedOrigin: string | null;
+  problem: { code: string; message: string; url: string | null } | null;
+  checkedAt: string | null;
+}
+
+/** A pairing just minted: a link secret and a short code, once each. */
+export interface RemotePairing {
+  pairingId: string;
+  code: string;
+  fragment: string;
+  expiresAt: string;
+  scopes: string[];
+  urls: string[];
+}
+
+/** A device asking to pair with a code, waiting for confirmation. */
+export interface RemoteClaim {
+  claimId: string;
+  deviceName: string;
+  clientKind: "web" | "native";
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** A paired device's session (never its secret). */
+export interface RemoteDeviceSession {
+  id: string;
+  deviceName: string;
+  clientKind: "web" | "native";
+  scopes: string[];
+  grantedBy: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
 
 export type ProjectDirectoryEntryKind = "directory" | "file" | "symlink";
 
@@ -624,6 +680,40 @@ export const API_ROUTES = {
     Input<typeof hostDirectoriesRequestSchema>,
     HostDirectoriesResponse
   >("/api/host-directories"),
+
+  // Remote access and paired devices (this machine's operator only)
+  remoteAccess: post<Record<string, never>, RemoteAccessStatus>(
+    "/api/remote/access",
+  ),
+  remoteAccessEnable: post<
+    Input<typeof remoteAccessEnableSchema>,
+    RemoteAccessStatus
+  >("/api/remote/access/enable"),
+  remoteAccessDisable: post<Record<string, never>, RemoteAccessStatus>(
+    "/api/remote/access/disable",
+  ),
+  remoteAccessCheck: post<Record<string, never>, RemoteAccessStatus>(
+    "/api/remote/access/check",
+  ),
+  remotePairingCreate: post<
+    Input<typeof remotePairingCreateRequestSchema>,
+    RemotePairing
+  >("/api/remote/pairings"),
+  remoteClaims: post<Record<string, never>, { claims: RemoteClaim[] }>(
+    "/api/remote/claims",
+  ),
+  remoteClaimAnswer: post<
+    Input<typeof remoteClaimAnswerRequestSchema>,
+    { approved: boolean; session?: RemoteDeviceSession }
+  >("/api/remote/claims/answer"),
+  remoteSessions: post<
+    Record<string, never>,
+    { sessions: RemoteDeviceSession[] }
+  >("/api/remote/sessions"),
+  remoteSessionRevoke: post<
+    Input<typeof remoteSessionRevokeRequestSchema>,
+    { session: RemoteDeviceSession }
+  >("/api/remote/sessions/revoke"),
 
   // The host socket (live traffic: terminals, catalog events)
   hostSocketTicket: post<

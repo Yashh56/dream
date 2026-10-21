@@ -28,6 +28,7 @@ export type SettingsSection =
   | "prompts"
   | "skills"
   | "sshHosts"
+  | "remoteAccess"
   | "chats";
 export type { RightPanelView };
 /** The Git panel's tab until the project picks another: its changes. */

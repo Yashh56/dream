@@ -16,6 +16,7 @@ test("every client route is registered on the API server", async () => {
     { registerProjectGitRoutes },
     { registerProviderRoutes },
     { registerHostSocketRoutes },
+    { registerRemoteAccessRoutes },
     { registerSkillsRoutes },
     { registerTerminalRoutes },
     { registerToolApprovalRoutes },
@@ -30,6 +31,7 @@ test("every client route is registered on the API server", async () => {
     import("../../electron/api/project-git-routes.js"),
     import("../../electron/api/provider-routes.js"),
     import("../../electron/api/host-socket-routes.js"),
+    import("../../electron/api/remote-access-routes.js"),
     import("../../electron/api/skills-routes.js"),
     import("../../electron/api/terminal-routes.js"),
     import("../../electron/api/tool-approvals.js"),
@@ -54,6 +56,13 @@ test("every client route is registered on the API server", async () => {
     sessions: {} as never,
   });
   registerCatalogRoutes(app, {} as never);
+  // The local listener's remote-access routes (the desktop's settings).
+  registerRemoteAccessRoutes(app, {
+    auth: {} as never,
+    describeHost: () => ({}),
+    remote: false,
+    remoteAccess: {} as never,
+  });
   registerChatRoutes(app, { scheduler: {} as never });
   registerHostSocketRoutes(app, {
     socket: {} as never,

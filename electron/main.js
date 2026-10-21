@@ -136,6 +136,8 @@ app.setPath("sessionData", APP_SESSION_DATA_PATH);
 // The local host: projects on this machine are served by the same host
 // module an SSH host runs as a daemon. It keeps its files in userData.
 const host = createHost({
+  // The browser client paired devices load: this app's renderer build.
+  clientDirectory: path.join(__dirname, "..", "dist"),
   dataDirectory: APP_USER_DATA_PATH,
   diagnosticsEnabled: !app.isPackaged,
   // The host's catalog writes share the workspace's save queue: one writer
@@ -628,6 +630,11 @@ app.whenReady().then(async () => {
 
   rendererServerManager = await createStartupRendererServerManager();
   await rendererServerManager.start();
+  // Remote access as the user left it (Settings > Remote access). Never
+  // holds the window up: its setup can wait on Tailscale.
+  void host
+    .startRemoteAccess()
+    .catch((error) => console.warn("Remote access did not start:", error));
   if (devInspectionEnabled) {
     await publishDevSession(projectRoot, {
       kind: "electron",

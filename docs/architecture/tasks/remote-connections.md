@@ -6,7 +6,7 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-04 implemented; CONN-05 through CONN-11 proposed. Task numbers
+Status: CONN-01 to CONN-05 implemented; CONN-06 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -611,7 +611,8 @@ code, code confirmation, device list) and CLI commands are CONN-05.
 
 ## CONN-05: Tailscale and direct access setup
 
-Status: proposed
+Status: implemented (real tailnet walkthrough and desktop UI inspection
+pending; see Validation)
 
 Problem and trigger: the host listens on loopback and exposes no shareable
 client URL or pairing flow.
@@ -641,6 +642,114 @@ Completion criteria:
 
 Validation: pending; record a phone-to-desktop and phone-to-daemon walkthrough,
 including revocation and reconnect. Inspect proxy configuration and stream behavior.
+
+Agreed scope (as implemented):
+
+- `electron/host/remote-access/` is host-owned, so the desktop's local host
+  and a daemon behave the same.
+  - `tailscale.js` uses only `tailscale status --json`,
+    `tailscale serve status --json`,
+    `tailscale serve --bg --yes --https=<port> http://127.0.0.1:<port>` and
+    `tailscale serve --https=<port> off`; never `serve reset`. It finds the
+    CLI on PATH or where the installer puts it (Windows, macOS).
+  - It refuses a port that serves anything other than Dream's loopback
+    listener, and removes only an entry that proxies to that listener.
+  - Its problems are distinct: `not-installed`, `not-running`,
+    `needs-login` (including machine approval), `https-disabled` (empty
+    `CertDomains`, or Serve's own message, with its link), `port-taken`,
+    `permission` (Linux operator), `failed`.
+  - `remote-access.js` keeps `<data>/remote-access.json` (0600): enabled,
+    mode `tailscale` or `origin` (the user's HTTPS reverse proxy), a stable
+    loopback port picked once, the Tailscale HTTPS port, the proxy's origin,
+    and the Serve entry Dream created (`servedBy`).
+  - It starts the listener and configures the front. A public origin is
+    reported ready only after a request to `<origin>/api/remote/descriptor`
+    returned this host's id; otherwise the problem is `unreachable`. A busy
+    loopback port is `port-in-use`; a missing or non-HTTPS proxy address is
+    `needs-origin`.
+  - Turning access off closes the listener and removes only Dream's Serve
+    entry; local work and paired sessions are untouched. Switching to a
+    manual proxy removes Dream's Serve entry too.
+  - A daemon with access on is busy (it does not idle out).
+- The remote listener accepts its public origins and its own loopback
+  address, but advertises only the public ones in pairing links; loopback
+  appears only when there is no public origin. `serveApp` rejects on a listen
+  error instead of crashing the process on `EADDRINUSE`.
+- Local-listener routes: `POST /api/remote/access`, `/access/enable`,
+  `/access/disable`, `/access/check`. They are never registered on the
+  remote listener, so a paired device cannot change access.
+- Desktop: `main.js` gives the local host its client directory (`dist/`)
+  and applies remote access after startup without blocking the window.
+  Settings > Remote access (desktop only, `remote-access-section.tsx`):
+  - an on/off switch, the mode, the HTTPS port or the proxy address, Apply
+    and Check again;
+  - the current problem with its setup link;
+  - Pair a device: choose access level, then a QR code drawn with `uqr`'s
+    `encode`, the link (only a verified public one) with copy, and the code;
+  - requests waiting to pair (Confirm, Deny) and paired devices (Revoke,
+    confirmed in a dialog).
+- CLI (`electron/host/remote-cli.js`, through the running daemon's local API
+  and its private run record):
+  - `dream-host remote [status|on|off|check] [--tailscale] [--origin url]
+    [--https-port n] [--port n]`;
+  - `pair [--scopes] [--name]`, which prints a terminal QR code and the link
+    only when ready, plus the code;
+  - `claims`, `confirm`, `deny`, `devices`, `revoke`, and `--json`;
+  - exit 3 when no daemon is running.
+  The daemon applies saved settings at start; `--remote-port` still
+  overrides them for testing.
+- The `remote` namespace gained the section's strings in all 11 locales.
+  Added dependency: `uqr` (QR encoding, no dependencies of its own).
+
+Validation (2026-10-21): `pnpm typecheck`, `pnpm lint`, `pnpm test` (173
+files, 1199 passed, 4 skipped; the contract test now registers the
+remote-access routes) and `pnpm check:scratch` pass. No new tests were added.
+
+Scratch checks, the real adapter over a scripted CLI with in-memory Serve
+state:
+- Every problem code from realistic CLI output.
+- The exact serve command; enabling twice changes nothing; a second HTTPS
+  port gets its own origin; `off` removes only Dream's entry; `reset` never
+  runs.
+
+The real manager on a real host, with a stand-in for Serve's proxy (public
+host in `X-Forwarded-Host`, loopback target):
+- not installed, signed out, HTTPS off and port taken: each distinct, none
+  ready, the other service intact;
+- ready on 8443 after the descriptor check, with Serve forwarding to the
+  saved loopback port, the client page and API answering through it, and
+  settings saved with `servedBy`;
+- loopback port in use, then recovery to the saved port;
+- an unreachable proxy origin never ready; an http origin refused; switching
+  to the proxy mode removed Dream's Serve entry;
+- off: listener unreachable, only Dream's entry removed, local API still
+  answering, idle allowed again;
+- restart: applied again on the same port and ready.
+
+Two bugs found and fixed: `registerHostRoutes` referenced an undefined
+`deps` (host startup would throw), and a busy port crashed the process.
+
+The CLI against a real daemon: status, on (Tailscale and unreachable proxy,
+exit 1 with the reason and link), pair without a verified address (no link,
+code given), claims, devices, bad scopes (exit 2), off, `--json`, no daemon
+(exit 3).
+
+Live, read-only, on this machine: Tailscale 1.104.2 is signed in to a
+tailnet with HTTPS certificates off. `status --json` had `CertDomains: null`
+and `serve status --json` printed `{}`, matching the adapter, which reported
+`https-disabled` with the admin link. No Serve configuration was changed.
+
+Not yet inspected:
+- Settings > Remote access in the desktop app. The running dev session's
+  main process predates these changes; restart `pnpm dev`.
+- A real phone over the tailnet (including cellular), real Tailscale HTTPS,
+  and streaming and WebSockets through Serve. These need HTTPS certificates
+  enabled for the tailnet, which is the owner's decision.
+- Linux operator permissions.
+
+Deferred: the optional LAN listener. Without HTTPS a browser cannot keep the
+`__Host-` session cookie, so it serves no phone browser yet; it belongs with
+native clients (CONN-09) or LAN discovery (CONN-07).
 
 Remaining/deferred: automatic LAN discovery and route preference are CONN-07;
 public managed tunnels are CONN-08.
@@ -874,7 +983,7 @@ authorization while the application remains desktop-compatible, then use those
 contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
-CONN-04 implemented (desktop walkthrough, real phones and real HTTPS pending);
-CONN-05 through CONN-11 proposed, next is CONN-05. Preserve the user's
-no-new-tests and no-dev-server constraints; commits and pushes require
+CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
+pending); CONN-06 through CONN-11 proposed, next is CONN-06. Preserve the
+user's no-new-tests and no-dev-server constraints; commits and pushes require
 explicit confirmation.

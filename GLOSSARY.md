@@ -197,6 +197,16 @@ its workspace is in IndexedDB; it pairs on the pairing screen
 and no webview browser. Below 640px wide it uses the **compact layout**: one
 chat, and the project's panels as full sheets (`use-compact-layout.ts`).
 
+## Remote access
+
+Whether a host serves paired devices, and how (`electron/host/remote-access/`).
+It is the host's setting, in its data directory: on or off; through
+**Tailscale Serve** (HTTPS on the tailnet) or the user's own HTTPS reverse
+proxy; and a stable loopback port for the remote listener. An address is
+**ready** only once a request through it reached this host. Dream changes
+only the Serve entry it created (`servedBy`). Configured in Settings > Remote
+access on the desktop, or with `dream-host remote` on a headless machine.
+
 ## Device session
 
 A paired device's credential on one host (`electron/host/auth/`). A
