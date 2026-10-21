@@ -116,6 +116,9 @@ const GitFooterActionsImpl = ({
   const hasChanges = getStatusFileCount(status) > 0;
   const canPush = hasPushableCommits(status);
   const gitBusy = gitWrite !== null;
+  // Something is ready to commit or push: the trigger is tinted like the
+  // sidebar's accented buttons.
+  const highlightTrigger = !gitBusy && (hasChanges || canPush);
   const syncing = gitWrite === "fetch" || gitWrite === "pull" ? gitWrite : null;
   const canCreatePr =
     Boolean(status?.remoteName) &&
@@ -295,14 +298,10 @@ const GitFooterActionsImpl = ({
           render={
             <Button
               aria-label={gitT("gitActions")}
-              className={
-                !gitBusy && (hasChanges || canPush)
-                  ? "text-primary hover:text-primary"
-                  : "text-muted-foreground"
-              }
+              className={highlightTrigger ? undefined : "text-muted-foreground"}
               size="icon-sm"
               title={gitT("gitActions")}
-              variant="ghost"
+              variant={highlightTrigger ? "accent-subtle" : "ghost"}
             />
           }
         >
