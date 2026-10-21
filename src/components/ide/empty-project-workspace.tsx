@@ -42,8 +42,8 @@ import { useIdeStore } from "./ide-store";
 import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
 import { OpenOnHostDialog } from "./ssh/open-on-host-dialog";
 
-const RECENT_PROJECT_LIMIT = 20;
-const RECENT_PROJECT_VISIBLE_COUNT = 6;
+const RECENT_PROJECT_LIMIT = 50;
+const RECENT_PROJECT_VISIBLE_COUNT = 10;
 const RECENT_PROJECT_ROW_HEIGHT_PX = 48;
 const RECENT_PROJECT_ROW_GAP_PX = 4;
 
