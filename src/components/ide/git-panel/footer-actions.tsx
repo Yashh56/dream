@@ -41,46 +41,27 @@ import { useShowGitPanel } from "./show-git-panel";
 
 type WorktreeProject = ProjectConfig & { worktree: ProjectWorktreeInfo };
 
-/** How far the branch is from its upstream, when it is anywhere but level. */
-const UpstreamSync = ({
-  aheadCount,
-  behindCount,
+/** A commit count on the right of a git menu item, e.g. "↑ 2". */
+const MenuCommitCount = ({
+  count,
+  direction,
 }: {
-  aheadCount: number;
-  behindCount: number;
+  count: number;
+  direction: "ahead" | "behind";
 }) => {
-  const worktreeT = useTranslations("worktrees");
-  if (aheadCount === 0 && behindCount === 0) {
-    return null;
-  }
-
+  if (count === 0) return null;
+  const Arrow = direction === "ahead" ? ArrowUp : ArrowDown;
   return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1.5 font-mono text-muted-foreground text-xs tabular-nums"
-      title={worktreeT("commitsAheadBehind", {
-        ahead: aheadCount,
-        behind: behindCount,
-      })}
-    >
-      {aheadCount > 0 ? (
-        <span className="inline-flex items-center gap-0.5">
-          <ArrowUp className="size-3" />
-          {aheadCount}
-        </span>
-      ) : null}
-      {behindCount > 0 ? (
-        <span className="inline-flex items-center gap-0.5">
-          <ArrowDown className="size-3" />
-          {behindCount}
-        </span>
-      ) : null}
+    <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-muted-foreground text-xs tabular-nums group-focus/dropdown-menu-item:text-accent-foreground">
+      <Arrow className="size-3" />
+      {count}
     </span>
   );
 };
 
 /**
- * The chat footer's git controls: how far the branch is from its upstream
- * and a git menu (commit, push, sync, pull requests, finish a worktree).
+ * The chat footer's git menu (commit, push, sync, pull requests, finish a
+ * worktree), with pending line and commit counts beside its items.
  */
 const GitFooterActionsImpl = ({
   active,
@@ -236,12 +217,10 @@ const GitFooterActionsImpl = ({
       >
         <UploadCloud className="size-4" />
         {status.upstreamBranch ? gitT("push") : gitT("publishBranch")}
-        {status.upstreamBranch && status.aheadCount > 0 ? (
-          <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 font-mono text-muted-foreground text-xs tabular-nums group-focus/dropdown-menu-item:text-accent-foreground">
-            <ArrowUp className="size-3" />
-            {status.aheadCount}
-          </span>
-        ) : null}
+        <MenuCommitCount
+          count={status.upstreamBranch ? status.aheadCount : 0}
+          direction="ahead"
+        />
       </DropdownMenuItem>
       <DropdownMenuItem
         disabled={!status.remoteName || gitBusy}
@@ -264,6 +243,10 @@ const GitFooterActionsImpl = ({
           <ArrowDown className="size-4" />
         )}
         {gitT("pull")}
+        <MenuCommitCount
+          count={status.upstreamBranch ? status.behindCount : 0}
+          direction="behind"
+        />
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       {pullRequest ? (
@@ -324,11 +307,6 @@ const GitFooterActionsImpl = ({
 
   return (
     <>
-      <UpstreamSync
-        aheadCount={status.upstreamBranch ? status.aheadCount : 0}
-        behindCount={status.upstreamBranch ? status.behindCount : 0}
-      />
-
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
