@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { claudeCode, getSessionInfo } from "ai-sdk-provider-claude-code";
 import { beforeEach, test, vi } from "vitest";
+import { createTurnRecorder } from "../chat-routes.js";
+import { turnObservers } from "./agent-turn.js";
 import { streamClaudeResponse } from "./claude-stream.js";
+import { createTurnRegistry } from "./turn-registry.js";
 
 vi.mock("ai-sdk-provider-claude-code", () => ({
   claudeCode: vi.fn(),
@@ -85,6 +88,85 @@ const readChunks = async (response) => {
     .filter((line) => line.startsWith("data: ") && line !== "data: [DONE]")
     .map((line) => JSON.parse(line.slice(6)));
 };
+
+test("a provider network error releases the chat for another turn", async () => {
+  const model = claudeCode.getMockImplementation()();
+  let providerSignal;
+  let saved;
+  claudeCode.mockReturnValue({
+    ...model,
+    doStream: async (options) => {
+      providerSignal = options.abortSignal;
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "text-1" });
+            controller.enqueue({
+              type: "text-delta",
+              id: "text-1",
+              delta: "Partial answer",
+            });
+            controller.enqueue({
+              type: "error",
+              error: new Error("Network connection lost"),
+            });
+            // The provider reports the failure but never closes its stream.
+          },
+        }),
+      };
+    },
+  });
+  const turns = createTurnRegistry();
+  const recorder = createTurnRecorder({
+    catalog: {
+      saveTranscript: async (_chatId, messages) => {
+        saved = messages;
+        return true;
+      },
+    },
+    chatId: "network-error",
+    requestMessages: request.messages,
+  });
+  const response = await turns.start({
+    chatId: "network-error",
+    run: (abortSignal) =>
+      turnObservers.run(recorder, async () => {
+        const response = await streamClaudeResponse({
+          ...request,
+          abortSignal,
+        });
+        return new Response(
+          response.body.pipeThrough(
+            new TransformStream({
+              async flush() {
+                await recorder.done;
+              },
+            }),
+          ),
+        );
+      }),
+  });
+  const chunks = await readChunks(response);
+  assert.equal(
+    chunks.find((part) => part.type === "error").errorText,
+    "Network connection lost",
+  );
+  assert.equal(turns.isRunning("network-error"), false);
+  assert.equal(providerSignal.aborted, true);
+  assert.equal(
+    saved.at(-1).parts.find((part) => part.type === "text").text,
+    "Partial answer",
+  );
+  assert.ok(saved.at(-1).metadata.completedAt);
+  claudeCode.mockReturnValue(model);
+  await readChunks(
+    await turns.start({
+      chatId: "network-error",
+      run: (abortSignal) => streamClaudeResponse({ ...request, abortSignal }),
+    }),
+  );
+});
 
 test("streams v4 text, tool failures, session metadata and usage through the real AI SDK", async () => {
   const chunks = await readChunks(await streamClaudeResponse(request));

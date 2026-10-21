@@ -7,7 +7,10 @@ import {
   createAgentTurn,
   formatTurnUsage,
   streamAgentTurn,
+  turnObservers,
 } from "./agent-turn.js";
+import { TURN_STOP_GRACE_MS } from "./turn-output.js";
+import { createTurnRegistry } from "./turn-registry.js";
 
 const collect = (options = {}) => {
   const chunks = [];
@@ -429,6 +432,62 @@ test("usage formatting passes an AI SDK usage object through and drops junk", ()
 });
 
 // ── the stream ────────────────────────────────────────────────────────
+
+test("Stop releases a stalled provider and finalizes its partial transcript", async () => {
+  vi.useFakeTimers();
+  let release;
+  let finalMessage;
+  let ended = false;
+  const turns = createTurnRegistry();
+  try {
+    const response = await turns.start({
+      chatId: "stalled",
+      run: (abortSignal) =>
+        turnObservers.run(
+          {
+            onMessage: (message, { final }) => {
+              if (final) finalMessage = message;
+            },
+            onEnd: () => {
+              ended = true;
+            },
+          },
+          () =>
+            streamAgentTurn({
+              abortSignal,
+              provider: "cursor",
+              messages: [],
+              execute: async (turn) => {
+                turn.text("Partial answer");
+                await new Promise((resolve) => {
+                  release = resolve;
+                });
+              },
+            }),
+        ),
+    });
+    const reading = readChunks(response);
+    turns.stop("stalled");
+    await vi.advanceTimersByTimeAsync(TURN_STOP_GRACE_MS - 1);
+    assert.equal(turns.isRunning("stalled"), true);
+    await vi.advanceTimersByTimeAsync(1);
+    await reading;
+    assert.equal(turns.isRunning("stalled"), false);
+    assert.equal(ended, true);
+    assert.equal(finalMessage.parts[0].text, "Partial answer");
+    const next = await turns.start({
+      chatId: "stalled",
+      run: () => new Response("next turn"),
+    });
+    assert.equal(await next.text(), "next turn");
+    release();
+    await vi.runAllTimersAsync();
+    assert.equal(vi.getTimerCount(), 0);
+  } finally {
+    release?.();
+    vi.useRealTimers();
+  }
+});
 
 test("streamAgentTurn starts before request metadata, closes parts, and formats errors", async () => {
   const response = streamAgentTurn({

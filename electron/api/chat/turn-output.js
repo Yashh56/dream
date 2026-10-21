@@ -13,6 +13,35 @@
 // carries anything else (provider metadata) passes through as it is.
 
 export const TURN_DELTA_FLUSH_MS = 50;
+export const TURN_STOP_GRACE_MS = 1000;
+
+/** Let providers finish their abort cleanup, but do not let a stuck provider
+ * keep the transcript observer and host turn open after an explicit Stop. */
+export const createTurnStopBoundary = (signal) => {
+  let timer;
+  const cleanup = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
+  };
+  let stop;
+  return new TransformStream({
+    start(controller) {
+      stop = () => {
+        timer = setTimeout(() => {
+          cleanup();
+          controller.terminate();
+        }, TURN_STOP_GRACE_MS);
+      };
+      if (signal?.aborted) stop();
+      else signal?.addEventListener("abort", stop, { once: true });
+    },
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+    },
+    flush: cleanup,
+    cancel: cleanup,
+  });
+};
 
 /** For each delta chunk type: the field naming its part, and its text. */
 const DELTA_FIELDS = {

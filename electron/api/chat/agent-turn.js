@@ -36,7 +36,7 @@ import { formatApprovalId } from "../../shared/agent-turn-contract.js";
 import { getToolKindForName, isToolKind } from "../../shared/tool-call.js";
 import { waitForToolApproval } from "../tool-approvals.js";
 import { formatStreamError } from "./errors.js";
-import { createDeltaJoiner } from "./turn-output.js";
+import { createDeltaJoiner, createTurnStopBoundary } from "./turn-output.js";
 
 export const DEFAULT_MAX_TEXT_CHARS = 250_000;
 
@@ -577,7 +577,9 @@ export const streamAgentTurn = ({ execute, messages, ...turnOptions }) => {
   });
   // Every provider's output passes the same stage (turn-output.js), so no
   // adapter chooses how often the client hears from it.
-  const stream = written.pipeThrough(createDeltaJoiner());
+  const stream = written
+    .pipeThrough(createDeltaJoiner())
+    .pipeThrough(createTurnStopBoundary(turnOptions.abortSignal));
 
   const observer = turnObservers.getStore();
   if (!observer) {
