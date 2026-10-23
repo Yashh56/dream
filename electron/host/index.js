@@ -4,6 +4,7 @@
 // enforces it), so the same module runs in-process as the local host inside
 // Electron's main process and as a standalone daemon on an SSH host
 // (daemon.js).
+import path from "node:path";
 import { startApiServer } from "../api/app.js";
 import {
   getBrowserToolRelay,
@@ -82,8 +83,9 @@ export function createHost({
   onShutdownRequest,
 }) {
   configureHostDataDirectory(dataDirectory);
+  const databasePath = resolveStateDatabasePath();
   // One host per state database: its catalog has one writer.
-  const releaseStateLock = acquireStateLock(resolveStateDatabasePath(), {
+  const releaseStateLock = acquireStateLock(databasePath, {
     kind,
   });
   // Before anything else: a host that cannot say who it is serves nobody.
@@ -94,13 +96,13 @@ export function createHost({
     getStateWriter ??
     (() =>
       (ownWriter ??= createStateSaveQueue({
-        databasePath: resolveStateDatabasePath(),
+        databasePath,
       })));
 
   let readPool = null;
   const getReader = () =>
     (readPool ??= createStateReadPool({
-      databasePath: resolveStateDatabasePath(),
+      databasePath,
       whenReady: () => getWriter().ready(),
     }));
 
@@ -186,6 +188,12 @@ export function createHost({
       await closing?.close();
     },
     dataDirectory,
+    // Keep existing default-host settings; custom databases (such as dev.db)
+    // save their own ports and Serve ownership instead of sharing that file.
+    settingsFile:
+      path.basename(databasePath) === "dream.db"
+        ? path.join(path.dirname(databasePath), "remote-access.json")
+        : `${databasePath}.remote-access.json`,
     hostId: () => identity.hostId,
     listen: async (options) => {
       if (!server) throw new Error("Start the host's local listener first.");

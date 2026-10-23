@@ -116,7 +116,7 @@ export const remoteAccessEnableSchema = z.object({
   httpsPort: z.number().int().min(1).max(65_535).optional(),
   mode: z.enum(["tailscale", "origin"]).optional(),
   origin: z.string().max(500).optional(),
-  port: z.number().int().min(1).max(65_535).optional(),
+  port: z.number().int().min(1).max(65_535).nullable().optional(),
 });
 
 export function registerRemoteAccessRoutes(

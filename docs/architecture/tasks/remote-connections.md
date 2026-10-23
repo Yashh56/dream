@@ -706,6 +706,24 @@ Validation (2026-10-21): `pnpm typecheck`, `pnpm lint`, `pnpm test` (173
 files, 1199 passed, 4 skipped; the contract test now registers the
 remote-access routes) and `pnpm check:scratch` pass. No new tests were added.
 
+Follow-up (2026-10-23): users can set Local port beside HTTPS port in Settings,
+with Apply persisting both. Clearing Local port selects and saves an available
+port. Values outside 1–65535 are rejected. Environment port overrides were
+removed in favor of the form. Remote-access settings follow the state database:
+`dream.db` retains `remote-access.json` beside it; other databases use
+`<database>.remote-access.json` and start with access off. Separate development
+and installed databases therefore retain independent ports and Serve ownership
+without another app data directory.
+
+Validation: typecheck and targeted Biome checks pass. A temporary diagnostic
+reproduced a port conflict, recovered with distinct saved ports, reopened the
+manager with those ports, selected an automatic port, and verified that disabling
+development access preserved the installed host's settings and Serve entry.
+The actual form was inspected through an isolated browser fixture in both
+themes; invalid values disable Apply and successful changes show the selected
+ports. The temporary fixture was removed. No tests were written and no app or
+development server was started. Live Tailscale reconfiguration remains untested.
+
 Scratch checks, the real adapter over a scripted CLI with in-memory Serve
 state:
 - Every problem code from realistic CLI output.

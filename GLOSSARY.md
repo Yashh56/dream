@@ -221,7 +221,7 @@ Uninstalling keeps the host's data and identity.
 ## Remote access
 
 Whether a host serves paired devices, and how (`electron/host/remote-access/`).
-It is the host's setting, in its data directory: on or off; through
+It is the host's setting, saved beside its state database: on or off; through
 **Tailscale Serve** (HTTPS on the tailnet) or the user's own HTTPS reverse
 proxy; and a stable loopback port for the remote listener. An address is
 **ready** only once a request through it reached this host. Dream changes
