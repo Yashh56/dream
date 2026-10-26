@@ -233,6 +233,13 @@ proxy; and a stable loopback port for the remote listener. An address is
 only the Serve entry it created (`servedBy`). Configured in Settings > Remote
 access on the desktop, or with `dream-host remote` on a headless machine.
 
+## Remote access state
+
+**Remote access state** is the operator's current view of Remote access,
+pairing claims and Device sessions. A successful change supersedes older
+reads; a failed refresh preserves the last accepted state. Form drafts are
+the operator's edits and do not follow background refreshes.
+
 ## Device session
 
 A paired device's credential on one host (`electron/host/auth/`). A

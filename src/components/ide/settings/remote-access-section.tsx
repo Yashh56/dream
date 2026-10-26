@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { encode } from "uqr";
 import {
   AlertDialog,
@@ -50,19 +50,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Switch } from "@/components/ui/switch";
-import {
-  apiClient,
-  getApiErrorMessage,
-  type RemoteAccessStatus,
-  type RemoteClaim,
-  type RemoteDeviceSession,
-  type RemotePairing,
-} from "@/lib/api-client";
+import { getApiErrorMessage, type RemoteDeviceSession } from "@/lib/api-client";
 import { getDesktopApi } from "@/lib/electron";
 import { useIdeStore } from "../ide-store";
+import { createRemoteAccessState } from "./remote-access-state";
 import { SettingsGroup } from "./settings-shared";
-
-const POLL_MS = 3_000;
 
 type ScopeChoice = "view" | "operate" | "manage";
 const SCOPES_FOR: Record<ScopeChoice, string[]> = {
@@ -106,122 +98,59 @@ const copyText = async (text: string) => {
 export const RemoteAccessSection = () => {
   const t = useTranslations("remote");
   const openExternalUrl = useIdeStore((state) => state.openExternalUrl);
-  const [status, setStatus] = useState<RemoteAccessStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"tailscale" | "origin">("tailscale");
-  const [origin, setOrigin] = useState("");
-  const [httpsPort, setHttpsPort] = useState("443");
-  const [claims, setClaims] = useState<RemoteClaim[]>([]);
-  const [devices, setDevices] = useState<RemoteDeviceSession[]>([]);
+  const remote = useMemo(() => createRemoteAccessState(), []);
+  const {
+    status,
+    initialStatus,
+    busy,
+    error: failure,
+    claims,
+    devices,
+    pairing,
+    pairingUrl,
+  } = useSyncExternalStore(
+    remote.subscribe,
+    remote.getSnapshot,
+    remote.getSnapshot,
+  );
+  useEffect(() => {
+    remote.start();
+    return remote.stop;
+  }, [remote]);
+  const error = failure
+    ? getApiErrorMessage(
+        failure.cause,
+        t(
+          failure.kind === "load"
+            ? "loadFailed"
+            : failure.kind === "pair"
+              ? "pairFailed"
+              : "changeFailed",
+        ),
+      )
+    : null;
+  const [modeDraft, setMode] = useState<"tailscale" | "origin" | null>(null);
+  const [originDraft, setOrigin] = useState<string | null>(null);
+  const [portDraft, setHttpsPort] = useState<string | null>(null);
+  const mode = modeDraft ?? initialStatus?.mode ?? "tailscale";
+  const origin = originDraft ?? initialStatus?.requestedOrigin ?? "";
+  const httpsPort = portDraft ?? String(initialStatus?.httpsPort ?? 443);
   const [pairOpen, setPairOpen] = useState(false);
+  const changePairOpen = (open: boolean) => {
+    setPairOpen(open);
+    if (!open) remote.clearPairing();
+  };
   const [scope, setScope] = useState<ScopeChoice>("operate");
-  const [pairing, setPairing] = useState<RemotePairing | null>(null);
   const [copied, setCopied] = useState(false);
   const [pendingRevoke, setPendingRevoke] =
     useState<RemoteDeviceSession | null>(null);
-
-  // The form starts from what the host has saved.
-  const adopt = useCallback((next: RemoteAccessStatus) => {
-    setStatus(next);
-    setMode(next.mode);
-    if (next.requestedOrigin) setOrigin(next.requestedOrigin);
-    setHttpsPort(String(next.httpsPort));
-  }, []);
-
-  const loadLists = useCallback(async () => {
-    const [claimList, sessionList] = await Promise.all([
-      apiClient.remoteClaims({}),
-      apiClient.remoteSessions({}),
-    ]);
-    setClaims(claimList.claims);
-    setDevices(sessionList.sessions.filter((session) => !session.revokedAt));
-  }, []);
-
-  useEffect(() => {
-    let stopped = false;
-    void apiClient
-      .remoteAccess({})
-      .then((next) => {
-        if (!stopped) adopt(next);
-      })
-      .catch((failure: unknown) =>
-        setError(getApiErrorMessage(failure, t("loadFailed"))),
-      );
-    const poll = () => {
-      void apiClient
-        .remoteAccess({})
-        .then((next) => {
-          if (!stopped) setStatus(next);
-        })
-        .catch(() => undefined);
-      void loadLists().catch(() => undefined);
-    };
-    poll();
-    const timer = window.setInterval(poll, POLL_MS);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
-  }, [adopt, loadLists, t]);
-
-  const run = async (work: () => Promise<RemoteAccessStatus>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      setStatus(await work());
-    } catch (failure) {
-      setError(getApiErrorMessage(failure, t("changeFailed")));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const enable = () =>
-    run(() =>
-      apiClient.remoteAccessEnable(
-        mode === "origin"
-          ? { mode, origin: origin.trim() }
-          : { httpsPort: Number(httpsPort) || 443, mode },
-      ),
+    remote.enable(
+      mode === "origin"
+        ? { mode, origin: origin.trim() }
+        : { httpsPort: Number(httpsPort) || 443, mode },
     );
-
-  const createPairing = async () => {
-    setError(null);
-    try {
-      setPairing(
-        await apiClient.remotePairingCreate({ scopes: SCOPES_FOR[scope] }),
-      );
-    } catch (failure) {
-      setError(getApiErrorMessage(failure, t("pairFailed")));
-    }
-  };
-
-  const answer = async (claim: RemoteClaim, approve: boolean) => {
-    try {
-      await apiClient.remoteClaimAnswer({ approve, claimId: claim.claimId });
-    } catch (failure) {
-      setError(getApiErrorMessage(failure, t("changeFailed")));
-    }
-    await loadLists().catch(() => undefined);
-  };
-
-  const revoke = async (device: RemoteDeviceSession) => {
-    try {
-      await apiClient.remoteSessionRevoke({ sessionId: device.id });
-    } catch (failure) {
-      setError(getApiErrorMessage(failure, t("changeFailed")));
-    }
-    await loadLists().catch(() => undefined);
-  };
-
   const enabled = status?.enabled ?? false;
-  // Only a verified public address is offered to a device.
-  const pairingUrl =
-    pairing && status?.origin
-      ? (pairing.urls.find((url) => url.startsWith(status.origin ?? "")) ??
-        null)
-      : null;
   const scopeLabel = (scopes: string[]) =>
     scopes.includes("manage")
       ? t("scopeManage")
@@ -273,9 +202,7 @@ export const RemoteAccessSection = () => {
             checked={enabled}
             disabled={busy || status === null}
             onCheckedChange={(checked) =>
-              void (checked
-                ? enable()
-                : run(() => apiClient.remoteAccessDisable({})))
+              void (checked ? enable() : remote.disable())
             }
           />
         </div>
@@ -346,7 +273,7 @@ export const RemoteAccessSection = () => {
             {enabled ? (
               <Button
                 disabled={busy}
-                onClick={() => void run(() => apiClient.remoteAccessCheck({}))}
+                onClick={() => void remote.check()}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -386,9 +313,9 @@ export const RemoteAccessSection = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h4 className="font-medium text-sm">{t("devicesTitle")}</h4>
         <Button
-          disabled={!status?.ready}
+          disabled={busy || !status?.ready}
           onClick={() => {
-            setPairing(null);
+            remote.clearPairing();
             setPairOpen(true);
           }}
           size="sm"
@@ -417,7 +344,8 @@ export const RemoteAccessSection = () => {
                 </div>
               </div>
               <Button
-                onClick={() => void answer(claim, false)}
+                disabled={busy}
+                onClick={() => void remote.answer(claim.claimId, false)}
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -426,7 +354,8 @@ export const RemoteAccessSection = () => {
                 {t("deny")}
               </Button>
               <Button
-                onClick={() => void answer(claim, true)}
+                disabled={busy}
+                onClick={() => void remote.answer(claim.claimId, true)}
                 size="sm"
                 type="button"
               >
@@ -460,6 +389,7 @@ export const RemoteAccessSection = () => {
               </div>
               <Button
                 aria-label={t("revokeTitle", { device: device.deviceName })}
+                disabled={busy}
                 onClick={() => setPendingRevoke(device)}
                 size="icon-sm"
                 title={t("revoke")}
@@ -473,7 +403,7 @@ export const RemoteAccessSection = () => {
         </SettingsGroup>
       )}
 
-      <Dialog onOpenChange={setPairOpen} open={pairOpen}>
+      <Dialog onOpenChange={changePairOpen} open={pairOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("pairDevice")}</DialogTitle>
@@ -546,19 +476,23 @@ export const RemoteAccessSection = () => {
           )}
           <DialogFooter>
             {pairing ? (
-              <Button onClick={() => setPairOpen(false)} type="button">
+              <Button onClick={() => changePairOpen(false)} type="button">
                 {t("done")}
               </Button>
             ) : (
               <>
                 <Button
-                  onClick={() => setPairOpen(false)}
+                  onClick={() => changePairOpen(false)}
                   type="button"
                   variant="ghost"
                 >
                   {t("cancel")}
                 </Button>
-                <Button onClick={() => void createPairing()} type="button">
+                <Button
+                  disabled={busy}
+                  onClick={() => void remote.createPairing(SCOPES_FOR[scope])}
+                  type="button"
+                >
                   {t("createPairing")}
                 </Button>
               </>
@@ -585,8 +519,9 @@ export const RemoteAccessSection = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
+              disabled={busy}
               onClick={() => {
-                if (pendingRevoke) void revoke(pendingRevoke);
+                if (pendingRevoke) void remote.revoke(pendingRevoke.id);
                 setPendingRevoke(null);
               }}
               variant="destructive"
