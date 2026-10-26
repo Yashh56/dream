@@ -103,7 +103,8 @@ Validation (2026-10-17):
   their assertions on what is sent are unchanged in substance.
 - A search finds no git write route called outside the module.
 - Every remaining `bumpProjectGitRefreshKey` is one of:
-  - a read (the Git panel shown or refreshed);
+  - a read (the Git panel shown or refreshed; since 2026-10-25 also
+    returning to the window, for the project in front: `window-return.ts`);
   - a file save;
   - an agent turn;
   - a host reconnect;

@@ -29,6 +29,7 @@ import {
   publishTerminalOutput,
 } from "./terminal-scrollback";
 import { useBrowserAgentCommands } from "./use-browser-agent-commands";
+import { watchWindowReturn } from "./window-return";
 
 const SettingsWorkspace = lazy(() =>
   import("./settings-workspace").then((module) => ({
@@ -329,6 +330,20 @@ export const IdeShell = () => {
     }
     void getDesktopApi()?.checkForUpdates();
   }, [settingsOpen]);
+
+  // Commits and branch switches made outside the app (another terminal or
+  // editor) are noticed when the person comes back to this window: the
+  // project in front reads git again. Only that one: reading every open
+  // project's status on each return would cost a git call apiece.
+  useEffect(
+    () =>
+      watchWindowReturn(() => {
+        const { activeProjectId, bumpProjectGitRefreshKey } =
+          useIdeStore.getState();
+        if (activeProjectId) bumpProjectGitRefreshKey(activeProjectId);
+      }),
+    [],
+  );
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
