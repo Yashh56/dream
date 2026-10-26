@@ -21,7 +21,8 @@
  */
 import { type ApiClient, apiClient } from "./api-client";
 import { hostWebSocketUrl } from "./connections/host-endpoint";
-import { connectionSupervisor } from "./connections/runtime";
+import type { ConnectionRecovery } from "./connections/recovery";
+import { connectionRecovery } from "./connections/runtime";
 import { LOCAL_HOST_ID } from "./host-routing";
 
 export const HOST_SOCKET_PATH = "/api/host-socket";
@@ -30,8 +31,6 @@ const OUTBOX_LIMIT = 10_000;
 const MIN_RETRY_MS = 250;
 const MAX_RETRY_MS = 5_000;
 const SOCKET_OPEN = 1;
-/** Hidden this long, a socket is replaced on foregrounding, not trusted. */
-export const STALE_AFTER_HIDDEN_MS = 15_000;
 /** How long a message sent `replay: false` may wait for the socket. */
 export const REPLAY_WINDOW_MS = 5_000;
 
@@ -90,6 +89,7 @@ export interface HostSocketClient {
 export interface HostSocketClientOptions {
   /** The host this socket is to; the local host when absent. */
   hostId?: string;
+  recovery?: Pick<ConnectionRecovery, "canConnect" | "registerSocket">;
   api?: Pick<ApiClient, "hostSocketTicket">;
   /** Opens the socket for a ticket; the browser's WebSocket by default. */
   openSocket?: (ticket: string) => HostSocketTransport;
@@ -108,6 +108,7 @@ const openSocketTo =
 export const createHostSocketClient = ({
   hostId = LOCAL_HOST_ID,
   api = apiClient,
+  recovery = connectionRecovery,
   openSocket = openSocketTo(hostId),
   setTimer = (callback, ms) => setTimeout(callback, ms),
   clearTimer = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
@@ -122,25 +123,11 @@ export const createHostSocketClient = ({
   let retryDelay = MIN_RETRY_MS;
   let retryTimer: unknown = null;
   let disposed = false;
-
-  // A host that refused this client (revoked, another host) is not asked
-  // again until its connection state clears; then the socket comes back.
-  const refused = () => {
-    const { status } = connectionSupervisor.get(hostId);
-    return status === "unauthorized" || status === "incompatible";
-  };
-  const stopFollowing = connectionSupervisor.subscribe(
-    (changedHostId, state) => {
-      if (changedHostId !== hostId) return;
-      if (state.status === "ready" && retained > 0 && !socket) {
-        retryDelay = MIN_RETRY_MS;
-        connect();
-      }
-    },
-  );
+  let generation = 0;
+  const allowed = () => recovery.canConnect(hostId);
 
   const scheduleReconnect = () => {
-    if (disposed || retryTimer !== null || retained === 0 || refused()) return;
+    if (disposed || retryTimer !== null || retained === 0 || !allowed()) return;
     const delay = retryDelay;
     retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
     retryTimer = setTimer(() => {
@@ -162,18 +149,24 @@ export const createHostSocketClient = ({
     }
   };
 
-  const open = async () => {
+  const open = async (attempt: number) => {
     let next: HostSocketTransport;
     try {
       const { ticket } = await api.hostSocketTicket({}, { hostId });
+      if (attempt !== generation || disposed) return;
+      if (!allowed()) {
+        connecting = false;
+        return;
+      }
       next = openSocket(ticket);
     } catch {
+      if (attempt !== generation) return;
       connecting = false;
       scheduleReconnect();
       return;
     }
 
-    if (disposed) {
+    if (disposed || attempt !== generation || !allowed()) {
       next.close();
       connecting = false;
       return;
@@ -181,6 +174,10 @@ export const createHostSocketClient = ({
     socket = next;
     next.onopen = () => {
       if (socket !== next) return;
+      if (!allowed()) {
+        drop();
+        return;
+      }
       connecting = false;
       retryDelay = MIN_RETRY_MS;
       const cursors: Record<string, unknown> = {};
@@ -196,7 +193,7 @@ export const createHostSocketClient = ({
     // A replaced socket's late messages would overwrite what the new
     // one's resume brought: only the current socket is heard.
     next.onmessage = (event) => {
-      if (socket === next) receive(event.data);
+      if (socket === next && allowed()) receive(event.data);
     };
     next.onclose = () => {
       if (socket !== next) return;
@@ -210,16 +207,18 @@ export const createHostSocketClient = ({
   };
 
   const connect = () => {
-    if (disposed || socket || connecting) return;
+    if (disposed || socket || connecting || !allowed()) return;
     if (retryTimer !== null) {
       clearTimer(retryTimer);
       retryTimer = null;
     }
     connecting = true;
-    void open();
+    void open(++generation);
   };
 
   const drop = () => {
+    generation += 1;
+    connecting = false;
     const previous = socket;
     socket = null;
     // Its handlers ignore it from here on (socket !== previous).
@@ -229,6 +228,13 @@ export const createHostSocketClient = ({
       retryTimer = null;
     }
   };
+
+  const stopFollowing = recovery.registerSocket(hostId, {
+    connect: () => {
+      if (retained > 0) connect();
+    },
+    suspend: drop,
+  });
 
   return {
     register(channel) {
@@ -241,6 +247,7 @@ export const createHostSocketClient = ({
     },
 
     send(message, { replay = true } = {}) {
+      if (disposed || !allowed()) return;
       const text = JSON.stringify(message);
       if (socket && socket.readyState === SOCKET_OPEN) {
         socket.send(text);
@@ -268,7 +275,6 @@ export const createHostSocketClient = ({
     reconnect() {
       drop();
       retryDelay = MIN_RETRY_MS;
-      // An attempt already under way opens the replacement.
       if (retained > 0) connect();
     },
 
@@ -282,19 +288,6 @@ export const createHostSocketClient = ({
 };
 
 const hostSocketClients = new Map<string, HostSocketClient>();
-
-// Back in the foreground after a while, or back online: every socket is
-// replaced (it may be dead and still look open). After a short absence a
-// closed one reconnects now instead of waiting out its backoff.
-connectionSupervisor.onResume(({ hiddenMs, reason }) => {
-  for (const client of hostSocketClients.values()) {
-    if (reason === "online" || hiddenMs >= STALE_AFTER_HIDDEN_MS) {
-      client.reconnect();
-    } else {
-      client.connect();
-    }
-  }
-});
 
 /**
  * Closes and forgets the socket to `hostId` (its connection was removed);

@@ -7,9 +7,12 @@
  */
 import { LOCAL_HOST_ID } from "../host-routing";
 import { getClientPlatform } from "./platform";
+import { createConnectionRecovery } from "./recovery";
 import { createConnectionSupervisor, createPageLifecycle } from "./supervisor";
 
 export const connectionSupervisor = createConnectionSupervisor();
+export const connectionRecovery =
+  createConnectionRecovery(connectionSupervisor);
 
 let started = false;
 
@@ -30,10 +33,9 @@ export const startConnectionRuntime = ({
     connectionSupervisor.set(LOCAL_HOST_ID, "ready");
   } else {
     connectionSupervisor.judgeByRequests(LOCAL_HOST_ID);
-    void probeHome().catch(() => undefined);
-    connectionSupervisor.onResume(() => {
-      void probeHome().catch(() => undefined);
-    });
   }
-  connectionSupervisor.follow(createPageLifecycle());
+  connectionRecovery.start({
+    lifecycle: createPageLifecycle(),
+    probeHome: platform.kind === "web" ? probeHome : undefined,
+  });
 };

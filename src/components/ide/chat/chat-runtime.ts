@@ -585,8 +585,9 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
  * the host's turn runs on) and resumed from the host; one whose turn is
  * running but not followed is resumed.
  */
-export const reattachChatStreams = () => {
+export const reattachChatStreams = (hostId: string) => {
   for (const session of sessions.values()) {
+    if (resolveRequestHost({ chatId: session.chatId }) !== hostId) continue;
     if (isChatProcessing(session.chat) || resuming.has(session.chatId)) {
       pendingResumes.add(session.chatId);
       void session.chat.stop();

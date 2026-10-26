@@ -188,6 +188,11 @@ supervisor** keeps each host's connection state (`connecting`, `ready`,
 catalog readiness, and turns lifecycle signals into resumes: sockets
 replaced, catalogs refetched, running turns followed again.
 
+**Connection recovery** coordinates those resumes per host. Refused hosts
+remain quiet until their credential or route changes. Replacing a connection
+invalidates pending work from the old connection; chat observation resumes
+after the fresh catalog is accepted. Recovery never resubmits a write.
+
 ## Browser client
 
 Dream's renderer in a plain browser, served by a paired host's remote

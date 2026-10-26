@@ -3,6 +3,8 @@
  * opens, the timers it schedules and the ticket route are all in reach.
  */
 import { vi } from "vitest";
+import { createConnectionRecovery } from "./connections/recovery";
+import { createConnectionSupervisor } from "./connections/supervisor";
 import {
   createHostSocketClient,
   type HostSocketTransport,
@@ -36,10 +38,13 @@ export class FakeTransport implements HostSocketTransport {
 }
 
 export const createFakeHostSocket = () => {
+  const supervisor = createConnectionSupervisor();
+  const recovery = createConnectionRecovery(supervisor);
   const transports: FakeTransport[] = [];
   const timers: Array<() => void> = [];
   const api = { hostSocketTicket: vi.fn(async () => ({ ticket: "t" })) };
   const socket = createHostSocketClient({
+    recovery,
     api,
     clearTimer: () => {},
     openSocket: () => {
@@ -54,5 +59,5 @@ export const createFakeHostSocket = () => {
   });
   /** Lets the ticket request resolve and the transport be created. */
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-  return { api, flush, socket, timers, transports };
+  return { api, flush, socket, timers, transports, supervisor, recovery };
 };
