@@ -104,7 +104,10 @@ Validation (2026-10-17):
 - A search finds no git write route called outside the module.
 - Every remaining `bumpProjectGitRefreshKey` is one of:
   - a read (the Git panel shown or refreshed; since 2026-10-25 also
-    returning to the window, for the project in front: `window-return.ts`);
+    another Git tab shown, returning to the window for the project in
+    front (`window-return.ts`), and a command entered in the project's
+    terminal once its output goes quiet (`terminal-command-refresh.ts`).
+    The Log tab no longer has a refresh button);
   - a file save;
   - an agent turn;
   - a host reconnect;

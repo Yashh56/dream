@@ -13,10 +13,12 @@ import { cn } from "@/lib/utils";
 import { echoPipeFallbackInput } from "./ide-helpers";
 import { useIdeStore } from "./ide-store";
 import { TERMINAL_MIN_HEIGHT_PX } from "./ide-types";
+import { flushProjectPanelRefresh } from "./project-panel-refresh";
 import { RightPanelExpandButton } from "./right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 import { isAppShortcutForTerminal } from "./shortcuts/shortcuts";
 import { StandardTabs } from "./standard-tabs";
+import { createTerminalCommandRefresh } from "./terminal-command-refresh";
 import {
   getTerminalScrollback,
   subscribeToTerminalOutput,
@@ -433,16 +435,24 @@ export const TerminalPanel = ({
       void onStart?.();
     }
 
+    // A command run here (git or anything else) may change what the Git
+    // and Files panels show: they read again once its output goes quiet.
+    const commandRefresh = createTerminalCommandRefresh({
+      onSettled: () => flushProjectPanelRefresh(projectId),
+    });
+
     const removeTerminalData = subscribeToTerminalOutput(
       sessionId,
       (chunk, processed) => {
         terminal.write(stylePowerShellUpdateNotification(chunk), processed);
+        commandRefresh.output();
       },
     );
 
     const inputSubscription = terminal.onData((data) => {
       if (isUserTerminalInput(data)) {
         markTerminalSessionTouched(sessionId);
+        commandRefresh.input(data);
       }
 
       if (transportRef.current === "pipe") {
@@ -464,6 +474,7 @@ export const TerminalPanel = ({
         window.cancelAnimationFrame(resizeFrame);
       }
       removeTerminalData();
+      commandRefresh.dispose();
       inputSubscription.dispose();
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleFitAndSyncSize);

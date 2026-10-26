@@ -1,7 +1,5 @@
-import { RotateCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
@@ -80,12 +78,13 @@ export const GitPanel = ({
   }, [tab]);
 
   // Commits, pushes and branch switches made outside the app move nothing
-  // here, so showing the panel reads git again.
+  // here, so showing the panel, or another of its tabs, reads git again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Showing another tab reads git again.
   useEffect(() => {
     if (active) {
       bumpProjectGitRefreshKey(projectId);
     }
-  }, [active, bumpProjectGitRefreshKey, projectId]);
+  }, [active, bumpProjectGitRefreshKey, projectId, tab]);
 
   const handleTabChange = useCallback(
     (value: unknown) => {
@@ -95,10 +94,6 @@ export const GitPanel = ({
     },
     [projectId, setProjectGitPanelTab],
   );
-
-  const handleRefresh = useCallback(() => {
-    bumpProjectGitRefreshKey(projectId);
-  }, [bumpProjectGitRefreshKey, projectId]);
 
   const renderTab = (value: GitPanelTab) => {
     const tabActive = active && tab === value;
@@ -145,19 +140,6 @@ export const GitPanel = ({
           </TabsList>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <div className="contents" ref={setHeaderSlot} />
-            {/* Changes and the pull request refresh from their own menus. */}
-            {tab === "changes" || tab === "pull-request" ? null : (
-              <Button
-                aria-label={commonT("refresh")}
-                className="size-7 text-muted-foreground"
-                onClick={handleRefresh}
-                size="icon-sm"
-                title={commonT("refresh")}
-                variant="ghost"
-              >
-                <RotateCw className="size-4" />
-              </Button>
-            )}
             {onToggleExpanded ? (
               <RightPanelExpandButton
                 expanded={expanded}
