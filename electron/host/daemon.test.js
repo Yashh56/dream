@@ -50,7 +50,7 @@ test("ensure starts a daemon once, then reuses it until stopped", {
     { headers: { [API_SESSION_TOKEN_HEADER]: first.result.token } },
   );
   expect(await info.json()).toMatchObject({
-    capabilities: ["host-socket", "host-identity"],
+    capabilities: ["host-socket", "host-identity", "terminal-discovery"],
     hostProtocolVersion: 1,
     pid: first.result.pid,
   });

@@ -152,7 +152,14 @@ export function createTerminalStream({
     },
 
     /** A message a client sent on this channel. */
-    receive(incoming) {
+    receive(incoming, send) {
+      // A fresh desktop attached to a service has no terminal cursors yet.
+      if (incoming.type === "discover") {
+        for (const sessionId of running.keys()) {
+          replaySession(send, { sessionId, generation: null, sequence: 0 });
+        }
+        return;
+      }
       if (typeof incoming.sessionId !== "string") return;
       switch (incoming.type) {
         case "input":

@@ -1,5 +1,5 @@
 /**
- * Lends this window's browser to an SSH host's agents: the host's projects
+ * Lends this window's browser to SSH or service-hosted agents: the host's projects
  * this window has open are announced to it, and their browser tool calls
  * run here (src/lib/host-browser-relay.ts). Runs while the host is loaded.
  */
@@ -50,13 +50,19 @@ export const watchHostBrowser = (hostId: string) => {
     runTool: async (call) => {
       const args =
         typeof call.args.url === "string"
-          ? { ...call.args, url: await toLoadableUrl(hostId, call.args.url) }
+          ? {
+              ...call.args,
+              url: await toLoadableUrl(
+                hostId === LOCAL_HOST_ID ? undefined : hostId,
+                call.args.url,
+              ),
+            }
           : call.args;
       const result = await apiClient.callBrowserTool(
         { ...call, args },
         { hostId: LOCAL_HOST_ID },
       );
-      return asHostSees(hostId, result);
+      return hostId === LOCAL_HOST_ID ? result : asHostSees(hostId, result);
     },
     socket: getHostSocketClient(hostId),
   });

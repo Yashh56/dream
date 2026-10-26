@@ -77,7 +77,8 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
 - `tasks/remote-connections.md` tracks CONN-01 to CONN-05 (host identity,
   pairing and device sessions, the shared connection runtime, the browser
   client and phone layout, Tailscale and direct access setup; implemented),
-  CONN-06 unattended hosting (in progress: storage ownership and the service done) and
+  CONN-06 unattended hosting (in progress: storage ownership, service and
+  desktop attach implemented; native desktop walkthrough pending) and
   proposes CONN-07 through CONN-11: multiple routes, Dream Connect, native
   mobile, push notifications and a host-owned browser.
 

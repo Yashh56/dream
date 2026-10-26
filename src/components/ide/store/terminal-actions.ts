@@ -1,10 +1,14 @@
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { terminalClient } from "@/lib/terminal-client";
+import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
 import {
   createProjectTerminalSessionId,
   getBrowserTerminalSessionId,
+  PROJECT_TERMINAL_SESSION_PREFIX,
 } from "../ide-types";
 import {
   deleteTerminalScrollback,
+  hasTerminalScrollback,
   resetTerminalScrollback,
 } from "../terminal-scrollback";
 import {
@@ -33,7 +37,45 @@ export const createTerminalActions = (
   | "setActiveProjectTerminalId"
   | "reorderProjectTerminals"
   | "closeProjectTerminal"
+  | "restoreServiceTerminal"
 > => ({
+  restoreServiceTerminal: (sessionId) => {
+    const project = get().projects.find(
+      (project) =>
+        getProjectHostId(project) === LOCAL_HOST_ID &&
+        (sessionId.startsWith(
+          `${PROJECT_TERMINAL_SESSION_PREFIX}${project.id}:`,
+        ) ||
+          sessionId === getBrowserTerminalSessionId(project.id)),
+    );
+    if (!project) return;
+    if (!hasTerminalScrollback(sessionId)) resetTerminalScrollback(sessionId);
+    if (sessionId === getBrowserTerminalSessionId(project.id)) return;
+    set((state) => {
+      const ids = state.projectTerminalSessionIds[project.id] ?? [];
+      if (ids.includes(sessionId)) return {};
+      const ordinal = (state.nextTerminalOrdinalByProject[project.id] ?? 0) + 1;
+      return {
+        projectTerminalSessionIds: {
+          ...state.projectTerminalSessionIds,
+          [project.id]: [...ids, sessionId],
+        },
+        activeTerminalSessionIdByProject: {
+          ...state.activeTerminalSessionIdByProject,
+          [project.id]:
+            state.activeTerminalSessionIdByProject[project.id] ?? sessionId,
+        },
+        terminalSessionNames: {
+          ...state.terminalSessionNames,
+          [sessionId]: getDefaultTerminalSessionName(ordinal),
+        },
+        nextTerminalOrdinalByProject: {
+          ...state.nextTerminalOrdinalByProject,
+          [project.id]: ordinal,
+        },
+      };
+    });
+  },
   startRunner: async () => {
     const project = get().getActiveProject();
     if (!project) return;

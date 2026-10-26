@@ -34,11 +34,13 @@ import {
   isHttpUrl,
   registerDesktopHandlers,
 } from "./desktop-handlers.js";
+import { createServiceHostAttachment } from "./desktop-host.js";
 import { createDevLogger, publishDevSession } from "./dev-inspection.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import { getHelloUrl } from "./hello.js";
 import { configureHostDataDirectory } from "./host/host-paths.js";
 import { createHost } from "./host/index.js";
+import { getHostHome } from "./host/run-directory.js";
 import {
   closePersistedStateDatabase,
   installIdConfigValue,
@@ -98,6 +100,10 @@ const readDreamVersion = () => {
   }
 };
 const dreamVersion = readDreamVersion();
+const hostMode = process.env.DREAM_HOST_MODE?.trim() || "desktop";
+if (hostMode !== "desktop" && hostMode !== "service") {
+  throw new Error("DREAM_HOST_MODE must be desktop or service.");
+}
 
 // Diagnostic only: opt-in via env var to test whether software rendering is
 // caused by Chromium's GPU blocklist (do NOT enable in production builds —
@@ -156,44 +162,53 @@ try {
     );
   }
 } catch (error) {
+  if (hostMode === "service") throw error;
   // The workspace stays where it was, with the one shared writer it had:
   // nothing is lost, and the move is tried again at the next start.
   console.error("Could not move the workspace to its own database:", error);
 }
 
-// The local host: projects on this machine are served by the same host
-// module an SSH host runs as a daemon. It keeps its files in userData.
-const host = createHost({
-  // The browser client paired devices load: this app's renderer build.
-  clientDirectory: path.join(__dirname, "..", "dist"),
-  dataDirectory: APP_USER_DATA_PATH,
-  diagnosticsEnabled: !app.isPackaged,
-  kind: "desktop",
-  // Only while the workspace could not move out: then the host's catalog
-  // writes share the workspace's queue, one writer for the one file.
-  ...(workspaceSeparate
-    ? {}
-    : {
-        getStateWriter: () => ({
-          applyCatalogChanges: (changes) =>
-            getStateSaveQueue().applyCatalogChanges(changes),
-          mutateRunQueue: (operation) =>
-            getStateSaveQueue().mutateRunQueue(operation),
-          ready: () => getStateSaveQueue().ready(),
-          saveChatMessages: (payload) =>
-            getStateSaveQueue().saveChatMessages(payload),
-          saveProviderSession: (payload) =>
-            getStateSaveQueue().saveProviderSession(payload),
-          settled: () => getStateSaveQueue().settled(),
-          writeDeviceSession: (operation) =>
-            getStateSaveQueue().writeDeviceSession(operation),
-        }),
-      }),
-  version: dreamVersion,
-  // Requests for SSH-host projects go through the local API to the host's
-  // forwarded port (api/host-proxy-routes.js).
-  resolveRemoteHost: (hostId) => sshHosts.getEndpoint(hostId),
-});
+// The home host runs here by default, or in the installed service when
+// requested. Both use this desktop's identity and catalog in userData.
+const host =
+  hostMode === "service"
+    ? createServiceHostAttachment({
+        dataDirectory: APP_USER_DATA_PATH,
+        home: path.resolve(getHostHome()),
+        resolveRemoteHost: (hostId) => sshHosts.getEndpoint(hostId),
+        stateDatabasePath: STATE_DATABASE_PATH,
+      })
+    : createHost({
+        // The browser client paired devices load: this app's renderer build.
+        clientDirectory: path.join(__dirname, "..", "dist"),
+        dataDirectory: APP_USER_DATA_PATH,
+        diagnosticsEnabled: !app.isPackaged,
+        kind: "desktop",
+        // Only while the workspace could not move out: then the host's catalog
+        // writes share the workspace's queue, one writer for the one file.
+        ...(workspaceSeparate
+          ? {}
+          : {
+              getStateWriter: () => ({
+                applyCatalogChanges: (changes) =>
+                  getStateSaveQueue().applyCatalogChanges(changes),
+                mutateRunQueue: (operation) =>
+                  getStateSaveQueue().mutateRunQueue(operation),
+                ready: () => getStateSaveQueue().ready(),
+                saveChatMessages: (payload) =>
+                  getStateSaveQueue().saveChatMessages(payload),
+                saveProviderSession: (payload) =>
+                  getStateSaveQueue().saveProviderSession(payload),
+                settled: () => getStateSaveQueue().settled(),
+                writeDeviceSession: (operation) =>
+                  getStateSaveQueue().writeDeviceSession(operation),
+              }),
+            }),
+        version: dreamVersion,
+        // Requests for SSH-host projects go through the local API to the host's
+        // forwarded port (api/host-proxy-routes.js).
+        resolveRemoteHost: (hostId) => sshHosts.getEndpoint(hostId),
+      });
 
 let mainWindow = null;
 let updateManager = null;
@@ -285,8 +300,8 @@ function isDevToolsShortcut(input) {
   );
 }
 
-// Terminal and run processes stop before the page that owns them unloads
-// (renderer-unload-guard.js).
+// Stop desktop-owned terminals before unload. A service attachment owns
+// no processes, so its guard only reloads/detaches the page.
 const rendererUnloadGuard = createRendererUnloadGuard({
   processes: processSessionManager,
 });
@@ -612,6 +627,10 @@ ipcMain.on(DESKTOP_SYNC_CHANNELS.initialThemePreferences, (event) => {
   event.returnValue = themes.get();
 });
 
+ipcMain.on(DESKTOP_SYNC_CHANNELS.hostMode, (event) => {
+  event.returnValue = hostMode;
+});
+
 // Every desktop method the renderer calls (desktop-handlers.js), on its
 // channel (shared/desktop-channels.js).
 const desktop = createDesktopHandlers({
@@ -642,81 +661,88 @@ nativeTheme.on("updated", () => {
   desktop.paintWindowBackground();
 });
 
-app.whenReady().then(async () => {
-  const projectRoot = path.resolve(__dirname, "..");
-  if (devInspectionEnabled) {
-    devLogger = await createDevLogger(projectRoot).catch(() => null);
-  }
-  configureDetachedDevToolsShortcuts();
-  configureApplicationMenu(app, APP_NAME, {
-    onCaptureScreenshot: requestAppScreenshot,
-    onForceReload: (browserWindow) => {
-      void reloadMainWindow(browserWindow, { ignoreCache: true });
-    },
-    onReload: (browserWindow) => {
-      void reloadMainWindow(browserWindow);
-    },
-  });
-
-  if (process.platform === "darwin" && existsSync(appIconPath)) {
-    app.dock?.setIcon(appIconPath);
-  }
-
-  rendererServerManager = await createStartupRendererServerManager();
-  await rendererServerManager.start();
-  // Remote access as the user left it (Settings > Remote access). Never
-  // holds the window up: its setup can wait on Tailscale.
-  void host
-    .startRemoteAccess()
-    .catch((error) => console.warn("Remote access did not start:", error));
-  if (devInspectionEnabled) {
-    await publishDevSession(projectRoot, {
-      kind: "electron",
-      rendererUrl: rendererServerManager.getUrl(),
-      apiUrl: `http://127.0.0.1:${rendererServerManager.getApiServerPort()}`,
-      debugUrl: app.commandLine.hasSwitch("remote-debugging-port")
-        ? `http://127.0.0.1:${app.commandLine.getSwitchValue("remote-debugging-port")}/json/list`
-        : null,
-      logPath: devLogger?.logPath ?? null,
-    }).catch((error) => console.warn("Cannot publish dev session:", error));
-  }
-
-  try {
-    const persisted = readOrCreatePersistedInstallId({
-      databasePath: WORKSPACE_DATABASE_PATH,
-    });
-    installId = persisted.installId;
-    if (persisted.created) {
-      getStateSaveQueue()
-        .saveConfigValue(installIdConfigValue(installId))
-        .catch((error) => {
-          console.error("Failed to save install ID:", error);
-        });
+app
+  .whenReady()
+  .then(async () => {
+    const projectRoot = path.resolve(__dirname, "..");
+    if (devInspectionEnabled) {
+      devLogger = await createDevLogger(projectRoot).catch(() => null);
     }
-  } catch (error) {
-    console.error("Failed to initialize install ID:", error);
-  }
-
-  await createMainWindow();
-  if (devLogger) {
-    mainWindow.webContents.on("console-message", (_event, details) => {
-      devLogger.log(`renderer:${details.level}`, details.message);
+    configureDetachedDevToolsShortcuts();
+    configureApplicationMenu(app, APP_NAME, {
+      onCaptureScreenshot: requestAppScreenshot,
+      onForceReload: (browserWindow) => {
+        void reloadMainWindow(browserWindow, { ignoreCache: true });
+      },
+      onReload: (browserWindow) => {
+        void reloadMainWindow(browserWindow);
+      },
     });
-  }
 
-  updateManager = initializeAutoUpdater({
-    app,
-    getMainWindow: () => mainWindow,
-    ipcMain,
-    isDevelopment,
-  });
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      void createMainWindow();
+    if (process.platform === "darwin" && existsSync(appIconPath)) {
+      app.dock?.setIcon(appIconPath);
     }
+
+    rendererServerManager = await createStartupRendererServerManager();
+    await rendererServerManager.start();
+    // Remote access as the user left it (Settings > Remote access). Never
+    // holds the window up: its setup can wait on Tailscale.
+    void host
+      .startRemoteAccess()
+      .catch((error) => console.warn("Remote access did not start:", error));
+    if (devInspectionEnabled) {
+      await publishDevSession(projectRoot, {
+        kind: "electron",
+        rendererUrl: rendererServerManager.getUrl(),
+        apiUrl: `http://127.0.0.1:${rendererServerManager.getApiServerPort()}`,
+        debugUrl: app.commandLine.hasSwitch("remote-debugging-port")
+          ? `http://127.0.0.1:${app.commandLine.getSwitchValue("remote-debugging-port")}/json/list`
+          : null,
+        logPath: devLogger?.logPath ?? null,
+      }).catch((error) => console.warn("Cannot publish dev session:", error));
+    }
+
+    try {
+      const persisted = readOrCreatePersistedInstallId({
+        databasePath: WORKSPACE_DATABASE_PATH,
+      });
+      installId = persisted.installId;
+      if (persisted.created) {
+        getStateSaveQueue()
+          .saveConfigValue(installIdConfigValue(installId))
+          .catch((error) => {
+            console.error("Failed to save install ID:", error);
+          });
+      }
+    } catch (error) {
+      console.error("Failed to initialize install ID:", error);
+    }
+
+    await createMainWindow();
+    if (devLogger) {
+      mainWindow.webContents.on("console-message", (_event, details) => {
+        devLogger.log(`renderer:${details.level}`, details.message);
+      });
+    }
+
+    updateManager = initializeAutoUpdater({
+      app,
+      getMainWindow: () => mainWindow,
+      ipcMain,
+      isDevelopment,
+    });
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        void createMainWindow();
+      }
+    });
+  })
+  .catch((error) => {
+    console.error("Desktop startup failed:", error);
+    dialog.showErrorBox("Could not start Dream", error.message);
+    app.quit();
   });
-});
 
 // Electron does not wait for async "before-quit" listeners, so we must
 // preventDefault, finish cleanup (including flushing any state save still
@@ -733,7 +759,7 @@ app.on("before-quit", (event) => {
 
   Promise.resolve()
     .then(async () => {
-      await stopCodexAppServer();
+      if (hostMode === "desktop") await stopCodexAppServer();
       await host.close();
       await sshHosts.disconnectAll();
       await rendererServerManager?.stop();

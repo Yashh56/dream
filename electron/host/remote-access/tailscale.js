@@ -45,7 +45,16 @@ export const runTailscaleCli = (cli, args, { timeoutMs = 20_000 } = {}) =>
     execFile(
       cli,
       args,
-      { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+      {
+        // macOS bundles the GUI and CLI in one executable. A desktop or
+        // service has no terminal environment to select CLI mode reliably.
+        ...(process.platform === "darwin"
+          ? { env: { ...process.env, TAILSCALE_BE_CLI: "1" } }
+          : {}),
+        timeout: timeoutMs,
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+      },
       (error, stdout, stderr) => {
         if (error && (error.code === "ENOENT" || error.code === "EACCES")) {
           resolve({ code: null, stderr: String(error.message), stdout: "" });

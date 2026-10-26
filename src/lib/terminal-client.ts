@@ -109,6 +109,9 @@ export const createTerminalClient = ({
     if (message.type === "status") {
       const status = withoutEnvelope(message) as unknown as TerminalStatusEvent;
       if (status.status === "stopped") cursors.delete(status.sessionId);
+      else if (!cursors.has(status.sessionId)) {
+        cursors.set(status.sessionId, { generation: null, sequence: 0 });
+      }
       for (const listener of statusListeners) listener(status);
     }
   };

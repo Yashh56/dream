@@ -53,17 +53,41 @@ const splitRoute = (path, hostId) =>
  */
 export function registerHostProxyRoutes(
   app,
-  { resolveHost, upgradeWebSocket, fetchImpl = (...args) => fetch(...args) },
+  { resolveHost, upgradeWebSocket, fetchImpl },
+) {
+  registerEndpointProxyRoutes(app, {
+    fetchImpl,
+    path: `${HOST_PROXY_PREFIX}:hostId/*`,
+    resolveEndpoint: (c) => resolveHost(c.req.param("hostId")),
+    socketPath: `${HOST_PROXY_PREFIX}:hostId${HOST_SOCKET_SUFFIX}`,
+    targetPath: (c) => splitRoute(c.req.path, c.req.param("hostId")),
+    upgradeWebSocket,
+  });
+}
+
+/** Shared HTTP/stream and socket forwarding for SSH routes and desktop attach. */
+export function registerEndpointProxyRoutes(
+  app,
+  {
+    path,
+    socketPath,
+    targetPath,
+    resolveEndpoint,
+    upgradeWebSocket,
+    fetchImpl = (...args) => fetch(...args),
+  },
 ) {
   if (upgradeWebSocket) {
     app.get(
-      `${HOST_PROXY_PREFIX}:hostId${HOST_SOCKET_SUFFIX}`,
-      (c, next) =>
-        resolveHost(c.req.param("hostId"))
-          ? next()
-          : c.text("Host is not connected.", 503),
+      socketPath,
+      async (c, next) => {
+        const endpoint = await resolveEndpoint(c);
+        if (!endpoint) return c.text("Host is not connected.", 503);
+        c.set("proxyEndpoint", endpoint);
+        return next();
+      },
       upgradeWebSocket((c) => {
-        const endpoint = resolveHost(c.req.param("hostId"));
+        const endpoint = c.get("proxyEndpoint");
         const remoteUrl = `${endpoint.baseUrl.replace(/^http/, "ws")}/api${HOST_SOCKET_SUFFIX}?ticket=${encodeURIComponent(c.req.query("ticket") ?? "")}`;
         let remote = null;
         const pending = [];
@@ -90,15 +114,14 @@ export function registerHostProxyRoutes(
     );
   }
 
-  app.all(`${HOST_PROXY_PREFIX}:hostId/*`, async (c) => {
-    const hostId = c.req.param("hostId");
-    const endpoint = resolveHost(hostId);
+  app.all(path, async (c) => {
+    const endpoint = await resolveEndpoint(c);
     if (!endpoint) {
       return c.text("Host is not connected.", 503);
     }
 
     const incoming = new URL(c.req.url);
-    const target = `${endpoint.baseUrl}${splitRoute(incoming.pathname, hostId)}${incoming.search}`;
+    const target = `${endpoint.baseUrl}${targetPath(c)}${incoming.search}`;
     const headers = new Headers();
     for (const [name, value] of c.req.raw.headers) {
       if (!DROPPED_REQUEST_HEADERS.has(name.toLowerCase())) {
@@ -116,13 +139,14 @@ export function registerHostProxyRoutes(
         duplex: hasBody ? "half" : undefined,
         headers,
         method,
+        redirect: "manual",
         // A client that goes away stops the forwarded request (a turn on the
         // host carries on regardless: it is detached there).
         signal: c.req.raw.signal,
       });
     } catch (error) {
       return c.text(
-        `Host ${hostId} could not be reached: ${error instanceof Error ? error.message : error}`,
+        `Host could not be reached: ${error instanceof Error ? error.message : error}`,
         502,
       );
     }

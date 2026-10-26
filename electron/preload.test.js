@@ -31,7 +31,9 @@ vi.mock("electron", () => ({
     sendSync: (channel) =>
       channel === "api:get-session-token"
         ? "session-token"
-        : { accentColor: "rose", baseColor: "neutral", theme: "light" },
+        : channel === "host:get-mode"
+          ? "service"
+          : { accentColor: "rose", baseColor: "neutral", theme: "light" },
   },
 }));
 
@@ -170,10 +172,16 @@ const SUBSCRIBED = [
 ];
 
 test("window.dream has exactly the methods above, and its values", () => {
-  const { apiSessionToken, initialThemePreferences, isElectron, ...methods } =
-    exposed.dream;
+  const {
+    apiSessionToken,
+    hostMode,
+    initialThemePreferences,
+    isElectron,
+    ...methods
+  } = exposed.dream;
   assert.equal(isElectron, true);
   assert.equal(apiSessionToken, "session-token");
+  assert.equal(hostMode, "service");
   assert.deepEqual(initialThemePreferences, {
     accentColor: "rose",
     baseColor: "neutral",

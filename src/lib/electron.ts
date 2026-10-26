@@ -5,7 +5,7 @@ import type { DesktopMethod } from "../../electron/shared/desktop-channels.js";
 // same methods: a method in one and not the other does not compile.
 type DesktopApiMethod = Exclude<
   keyof DesktopApi,
-  "apiSessionToken" | "initialThemePreferences" | "isElectron"
+  "apiSessionToken" | "hostMode" | "initialThemePreferences" | "isElectron"
 >;
 type SameKeys<A, B> = [A] extends [B]
   ? [B] extends [A]

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
+import { getHostSocketClient } from "@/lib/host-socket";
 import { terminalClient } from "@/lib/terminal-client";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
@@ -159,9 +160,10 @@ export const IdeShell = () => {
     document.querySelector(".boot-loading")?.remove();
   }, [appReady]);
 
-  // Terminals stop as the page unloads (renderer-unload-guard.ts).
+  // Desktop-owned terminals stop on unload; service work outlives the page.
   useEffect(() => {
-    if (!getDesktopApi()) return;
+    const desktop = getDesktopApi();
+    if (!desktop || desktop.hostMode === "service") return;
     return watchRendererUnload({
       getState: useIdeStore.getState,
       stopAll: () => terminalClient.stopAll({ keepalive: true }),
@@ -173,7 +175,7 @@ export const IdeShell = () => {
   // browser client follows its home host the same way; it lends no browser
   // and has no SSH hosts, which are the desktop's.
   useEffect(() => {
-    const desktop = Boolean(getDesktopApi());
+    const desktop = getDesktopApi();
     const watching = new Map<string, () => void>();
     const follow = (
       hosts: ReturnType<typeof useIdeStore.getState>["hosts"],
@@ -187,9 +189,10 @@ export const IdeShell = () => {
       for (const hostId of wanted) {
         if (watching.has(hostId)) continue;
         const stopCatalog = watchHostCatalog(hostId);
-        // An SSH host's agents use this window's browser.
+        // SSH and service-hosted agents use this window's browser.
         const stopBrowser =
-          hostId === LOCAL_HOST_ID || !desktop
+          !desktop ||
+          (hostId === LOCAL_HOST_ID && desktop.hostMode !== "service")
             ? null
             : watchHostBrowser(hostId);
         watching.set(hostId, () => {
@@ -241,6 +244,13 @@ export const IdeShell = () => {
     });
 
     const removeTerminalStatus = terminalClient.onStatus((event) => {
+      if (
+        desktopApi?.hostMode === "service" &&
+        event.status === "running" &&
+        !hasTerminalScrollback(event.sessionId)
+      ) {
+        useIdeStore.getState().restoreServiceTerminal(event.sessionId);
+      }
       if (!hasTerminalScrollback(event.sessionId)) {
         return;
       }
@@ -272,6 +282,25 @@ export const IdeShell = () => {
     setTerminalShell,
     setBrowserError,
   ]);
+
+  // Discover service terminals after the workspace knows their projects.
+  useEffect(() => {
+    if (getDesktopApi()?.hostMode !== "service") return;
+    let known = "";
+    const discover = () => {
+      const state = useIdeStore.getState();
+      if (!state.stateHydrated) return;
+      const key = JSON.stringify(state.projects.map((project) => project.id));
+      if (key === known) return;
+      known = key;
+      getHostSocketClient(LOCAL_HOST_ID).send({
+        channel: "terminal",
+        type: "discover",
+      });
+    };
+    discover();
+    return useIdeStore.subscribe(discover);
+  }, []);
 
   // Re-check for newer agent CLI releases while the app stays open. The first
   // check runs after the startup provider models refresh.

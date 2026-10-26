@@ -162,9 +162,10 @@ export const DESKTOP_METHODS =
 /** @typedef {keyof typeof DESKTOP_METHODS} DesktopMethod */
 
 /**
- * The two values the preload reads synchronously, before the page runs.
+ * The values the preload reads synchronously, before the page runs.
  */
 export const DESKTOP_SYNC_CHANNELS = {
+  hostMode: "host:get-mode",
   apiSessionToken: "api:get-session-token",
   initialThemePreferences: "theme:get-initial-preferences",
 };

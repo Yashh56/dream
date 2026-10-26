@@ -82,6 +82,7 @@ if (typeof document !== "undefined" && document.documentElement) {
 contextBridge.exposeInMainWorld("dream", {
   isElectron: true,
   apiSessionToken,
+  hostMode: ipcRenderer.sendSync(DESKTOP_SYNC_CHANNELS.hostMode),
   initialThemePreferences,
   ...createDesktopMethods({
     invoke: (channel, payload) =>

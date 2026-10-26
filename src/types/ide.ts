@@ -900,6 +900,7 @@ export type AppScreenshotResult =
 export interface DesktopApi {
   isElectron: true;
   apiSessionToken: string;
+  hostMode?: "desktop" | "service";
   initialThemePreferences?: {
     accentColor?: string;
     baseColor?: string;

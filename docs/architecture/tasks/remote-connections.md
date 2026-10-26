@@ -6,7 +6,8 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slices 1-2 of 4);
+Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slices 1-3 of 4;
+native desktop walkthrough pending);
 CONN-07 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
@@ -653,6 +654,8 @@ Agreed scope (as implemented):
     `tailscale serve --bg --yes --https=<port> http://127.0.0.1:<port>` and
     `tailscale serve --https=<port> off`; never `serve reset`. It finds the
     CLI on PATH or where the installer puts it (Windows, macOS).
+    On macOS it sets `TAILSCALE_BE_CLI=1` so the bundled executable runs
+    as a CLI even when launched by a desktop or service without a terminal.
   - It refuses a port that serves anything other than Dream's loopback
     listener, and removes only an entry that proxies to that listener.
   - Its problems are distinct: `not-installed`, `not-running`,
@@ -740,6 +743,13 @@ tailnet with HTTPS certificates off. `status --json` had `CertDomains: null`
 and `serve status --json` printed `{}`, matching the adapter, which reported
 `https-disabled` with the admin link. No Serve configuration was changed.
 
+macOS CLI follow-up (2026-10-25): the desktop reported `Tailscale.CLIError
+error 3` despite an active connection. Without terminal environment variables,
+the bundled executable did not return status JSON. With the adapter forcing
+`TAILSCALE_BE_CLI=1`, both status and Serve status return valid JSON; this
+machine now reports `Running` with HTTPS available. No Serve configuration
+was changed. Native desktop retry still requires a host-process restart.
+
 Not yet inspected:
 - Settings > Remote access in the desktop app. The running dev session's
   main process predates these changes; restart `pnpm dev`.
@@ -757,8 +767,8 @@ public managed tunnels are CONN-08.
 
 ## CONN-06: Host lifecycle independent of the desktop
 
-Status: in progress: slices 1 and 2 of 4 (storage ownership, the service)
-implemented; desktop attach and updates remain
+Status: in progress: slices 1-3 of 4 (storage ownership, the service and desktop
+attach) implemented; native desktop walkthrough and runtime updates remain
 
 Problem and trigger: local host work ends when Electron quits; the existing SSH
 daemon is detached but is not an installed startup service.
@@ -801,6 +811,18 @@ Agreed scope: four slices, in dependency order.
 3. Desktop modes: desktop-owned or service-owned, with the desktop attaching
    to a service host (an edge proxy for its SSH hosts and the browser relay).
 4. Staged, verified, recoverable runtime updates.
+
+Slice 3, agreed implementation scope (2026-10-21; implemented, native walkthrough pending):
+- Explicit desktop-owned (default) and service-owned desktop startup modes.
+  Service mode attaches only to the installed service for the configured home,
+  verifies that it owns this desktop's state database and identity, and never
+  falls back to creating another host.
+- A desktop edge listener forwards home-host HTTP/streams and sockets while
+  retaining desktop-owned SSH forwards and browser tool execution. It follows
+  a restarted service only after checking the same identity again.
+- Desktop unload and quit detach from service work; the renderer lends its
+  browser to the service through the existing host socket relay. The workspace
+  stays desktop-owned. Runtime updates remain slice 4.
 
 Slice 1, storage ownership (implemented):
 - `electron/workspace-database.js`: the desktop's workspace (`config`,
@@ -956,6 +978,72 @@ Not yet inspected:
 - The real host as a Linux service, which needs a Linux runtime build.
 
 Remaining/deferred: sleeping hardware is unreachable; wake-on-LAN is not included.
+
+Slice 3, desktop attachment (implemented):
+- `DREAM_HOST_MODE=desktop` (the default) retains the in-process host.
+  `DREAM_HOST_MODE=service` uses `electron/desktop-host.js`, with the installed
+  service in `DREAM_HOST_HOME` (default `~/.dream/host`). It starts a stopped
+  service through its manager, waits for readiness, then checks protocol and
+  terminal-discovery support, the PID holding this desktop's database lock,
+  and the existing host ID, public key and fingerprint. A missing service,
+  mismatched database or different identity fails startup with instructions;
+  it never creates a replacement host or falls back to the shared writer.
+- The desktop edge listener owns its own token and loopback port. Shared
+  proxy code forwards home-host HTTP, streams and sockets, with the service's
+  token kept in the main process. It rereads the run record and verifies a
+  changed endpoint before using it after restart. Proxies do not follow
+  redirects; daemon probes reject them. SSH routes still reach desktop-owned
+  forwards, and browser tool calls execute in the desktop. Host-side browser
+  MCP calls use the existing socket relay, now also announced for the home host.
+- Main-process unload cleanup owns no service processes, and the preload's
+  `hostMode` prevents the renderer's unload stop-all in service mode. Quitting
+  closes the edge and SSH forwards, not the service or its provider processes.
+  The workspace writer still belongs to the desktop. Stopping the shared host
+  remains an explicit `dream-host service stop` operation.
+- The terminal socket's additive `discover` message returns running sessions
+  and retained output. A hydrated service desktop restores terminal tabs for
+  known local projects without starting another shell; runner sessions restore
+  their output/status too. Discovered sessions acquire reconnect cursors even
+  before their first output. The `terminal-discovery` capability prevents an
+  older service silently skipping this recovery. Terminal names are assigned
+  locally on attachment; prior client-only names are not synchronized.
+
+Operator setup (no automatic change to an existing desktop installation):
+1. Quit desktop before moving its host into the service. Use the same desktop
+   userData directory (macOS: `~/Library/Application Support/dreamide`, Windows:
+   `%APPDATA%/dreamide`, Linux: `~/.config/dreamide`) for `--data-dir`:
+   `pnpm host service install --data-dir "<desktop userData>"`.
+2. If the desktop uses `DREAM_DB_PATH`, set it to an absolute path in the
+   installing shell and add `--env DREAM_DB_PATH` to the install command. The
+   service and desktop must resolve the same database. Preserve other needed
+   provider environment variables with their own `--env NAME` options.
+3. Launch desktop with `DREAM_HOST_MODE=service`, and the same `DREAM_HOST_HOME`
+   if a custom home was supplied to service installation. Switching back to
+   desktop-owned mode requires stopping the service first; the state lock
+   refuses competing host writers. No dev server was started for this work.
+
+Validation, slice 3 (2026-10-22): `pnpm check` passed (173 files, 1203 tests).
+Existing preload and daemon capability expectations were updated; no tests
+were added. Scratch programs outside the checkout exercised:
+- A real isolated daemon, a real desktop edge, and a recording service manager
+  that launches that daemon (no OS service was installed): starting a stopped
+  host, catalog reads, missing-token refusal, unknown SSH routes, and refusal
+  to stop the shared service through the desktop edge.
+- A live terminal surviving edge detach, discovery from a fresh edge/socket,
+  the same host identity on reattach, service restart recovery, temporary
+  unavailability, and refusal of a changed identity after restart.
+- SSH token translation and incremental stream delivery through a controlled
+  upstream; redirects were returned without being followed.
+- Host-side browser MCP through the host socket, desktop browser execution
+  and the returned tool result (a stub bridge stood in for webview operations).
+- Terminal restoration: local project matching, output retention, repeated
+  restoration, runner sessions, and refusal to adopt SSH/unknown projects.
+
+Not yet inspected: the native Electron desktop attaching, quitting and reopening
+with real provider turns, real webviews or SSH machines; platform service
+handoff on macOS/Windows/Linux. `pnpm inspect:dev --json` found no renderer for
+this checkout. Native service installation was not changed. These remain unmet
+manual validation criteria. Runtime update delivery is slice 4.
 
 ## CONN-07: Multiple routes and unified connection management
 
@@ -1148,7 +1236,8 @@ contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
-pending). CONN-06 in progress: slices 1 (storage ownership) and 2 (the
-service) implemented; next is slice 3, desktop attach. CONN-07 through CONN-11 proposed. Preserve
+pending). CONN-06 in progress: slices 1 (storage ownership), 2 (the service)
+and 3 (desktop attach) implemented; native desktop walkthrough pending.
+Next implementation is slice 4, runtime updates. CONN-07 through CONN-11 proposed. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.

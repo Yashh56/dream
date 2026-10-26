@@ -105,6 +105,7 @@ export async function probeDaemon(runDirectory) {
       `http://127.0.0.1:${record.port}/api/host-info`,
       {
         headers: { [API_SESSION_TOKEN_HEADER]: record.token },
+        redirect: "error",
         signal: AbortSignal.timeout(2_000),
       },
     );

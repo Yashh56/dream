@@ -171,7 +171,9 @@ authorization, which is a separate concern.
 ## Home host
 
 The host a client's `local` connection reaches. On the desktop it is the
-host inside the app (route `local`, never refused). In a browser it is the
+host inside the app, or its installed service with `DREAM_HOST_MODE=service`
+(route `local`). A service attachment verifies the state database owner and
+the existing host identity before forwarding requests. In a browser it is the
 paired host serving the page (route `origin`), pinned like any address.
 Projects without a `hostId` live on the home host.
 
@@ -222,6 +224,12 @@ restarted if it fails. `dream-host service` installs, starts, stops,
 restarts, reports and uninstalls it; `<home>/service.json` names the service
 of a host home, which `ensure` starts instead of spawning a second host.
 Uninstalling keeps the host's data and identity.
+
+In service mode the desktop's **edge listener** (`electron/desktop-host.js`)
+forwards its home host's HTTP/streams and socket, replacing the desktop token
+with the service token. SSH forwarding and browser tool execution stay in the
+desktop. Closing the edge detaches its clients; host turns and terminals keep
+running. A fresh desktop discovers surviving terminals for its known projects.
 
 ## Remote access
 
