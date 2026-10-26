@@ -188,11 +188,14 @@ export const warmProjectCommitMessage = async ({
   projectPath: string;
 }) => {
   try {
+    // Read now: the turn that just ended may have changed files after the
+    // last status read, and a delayed panel refresh may not have run yet.
     const status = await readProjectResource(
       projectResourceKey("gitStatus", projectPath, {
         hostId,
         params: { detail: "full" },
       }),
+      { force: true },
     );
     const changes = selectCommitChanges(status.changes, includeUnstaged);
     if (changes.length === 0) return "";

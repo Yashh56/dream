@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
 } from "@/lib/ide-defaults";
 import type { ChatConfig, ProjectConfig } from "@/types/ide";
+import { clearGeneratedGitText } from "../git-generated-text";
 import { useIdeStore } from "../ide-store";
 import {
   CHAT_SESSION_IDLE_EVICT_MS,
@@ -104,6 +105,14 @@ beforeEach(() => {
         return Response.json({ paused: false, runs: [] });
       if (pathname === "/api/catalog/transcript")
         return Response.json(hostMessages);
+      if (pathname === "/api/project-git-status")
+        return Response.json({
+          changes: [
+            { path: "src/app.ts", staged: false, status: "M", unstaged: true },
+          ],
+        });
+      if (pathname === "/api/project-git-commit-message")
+        return Response.json({ commitMessage: "Update app" });
       return new Response("{}", { status: 404 });
     }),
   );
@@ -115,6 +124,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   useIdeStore.setState(initialState, true);
+  clearGeneratedGitText();
   useChatRuntimeStore.setState({ draftRestoreByChatId: {}, errorByChatId: {} });
 });
 
@@ -478,4 +488,23 @@ test("busy chats accept ordered follow-ups; failed acceptance rejects without di
     /Cannot accept/,
   );
   assert.equal(prompt.text, "Keep this draft");
+});
+
+test("the commit message is generated once the project's last running turn ends", async () => {
+  const { chat, project } = setUp();
+  const other: ChatConfig = { ...createChatConfig(project), id: "chat-other" };
+  useIdeStore.setState((state) => ({ chats: [...state.chats, other] }));
+  const generations = () =>
+    requests.filter(({ url }) => url === "/api/project-git-commit-message");
+
+  // Neither chat has a session here: their turns ran from elsewhere.
+  useIdeStore.getState().setHostTurnRunning(chat.id, true);
+  useIdeStore.getState().setHostTurnRunning(other.id, true);
+  useIdeStore.getState().setHostTurnRunning(chat.id, false);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(generations().length, 0, "another turn is still running");
+
+  useIdeStore.getState().setHostTurnRunning(other.id, false);
+  await waitFor(() => generations().length === 1);
+  assert.equal(generations()[0].body.projectPath, project.path);
 });

@@ -645,21 +645,6 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
       useIdeStore.getState().setChatStreaming(chatId, false);
       const projectId = findChatConfig(chatId)?.projectId;
       if (projectId) flushProjectPanelRefresh(projectId);
-      const state = useIdeStore.getState();
-      const project = state.projects.find((entry) => entry.id === projectId);
-      if (
-        project &&
-        !state.chats.some(
-          (chat) =>
-            chat.projectId === projectId && state.hostRunningChatIds[chat.id],
-        )
-      ) {
-        void warmProjectCommitMessage({
-          ...getDefaultGitGenerationModelSelection(state.settings),
-          hostId: project.hostId,
-          projectPath: project.path,
-        });
-      }
       void useIdeStore.getState().applyCatalogTranscript(chatId);
       void refreshChatQueue(chatId);
       scheduleEviction(session);
@@ -1164,6 +1149,40 @@ const syncSessionFromStore = (
   }
 };
 
+/**
+ * Generates the commit message of each project whose last running turn has
+ * just ended, so the Changes tab finds it ready. The host's running set is
+ * the one signal every turn end reaches, whether this window followed the
+ * turn's stream or not, and whenever its end arrives.
+ */
+const warmCommitMessagesOfSettledProjects = (
+  state: ReturnType<typeof useIdeStore.getState>,
+  previous: ReturnType<typeof useIdeStore.getState>,
+) => {
+  const endedProjectIds = new Set<string>();
+  for (const chatId of Object.keys(previous.hostRunningChatIds)) {
+    if (state.hostRunningChatIds[chatId]) continue;
+    const projectId = state.chats.find((chat) => chat.id === chatId)?.projectId;
+    if (projectId) endedProjectIds.add(projectId);
+  }
+  for (const projectId of endedProjectIds) {
+    const project = state.projects.find((entry) => entry.id === projectId);
+    if (
+      !project ||
+      state.chats.some(
+        (chat) =>
+          chat.projectId === projectId && state.hostRunningChatIds[chat.id],
+      )
+    )
+      continue;
+    void warmProjectCommitMessage({
+      ...getDefaultGitGenerationModelSelection(state.settings),
+      hostId: project.hostId,
+      projectPath: project.path,
+    });
+  }
+};
+
 let stopRuntime: (() => void) | null = null;
 
 /** Idempotent. Returns a function that stops the runtime (used by tests). */
@@ -1182,6 +1201,7 @@ export const startChatRuntime = () => {
           resumeHostTurn(session, true);
         }
       }
+      warmCommitMessagesOfSettledProjects(state, previous);
     }
 
     if (state.messagesByChatId !== previous.messagesByChatId) {
