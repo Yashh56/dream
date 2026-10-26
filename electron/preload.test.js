@@ -122,6 +122,7 @@ const SENT = [
   ["connectHost", [payload], ["invoke", "hosts:connect", payload]],
   ["disconnectHost", ["h"], ["invoke", "hosts:disconnect", { hostId: "h" }]],
   ["getHostState", ["h"], ["invoke", "hosts:state", { hostId: "h" }]],
+  ["listSshConfigHosts", [], ["invoke", "hosts:ssh-config-hosts"]],
   [
     "forwardHostPort",
     ["h", 3000],

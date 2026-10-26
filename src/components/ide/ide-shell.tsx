@@ -17,6 +17,7 @@ import { ChatSearchDialog } from "./chat-search-dialog";
 import { EmptyProjectWorkspace } from "./empty-project-workspace";
 import { IdeHeader } from "./ide-header";
 import { useIdeStore } from "./ide-store";
+import { OpenProjectDialog } from "./open-project/open-project-dialog";
 import { ProjectWorkspace } from "./project-workspace";
 import { watchRendererUnload } from "./renderer-unload-guard";
 import { GlobalShortcuts } from "./shortcuts/global-shortcuts";
@@ -404,6 +405,7 @@ export const IdeShell = () => {
       <ConnectionBanner />
       <AppScreenshotToast />
       {stateHydrated ? <ChatSearchDialog /> : null}
+      {stateHydrated ? <OpenProjectDialog /> : null}
       <SshPromptDialog />
       <Toaster />
     </div>

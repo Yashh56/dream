@@ -941,6 +941,9 @@ export interface DesktopApi {
 
   pickProjectDirectory: () => Promise<string | null>;
 
+  /** The host aliases in the user's ssh config, for suggesting targets. */
+  listSshConfigHosts: () => Promise<string[]>;
+
   /**
    * Connects an SSH host (its daemon is started or reused there). With an
    * expected host id, only that host: any other is refused, then and on

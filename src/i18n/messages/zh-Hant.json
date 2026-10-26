@@ -155,6 +155,12 @@
     "removeRecentTitle": "移除 {name}？",
     "removeRecentDescription": "將從 Dream 中移除此專案及其聊天。資料夾本身不受影響。"
   },
+  "openProject": {
+    "title": "開啟資料夾",
+    "openOn": "開啟位置",
+    "browse": "瀏覽…",
+    "addSshHost": "新增 SSH 主機…"
+  },
   "workspace": {
     "chatHistory": "聊天記錄",
     "disableMultiChat": "停用多聊天",
@@ -409,7 +415,8 @@
     "chatNotifications": "桌面通知",
     "chatNotificationsDescription": "當應用程式在背景執行時，於聊天完成、失敗或需要你的輸入時發出通知",
     "chatNotificationSound": "通知提示音",
-    "chatNotificationSoundDescription": "在聊天完成、失敗或需要你的輸入時播放提示音"
+    "chatNotificationSoundDescription": "在聊天完成、失敗或需要你的輸入時播放提示音",
+    "connections": "連線"
   },
   "models": {
     "fast": "快速",
@@ -982,11 +989,7 @@
     "stateReconnecting": "正在重新連線…",
     "stateDisconnected": "已中斷連線",
     "stateFailed": "連線失敗",
-    "openOnHost": "在 SSH 主機上開啟",
-    "openTitle": "在 SSH 主機上開啟資料夾",
-    "host": "主機",
     "folderPath": "資料夾路徑",
-    "folderPlaceholder": "/home/me/project",
     "open": "開啟",
     "promptTitle": "{host} 詢問",
     "promptConfirmTitle": "信任這台主機？",
@@ -1003,8 +1006,6 @@
     "reconnect": "重新連線",
     "connectToBrowse": "連線到 {host} 以瀏覽其資料夾。",
     "upFolder": "上一層資料夾",
-    "homeFolder": "主資料夾",
-    "showHidden": "顯示隱藏資料夾",
     "noFolders": "這裡沒有資料夾。",
     "foldersTruncated": "僅顯示前 {count} 個資料夾。",
     "loadingFolders": "正在載入資料夾…",
@@ -1013,7 +1014,8 @@
     "runsHere": "在這台電腦上執行",
     "runsOn": "在 {host}（{target}）上執行",
     "edit": "編輯",
-    "editHost": "編輯 SSH 主機"
+    "editHost": "編輯 SSH 主機",
+    "fromSshConfig": "來自 ssh 設定："
   },
   "shortcuts": {
     "title": "鍵盤快速鍵",
@@ -1095,9 +1097,6 @@
     "signOut": "登出",
     "deviceTitle": "此裝置",
     "deviceDescription": "已與 {host} 配對。登出會移除此裝置的存取權以及此瀏覽器儲存的內容。",
-    "openFolder": "開啟資料夾",
-    "openFolderTitle": "在 {host} 上開啟資料夾",
-    "folderPath": "資料夾路徑",
     "runsOnHost": "執行於 {host}",
     "accessTitle": "遠端存取",
     "accessDescription": "從手機或其他裝置使用這台電腦上的專案。每台裝置都必須先配對。",

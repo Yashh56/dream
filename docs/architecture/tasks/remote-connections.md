@@ -522,6 +522,7 @@ Agreed scope (as implemented):
   - "Open folder" in a browser opens `OpenHomeFolderDialog`, which browses
     the home host through its directory API (`HostFolderBrowser` treats a
     ready home host as connected). "Open on SSH host" is desktop-only.
+    (Since OPEN-01, both are one dialog: `open-project-flow.md`.)
   - The webview browser panel and its rail button are desktop-only (CONN-11).
   - Clipboard, downloads and external links already fell back to browser
     APIs.

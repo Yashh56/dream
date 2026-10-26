@@ -107,13 +107,23 @@ const openChat = ({ chat, project }: ChatSearchRow) => {
   if (chat.deletedAt !== null) {
     state.restoreChats([chat.id]);
   }
-  if (!state.projects.some((item) => item.id === project.id)) {
-    // A closed project reopens with its chats.
-    state.addProject(project.path, { activate: true, hostId: project.hostId });
-  }
   state.setSettingsOpen(false);
-  state.setActiveProjectId(project.id);
-  state.setActiveChatId(project.id, chat.id);
+  const show = () => {
+    const current = useIdeStore.getState();
+    current.setActiveProjectId(project.id);
+    current.setActiveChatId(project.id, chat.id);
+  };
+  if (state.projects.some((item) => item.id === project.id)) {
+    show();
+    return;
+  }
+  // A closed project reopens with its chats, on its own host (connected
+  // first when that is an SSH host).
+  void state
+    .openProject(project.path, { activate: true, hostId: project.hostId })
+    .then((opened) => {
+      if (opened) show();
+    });
 };
 
 export const ChatSearchDialog = () => {

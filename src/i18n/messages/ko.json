@@ -155,6 +155,12 @@
     "removeRecentTitle": "{name}을(를) 제거할까요?",
     "removeRecentDescription": "프로젝트와 채팅이 Dream에서 제거됩니다. 폴더 자체는 그대로 유지됩니다."
   },
+  "openProject": {
+    "title": "폴더 열기",
+    "openOn": "열 위치",
+    "browse": "찾아보기…",
+    "addSshHost": "SSH 호스트 추가…"
+  },
   "workspace": {
     "chatHistory": "채팅 기록",
     "disableMultiChat": "멀티 채팅 비활성화",
@@ -409,7 +415,8 @@
     "chatNotifications": "데스크톱 알림",
     "chatNotificationsDescription": "앱이 백그라운드에 있을 때 채팅이 완료되거나 실패하거나 입력이 필요하면 알립니다",
     "chatNotificationSound": "알림음",
-    "chatNotificationSoundDescription": "채팅이 완료되거나 실패하거나 입력이 필요할 때 소리를 재생합니다"
+    "chatNotificationSoundDescription": "채팅이 완료되거나 실패하거나 입력이 필요할 때 소리를 재생합니다",
+    "connections": "연결"
   },
   "models": {
     "fast": "빠름",
@@ -982,11 +989,7 @@
     "stateReconnecting": "다시 연결 중…",
     "stateDisconnected": "연결 해제됨",
     "stateFailed": "연결 실패",
-    "openOnHost": "SSH 호스트에서 열기",
-    "openTitle": "SSH 호스트의 폴더 열기",
-    "host": "호스트",
     "folderPath": "폴더 경로",
-    "folderPlaceholder": "/home/me/project",
     "open": "열기",
     "promptTitle": "{host}의 질문",
     "promptConfirmTitle": "이 호스트를 신뢰할까요?",
@@ -1003,8 +1006,6 @@
     "reconnect": "다시 연결",
     "connectToBrowse": "{host}에 연결하면 폴더를 둘러볼 수 있습니다.",
     "upFolder": "상위 폴더",
-    "homeFolder": "홈 폴더",
-    "showHidden": "숨김 폴더 표시",
     "noFolders": "여기에는 폴더가 없습니다.",
     "foldersTruncated": "처음 {count}개 폴더를 표시합니다.",
     "loadingFolders": "폴더를 불러오는 중…",
@@ -1013,7 +1014,8 @@
     "runsHere": "이 컴퓨터에서 실행",
     "runsOn": "{host}({target})에서 실행",
     "edit": "편집",
-    "editHost": "SSH 호스트 편집"
+    "editHost": "SSH 호스트 편집",
+    "fromSshConfig": "ssh 설정에서:"
   },
   "shortcuts": {
     "title": "키보드 단축키",
@@ -1095,9 +1097,6 @@
     "signOut": "로그아웃",
     "deviceTitle": "이 기기",
     "deviceDescription": "{host}과(와) 페어링되었습니다. 로그아웃하면 이 기기의 접근 권한과 이 브라우저에 저장된 내용이 삭제됩니다.",
-    "openFolder": "폴더 열기",
-    "openFolderTitle": "{host}에서 폴더 열기",
-    "folderPath": "폴더 경로",
     "runsOnHost": "{host}에서 실행",
     "accessTitle": "원격 액세스",
     "accessDescription": "휴대폰이나 다른 기기에서 이 컴퓨터의 프로젝트를 사용하세요. 모든 기기는 먼저 페어링해야 합니다.",

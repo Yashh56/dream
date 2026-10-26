@@ -115,6 +115,11 @@ export const DESKTOP_METHODS =
       kind: "invoke",
       params: ["hostId", "port"],
     },
+    listSshConfigHosts: {
+      channel: "hosts:ssh-config-hosts",
+      kind: "invoke",
+      params: [],
+    },
     onHostStatus: { channel: "hosts:status", kind: "subscribe" },
     onHostPrompt: { channel: "hosts:prompt", kind: "subscribe" },
     answerHostPrompt: {

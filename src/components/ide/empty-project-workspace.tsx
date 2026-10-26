@@ -33,14 +33,12 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { SearchInput } from "@/components/ui/search-input";
-import { getDesktopApi } from "@/lib/electron";
 import { getConnectedProviders } from "@/lib/ide-defaults";
 import type { ProjectConfig } from "@/types/ide";
-import { OpenHomeFolderDialog } from "../remote/open-home-folder-dialog";
 import { ProjectTabIcon } from "./header/project-tab-icon";
 import { useIdeStore } from "./ide-store";
 import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
-import { OpenOnHostDialog } from "./ssh/open-on-host-dialog";
+import { showOpenProjectDialog } from "./open-project/open-project-dialog";
 
 const RECENT_PROJECT_LIMIT = 50;
 const RECENT_PROJECT_VISIBLE_COUNT = 10;
@@ -125,8 +123,7 @@ export const EmptyProjectWorkspace = () => {
   const closedProjects = useIdeStore((s) => s.closedProjects);
   const chats = useIdeStore((s) => s.chats);
   const settings = useIdeStore((s) => s.settings);
-  const addProject = useIdeStore((s) => s.addProject);
-  const openProjectOnHost = useIdeStore((s) => s.openProjectOnHost);
+  const openProject = useIdeStore((s) => s.openProject);
   const sshHosts = useIdeStore((s) => s.settings.sshHosts);
   const setSettingsOpen = useIdeStore((s) => s.setSettingsOpen);
   const setSettingsSection = useIdeStore((s) => s.setSettingsSection);
@@ -195,27 +192,6 @@ export const EmptyProjectWorkspace = () => {
     );
   }, [recentProjectQuery, recentProjects]);
 
-  const sshHostsT = useTranslations("sshHosts");
-  const [openOnHostOpen, setOpenOnHostOpen] = useState(false);
-  // A browser client picks a folder of its host, not of this device.
-  const [openHomeFolderOpen, setOpenHomeFolderOpen] = useState(false);
-  const desktop = Boolean(getDesktopApi());
-
-  const handleOpenFolder = useCallback(async () => {
-    const desktopApi = getDesktopApi();
-    if (!desktopApi) {
-      setOpenHomeFolderOpen(true);
-      return;
-    }
-
-    const selectedPath = await desktopApi.pickProjectDirectory();
-    if (!selectedPath) {
-      return;
-    }
-
-    addProject(selectedPath);
-  }, [addProject]);
-
   const handleOpenProviders = useCallback(() => {
     setSettingsSection("providers");
     setSettingsOpen(true);
@@ -272,37 +248,10 @@ export const EmptyProjectWorkspace = () => {
       </EmptyHeader>
 
       <EmptyContent className="max-w-xl gap-10">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button onClick={() => void handleOpenFolder()} size="lg">
-            <FolderOpen className="size-4" />
-            {emptyT("openFolder")}
-          </Button>
-          {desktop ? (
-            <Button
-              onClick={() => {
-                if (sshHosts.length === 0) {
-                  setSettingsSection("sshHosts");
-                  setSettingsOpen(true);
-                  return;
-                }
-                setOpenOnHostOpen(true);
-              }}
-              size="lg"
-              variant="outline"
-            >
-              <Server className="size-4" />
-              {sshHostsT("openOnHost")}
-            </Button>
-          ) : null}
-        </div>
-        <OpenOnHostDialog
-          onOpenChange={setOpenOnHostOpen}
-          open={openOnHostOpen}
-        />
-        <OpenHomeFolderDialog
-          onOpenChange={setOpenHomeFolderOpen}
-          open={openHomeFolderOpen}
-        />
+        <Button onClick={showOpenProjectDialog} size="lg">
+          <FolderOpen className="size-4" />
+          {emptyT("openFolder")}
+        </Button>
 
         {recentProjects.length > 0 ? (
           <div className="flex w-full flex-col items-stretch gap-2">
@@ -361,16 +310,11 @@ export const EmptyProjectWorkspace = () => {
                     <div className="group/recent relative" key={project.id}>
                       <button
                         className="group flex min-h-12 w-full min-w-0 items-center gap-3 rounded-sm border border-transparent px-3 py-2 text-left text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-surface-300 dark:hover:bg-[color-mix(in_oklab,var(--muted)_70%,var(--background))] dark:focus-visible:border-surface-700 focus-visible:outline-none"
-                        onClick={() => {
-                          if (project.hostId) {
-                            void openProjectOnHost(
-                              project.hostId,
-                              project.path,
-                            );
-                          } else {
-                            addProject(project.path);
-                          }
-                        }}
+                        onClick={() =>
+                          void openProject(project.path, {
+                            hostId: project.hostId,
+                          })
+                        }
                         type="button"
                       >
                         <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">

@@ -1,6 +1,6 @@
 import { Pencil, Plug, PlugZap, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusDot, type StatusDotColor } from "@/components/ui/status-dot";
+import { getDesktopApi } from "@/lib/electron";
 import type { HostConnectionState, SshHostConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
 import { SettingsGroup } from "../settings/settings-shared";
@@ -65,15 +66,64 @@ export const useHostStateLabel = () => {
     t(STATE_MESSAGE_KEYS[state ?? "idle"]);
 };
 
-type HostFormValues = Pick<SshHostConfig, "label" | "target" | "hostCommand">;
+export type HostFormValues = Pick<
+  SshHostConfig,
+  "label" | "target" | "hostCommand"
+>;
 
-const EMPTY_FORM: HostFormValues = { hostCommand: "", label: "", target: "" };
+export const EMPTY_HOST_FORM: HostFormValues = {
+  hostCommand: "",
+  label: "",
+  target: "",
+};
+
+/** Suggested aliases shown at most, beside the target field. */
+const SSH_CONFIG_SUGGESTION_LIMIT = 8;
+
+/**
+ * The aliases in the user's ssh config not already saved as a host, to
+ * suggest as targets. Empty outside the desktop.
+ */
+const useSshConfigSuggestions = (enabled: boolean) => {
+  const savedTargets = useIdeStore((state) => state.settings.sshHosts);
+  const [aliases, setAliases] = useState<string[]>([]);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    void getDesktopApi()
+      ?.listSshConfigHosts()
+      .then((hosts) => {
+        if (!cancelled) setAliases(hosts);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return aliases
+    .filter((alias) => !savedTargets.some((host) => host.target === alias))
+    .slice(0, SSH_CONFIG_SUGGESTION_LIMIT);
+};
+
+/** Saves a new SSH host in settings; returns it. */
+export const useAddSshHost = () => {
+  const setSettings = useIdeStore((state) => state.setSettings);
+  return (values: HostFormValues) => {
+    const host: SshHostConfig = { ...values, id: crypto.randomUUID() };
+    setSettings((previous) => ({
+      ...previous,
+      sshHosts: [...previous.sshHosts, host],
+    }));
+    return host;
+  };
+};
 
 /**
  * How to reach a host: adding one, or editing an existing one. Mount it only
  * while open, keyed by the host, so the form initialises from `initial`.
+ * A new host is offered the aliases in the user's ssh config.
  */
-const SshHostDialog = ({
+export const SshHostDialog = ({
   initial,
   isNew,
   onCancel,
@@ -88,6 +138,7 @@ const SshHostDialog = ({
   const [label, setLabel] = useState(initial.label);
   const [target, setTarget] = useState(initial.target);
   const [hostCommand, setHostCommand] = useState(initial.hostCommand);
+  const suggestions = useSshConfigSuggestions(isNew);
 
   return (
     <Dialog
@@ -126,6 +177,25 @@ const SshHostDialog = ({
               placeholder={t("targetPlaceholder")}
               value={target}
             />
+            {suggestions.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-muted-foreground text-xs">
+                  {t("fromSshConfig")}
+                </span>
+                {suggestions.map((alias) => (
+                  <Button
+                    className="font-mono"
+                    key={alias}
+                    onClick={() => setTarget(alias)}
+                    size="xs"
+                    type="button"
+                    variant={alias === target.trim() ? "secondary" : "outline"}
+                  >
+                    {alias}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="ssh-host-label">{t("name")}</Label>
@@ -173,7 +243,7 @@ export const SshHostsSettingsSection = () => {
   const stateLabel = useHostStateLabel();
   const sshHosts = useIdeStore((state) => state.settings.sshHosts);
   const hosts = useIdeStore((state) => state.hosts);
-  const setSettings = useIdeStore((state) => state.setSettings);
+  const saveNewHost = useAddSshHost();
   const connectHost = useIdeStore((state) => state.connectHost);
   const disconnectHost = useIdeStore((state) => state.disconnectHost);
   const removeSshHost = useIdeStore((state) => state.removeSshHost);
@@ -191,11 +261,7 @@ export const SshHostsSettingsSection = () => {
   );
 
   const addHost = (values: HostFormValues) => {
-    const host: SshHostConfig = { ...values, id: crypto.randomUUID() };
-    setSettings((previous) => ({
-      ...previous,
-      sshHosts: [...previous.sshHosts, host],
-    }));
+    saveNewHost(values);
     setEditing(null);
   };
 
@@ -294,7 +360,7 @@ export const SshHostsSettingsSection = () => {
       </SettingsGroup>
       {editing === "new" ? (
         <SshHostDialog
-          initial={EMPTY_FORM}
+          initial={EMPTY_HOST_FORM}
           isNew
           key="new"
           onCancel={() => setEditing(null)}

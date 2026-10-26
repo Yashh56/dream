@@ -155,6 +155,12 @@
     "removeRecentTitle": "¿Quitar {name}?",
     "removeRecentDescription": "Se quitan el proyecto y sus chats de Dream. La carpeta no se modifica."
   },
+  "openProject": {
+    "title": "Abrir carpeta",
+    "openOn": "Abrir en",
+    "browse": "Examinar…",
+    "addSshHost": "Añadir host SSH…"
+  },
   "workspace": {
     "chatHistory": "Historial de chats",
     "disableMultiChat": "Desactivar multichat",
@@ -409,7 +415,8 @@
     "chatNotifications": "Notificaciones de escritorio",
     "chatNotificationsDescription": "Avisar cuando un chat termine, falle o necesite tu respuesta mientras la aplicación está en segundo plano",
     "chatNotificationSound": "Sonido de notificación",
-    "chatNotificationSoundDescription": "Reproducir un sonido cuando un chat termine, falle o necesite tu respuesta"
+    "chatNotificationSoundDescription": "Reproducir un sonido cuando un chat termine, falle o necesite tu respuesta",
+    "connections": "Conexiones"
   },
   "models": {
     "fast": "Rápido",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Reconectando…",
     "stateDisconnected": "Desconectado",
     "stateFailed": "La conexión falló",
-    "openOnHost": "Abrir en un host SSH",
-    "openTitle": "Abrir una carpeta en un host SSH",
-    "host": "Host",
     "folderPath": "Ruta de la carpeta",
-    "folderPlaceholder": "/home/yo/proyecto",
     "open": "Abrir",
     "promptTitle": "{host} pregunta",
     "promptConfirmTitle": "¿Confiar en este host?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Reconectar",
     "connectToBrowse": "Conéctate a {host} para explorar sus carpetas.",
     "upFolder": "Subir una carpeta",
-    "homeFolder": "Carpeta personal",
-    "showHidden": "Mostrar ocultas",
     "noFolders": "No hay carpetas aquí.",
     "foldersTruncated": "Se muestran las primeras {count} carpetas.",
     "loadingFolders": "Cargando carpetas…",
@@ -1013,7 +1014,8 @@
     "runsHere": "Se ejecuta en este equipo",
     "runsOn": "Se ejecuta en {host} ({target})",
     "edit": "Editar",
-    "editHost": "Editar host SSH"
+    "editHost": "Editar host SSH",
+    "fromSshConfig": "De la configuración de ssh:"
   },
   "shortcuts": {
     "title": "Atajos de teclado",
@@ -1095,9 +1097,6 @@
     "signOut": "Cerrar sesión",
     "deviceTitle": "Este dispositivo",
     "deviceDescription": "Vinculado con {host}. Al cerrar sesión se eliminan el acceso de este dispositivo y lo que guardó este navegador.",
-    "openFolder": "Abrir carpeta",
-    "openFolderTitle": "Abrir una carpeta en {host}",
-    "folderPath": "Ruta de la carpeta",
     "runsOnHost": "Se ejecuta en {host}",
     "accessTitle": "Acceso remoto",
     "accessDescription": "Usa los proyectos de este equipo desde un teléfono u otro dispositivo. Cada dispositivo debe vincularse primero.",

@@ -11,7 +11,6 @@ import {
   RotateCw,
   Server,
   Settings,
-  Smartphone,
   Sun,
   Trash2,
 } from "lucide-react";
@@ -188,7 +187,6 @@ export const SettingsWorkspace = () => {
   const setSettings = useIdeStore((s) => s.setSettings);
   const setSettingsOpen = useIdeStore((s) => s.setSettingsOpen);
   const setSettingsSection = useIdeStore((s) => s.setSettingsSection);
-  const sshHostsT = useTranslations("sshHosts");
   const toggleProviderModel = useIdeStore((s) => s.toggleProviderModel);
   const refreshProviderModels = useIdeStore((s) => s.refreshProviderModels);
   const cliLatestVersions = useIdeStore((s) => s.cliLatestVersions);
@@ -651,38 +649,22 @@ export const SettingsWorkspace = () => {
                 {settingsT("mcpServers")}
               </span>
             </button>
+            {/* Other computers (SSH hosts) and this computer's remote
+                access: both the desktop's. */}
             {platform.kind === "desktop" ? (
               <button
                 className={cn(
                   "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
-                  settingsSection === "sshHosts"
+                  settingsSection === "connections"
                     ? "font-semibold text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
-                onClick={() => setSettingsSection("sshHosts")}
+                onClick={() => setSettingsSection("connections")}
                 type="button"
               >
                 <span className="flex items-center gap-2">
                   <Server className="size-4" />
-                  {sshHostsT("settingsTitle")}
-                </span>
-              </button>
-            ) : null}
-            {/* This computer's remote access: the desktop's to give. */}
-            {platform.kind === "desktop" ? (
-              <button
-                className={cn(
-                  "w-full rounded-md border border-transparent px-3 py-2 text-left font-medium text-sm outline-none transition-colors focus-visible:border-ring",
-                  settingsSection === "remoteAccess"
-                    ? "font-semibold text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => setSettingsSection("remoteAccess")}
-                type="button"
-              >
-                <span className="flex items-center gap-2">
-                  <Smartphone className="size-4" />
-                  {remoteT("accessTitle")}
+                  {settingsT("connections")}
                 </span>
               </button>
             ) : null}
@@ -1559,12 +1541,12 @@ export const SettingsWorkspace = () => {
 
               {settingsSection === "skills" ? <SkillsSettingsSection /> : null}
 
-              {settingsSection === "sshHosts" && platform.kind === "desktop" ? (
-                <SshHostsSettingsSection />
-              ) : null}
-              {settingsSection === "remoteAccess" &&
+              {settingsSection === "connections" &&
               platform.kind === "desktop" ? (
-                <RemoteAccessSection />
+                <div className="space-y-10">
+                  <SshHostsSettingsSection />
+                  <RemoteAccessSection />
+                </div>
               ) : null}
 
               {settingsSection === "chats" ? (

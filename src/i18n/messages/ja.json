@@ -155,6 +155,12 @@
     "removeRecentTitle": "{name} を削除しますか？",
     "removeRecentDescription": "プロジェクトとそのチャットを Dream から削除します。フォルダ自体は変更されません。"
   },
+  "openProject": {
+    "title": "フォルダを開く",
+    "openOn": "開く場所",
+    "browse": "参照…",
+    "addSshHost": "SSH ホストを追加…"
+  },
   "workspace": {
     "chatHistory": "チャット履歴",
     "disableMultiChat": "マルチチャットを無効化",
@@ -409,7 +415,8 @@
     "chatNotifications": "デスクトップ通知",
     "chatNotificationsDescription": "アプリがバックグラウンドにあるとき、チャットの完了、失敗、入力待ちを通知します",
     "chatNotificationSound": "通知音",
-    "chatNotificationSoundDescription": "チャットの完了、失敗、入力待ちのときに音を鳴らします"
+    "chatNotificationSoundDescription": "チャットの完了、失敗、入力待ちのときに音を鳴らします",
+    "connections": "接続"
   },
   "models": {
     "fast": "高速",
@@ -982,11 +989,7 @@
     "stateReconnecting": "再接続中…",
     "stateDisconnected": "切断済み",
     "stateFailed": "接続に失敗しました",
-    "openOnHost": "SSH ホストで開く",
-    "openTitle": "SSH ホスト上のフォルダを開く",
-    "host": "ホスト",
     "folderPath": "フォルダのパス",
-    "folderPlaceholder": "/home/me/project",
     "open": "開く",
     "promptTitle": "{host} からの質問",
     "promptConfirmTitle": "このホストを信頼しますか？",
@@ -1003,8 +1006,6 @@
     "reconnect": "再接続",
     "connectToBrowse": "{host} に接続するとフォルダを参照できます。",
     "upFolder": "1 つ上のフォルダ",
-    "homeFolder": "ホームフォルダ",
-    "showHidden": "隠しフォルダを表示",
     "noFolders": "ここにはフォルダがありません。",
     "foldersTruncated": "最初の {count} 個のフォルダを表示しています。",
     "loadingFolders": "フォルダを読み込んでいます…",
@@ -1013,7 +1014,8 @@
     "runsHere": "このコンピュータで実行",
     "runsOn": "{host} ({target}) で実行",
     "edit": "編集",
-    "editHost": "SSH ホストを編集"
+    "editHost": "SSH ホストを編集",
+    "fromSshConfig": "ssh 設定から:"
   },
   "shortcuts": {
     "title": "キーボードショートカット",
@@ -1095,9 +1097,6 @@
     "signOut": "サインアウト",
     "deviceTitle": "このデバイス",
     "deviceDescription": "{host} とペアリング済みです。サインアウトすると、このデバイスのアクセス権とこのブラウザに保存された内容が削除されます。",
-    "openFolder": "フォルダを開く",
-    "openFolderTitle": "{host} のフォルダを開く",
-    "folderPath": "フォルダのパス",
     "runsOnHost": "{host} で実行",
     "accessTitle": "リモートアクセス",
     "accessDescription": "スマートフォンや他のデバイスからこのコンピュータのプロジェクトを使えます。各デバイスは先にペアリングが必要です。",

@@ -155,6 +155,12 @@
     "removeRecentTitle": "{name} entfernen?",
     "removeRecentDescription": "Das Projekt und seine Chats werden aus Dream entfernt. Der Ordner selbst bleibt unverändert."
   },
+  "openProject": {
+    "title": "Ordner öffnen",
+    "openOn": "Öffnen auf",
+    "browse": "Durchsuchen…",
+    "addSshHost": "SSH-Host hinzufügen…"
+  },
   "workspace": {
     "chatHistory": "Chatverlauf",
     "disableMultiChat": "Multi-Chat deaktivieren",
@@ -409,7 +415,8 @@
     "chatNotifications": "Desktop-Benachrichtigungen",
     "chatNotificationsDescription": "Benachrichtigen, wenn ein Chat fertig ist, fehlschlägt oder deine Eingabe benötigt, während die App im Hintergrund ist",
     "chatNotificationSound": "Benachrichtigungston",
-    "chatNotificationSoundDescription": "Einen Ton abspielen, wenn ein Chat fertig ist, fehlschlägt oder deine Eingabe benötigt"
+    "chatNotificationSoundDescription": "Einen Ton abspielen, wenn ein Chat fertig ist, fehlschlägt oder deine Eingabe benötigt",
+    "connections": "Verbindungen"
   },
   "models": {
     "fast": "Schnell",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Verbinde erneut…",
     "stateDisconnected": "Getrennt",
     "stateFailed": "Verbindung fehlgeschlagen",
-    "openOnHost": "Auf SSH-Host öffnen",
-    "openTitle": "Ordner auf einem SSH-Host öffnen",
-    "host": "Host",
     "folderPath": "Ordnerpfad",
-    "folderPlaceholder": "/home/ich/projekt",
     "open": "Öffnen",
     "promptTitle": "{host} fragt",
     "promptConfirmTitle": "Diesem Host vertrauen?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Erneut verbinden",
     "connectToBrowse": "Verbinde dich mit {host}, um seine Ordner zu durchsuchen.",
     "upFolder": "Einen Ordner nach oben",
-    "homeFolder": "Persönlicher Ordner",
-    "showHidden": "Versteckte anzeigen",
     "noFolders": "Hier gibt es keine Ordner.",
     "foldersTruncated": "Die ersten {count} Ordner werden angezeigt.",
     "loadingFolders": "Ordner werden geladen…",
@@ -1013,7 +1014,8 @@
     "runsHere": "Läuft auf diesem Computer",
     "runsOn": "Läuft auf {host} ({target})",
     "edit": "Bearbeiten",
-    "editHost": "SSH-Host bearbeiten"
+    "editHost": "SSH-Host bearbeiten",
+    "fromSshConfig": "Aus der SSH-Konfiguration:"
   },
   "shortcuts": {
     "title": "Tastenkürzel",
@@ -1095,9 +1097,6 @@
     "signOut": "Abmelden",
     "deviceTitle": "Dieses Gerät",
     "deviceDescription": "Gekoppelt mit {host}. Beim Abmelden werden der Zugriff dieses Geräts und die in diesem Browser gespeicherten Daten entfernt.",
-    "openFolder": "Ordner öffnen",
-    "openFolderTitle": "Ordner auf {host} öffnen",
-    "folderPath": "Ordnerpfad",
     "runsOnHost": "Läuft auf {host}",
     "accessTitle": "Fernzugriff",
     "accessDescription": "Nutze die Projekte dieses Computers von einem Smartphone oder einem anderen Gerät. Jedes Gerät muss zuerst gekoppelt werden.",

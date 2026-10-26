@@ -155,6 +155,12 @@
     "removeRecentTitle": "移除 {name}？",
     "removeRecentDescription": "将从 Dream 中移除该项目及其聊天。文件夹本身不受影响。"
   },
+  "openProject": {
+    "title": "打开文件夹",
+    "openOn": "打开位置",
+    "browse": "浏览…",
+    "addSshHost": "添加 SSH 主机…"
+  },
   "workspace": {
     "chatHistory": "聊天记录",
     "disableMultiChat": "停用多聊天",
@@ -409,7 +415,8 @@
     "chatNotifications": "桌面通知",
     "chatNotificationsDescription": "当应用处于后台时，在聊天完成、失败或需要你的输入时发出通知",
     "chatNotificationSound": "通知提示音",
-    "chatNotificationSoundDescription": "在聊天完成、失败或需要你的输入时播放提示音"
+    "chatNotificationSoundDescription": "在聊天完成、失败或需要你的输入时播放提示音",
+    "connections": "连接"
   },
   "models": {
     "fast": "快速",
@@ -982,11 +989,7 @@
     "stateReconnecting": "正在重新连接…",
     "stateDisconnected": "已断开",
     "stateFailed": "连接失败",
-    "openOnHost": "在 SSH 主机上打开",
-    "openTitle": "在 SSH 主机上打开文件夹",
-    "host": "主机",
     "folderPath": "文件夹路径",
-    "folderPlaceholder": "/home/me/project",
     "open": "打开",
     "promptTitle": "{host} 询问",
     "promptConfirmTitle": "信任这台主机？",
@@ -1003,8 +1006,6 @@
     "reconnect": "重新连接",
     "connectToBrowse": "连接到 {host} 以浏览其文件夹。",
     "upFolder": "上一级文件夹",
-    "homeFolder": "主文件夹",
-    "showHidden": "显示隐藏文件夹",
     "noFolders": "这里没有文件夹。",
     "foldersTruncated": "仅显示前 {count} 个文件夹。",
     "loadingFolders": "正在加载文件夹…",
@@ -1013,7 +1014,8 @@
     "runsHere": "在此计算机上运行",
     "runsOn": "在 {host}（{target}）上运行",
     "edit": "编辑",
-    "editHost": "编辑 SSH 主机"
+    "editHost": "编辑 SSH 主机",
+    "fromSshConfig": "来自 ssh 配置："
   },
   "shortcuts": {
     "title": "键盘快捷键",
@@ -1095,9 +1097,6 @@
     "signOut": "退出登录",
     "deviceTitle": "此设备",
     "deviceDescription": "已与 {host} 配对。退出登录会移除此设备的访问权限以及此浏览器保存的内容。",
-    "openFolder": "打开文件夹",
-    "openFolderTitle": "在 {host} 上打开文件夹",
-    "folderPath": "文件夹路径",
     "runsOnHost": "运行于 {host}",
     "accessTitle": "远程访问",
     "accessDescription": "从手机或其他设备使用这台电脑上的项目。每台设备都必须先配对。",

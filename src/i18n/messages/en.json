@@ -155,6 +155,12 @@
     "removeRecentTitle": "Remove {name}?",
     "removeRecentDescription": "This removes the project and its chats from Dream. The folder itself is not touched."
   },
+  "openProject": {
+    "title": "Open folder",
+    "openOn": "Open on",
+    "browse": "Browse…",
+    "addSshHost": "Add SSH host…"
+  },
   "workspace": {
     "chatHistory": "Chat history",
     "disableMultiChat": "Disable multi-chat",
@@ -409,7 +415,8 @@
     "chatNotifications": "Desktop notifications",
     "chatNotificationsDescription": "Notify when a chat finishes, fails or needs your input while the app is in the background",
     "chatNotificationSound": "Notification sound",
-    "chatNotificationSoundDescription": "Play a sound when a chat finishes, fails or needs your input"
+    "chatNotificationSoundDescription": "Play a sound when a chat finishes, fails or needs your input",
+    "connections": "Connections"
   },
   "models": {
     "fast": "Fast",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Reconnecting…",
     "stateDisconnected": "Disconnected",
     "stateFailed": "Connection failed",
-    "openOnHost": "Open on SSH Host",
-    "openTitle": "Open a folder on an SSH host",
-    "host": "Host",
     "folderPath": "Folder path",
-    "folderPlaceholder": "/home/me/project",
     "open": "Open",
     "promptTitle": "{host} asks",
     "promptConfirmTitle": "Trust this host?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Reconnect",
     "connectToBrowse": "Connect to {host} to browse its folders.",
     "upFolder": "Up one folder",
-    "homeFolder": "Home folder",
-    "showHidden": "Show hidden",
     "noFolders": "No folders here.",
     "foldersTruncated": "Showing the first {count} folders.",
     "loadingFolders": "Loading folders…",
@@ -1013,7 +1014,8 @@
     "runsHere": "Runs on this computer",
     "runsOn": "Runs on {host} ({target})",
     "edit": "Edit",
-    "editHost": "Edit SSH host"
+    "editHost": "Edit SSH host",
+    "fromSshConfig": "From ssh config:"
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -1095,9 +1097,6 @@
     "signOut": "Sign out",
     "deviceTitle": "This device",
     "deviceDescription": "Paired with {host}. Signing out removes this device's access and what this browser saved.",
-    "openFolder": "Open folder",
-    "openFolderTitle": "Open a folder on {host}",
-    "folderPath": "Folder path",
     "runsOnHost": "Runs on {host}",
     "accessTitle": "Remote access",
     "accessDescription": "Use this computer's projects from a phone or another device. Every device must be paired first.",

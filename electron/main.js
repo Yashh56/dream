@@ -60,6 +60,7 @@ import {
 } from "./shared/desktop-channels.js";
 import { DEV_RUNTIME_VERSION } from "./ssh/host-install.js";
 import { createSshPromptBroker } from "./ssh/prompt-broker.js";
+import { readSshConfigHosts } from "./ssh/ssh-config-hosts.js";
 import { createSshHostManager } from "./ssh/ssh-hosts.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { createThemeStore } from "./theme-store.js";
@@ -645,6 +646,7 @@ const desktop = createDesktopHandlers({
   getPath: (name) => app.getPath(name),
   getWindow: getAliveMainWindow,
   sendToRenderer,
+  sshConfigHosts: () => readSshConfigHosts(),
   sshHosts,
   sshPrompts,
   state: {

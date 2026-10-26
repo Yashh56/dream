@@ -155,6 +155,12 @@
     "removeRecentTitle": "Retirer {name} ?",
     "removeRecentDescription": "Le projet et ses conversations sont retirés de Dream. Le dossier lui-même n'est pas modifié."
   },
+  "openProject": {
+    "title": "Ouvrir un dossier",
+    "openOn": "Ouvrir sur",
+    "browse": "Parcourir…",
+    "addSshHost": "Ajouter un hôte SSH…"
+  },
   "workspace": {
     "chatHistory": "Historique des chats",
     "disableMultiChat": "Désactiver le multichat",
@@ -409,7 +415,8 @@
     "chatNotifications": "Notifications de bureau",
     "chatNotificationsDescription": "Notifier lorsqu'un chat se termine, échoue ou attend votre réponse pendant que l'application est en arrière-plan",
     "chatNotificationSound": "Son de notification",
-    "chatNotificationSoundDescription": "Jouer un son lorsqu'un chat se termine, échoue ou attend votre réponse"
+    "chatNotificationSoundDescription": "Jouer un son lorsqu'un chat se termine, échoue ou attend votre réponse",
+    "connections": "Connexions"
   },
   "models": {
     "fast": "Rapide",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Reconnexion…",
     "stateDisconnected": "Déconnecté",
     "stateFailed": "Échec de la connexion",
-    "openOnHost": "Ouvrir sur un hôte SSH",
-    "openTitle": "Ouvrir un dossier sur un hôte SSH",
-    "host": "Hôte",
     "folderPath": "Chemin du dossier",
-    "folderPlaceholder": "/home/moi/projet",
     "open": "Ouvrir",
     "promptTitle": "{host} demande",
     "promptConfirmTitle": "Faire confiance à cet hôte ?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Se reconnecter",
     "connectToBrowse": "Connectez-vous à {host} pour parcourir ses dossiers.",
     "upFolder": "Dossier parent",
-    "homeFolder": "Dossier personnel",
-    "showHidden": "Afficher les dossiers masqués",
     "noFolders": "Aucun dossier ici.",
     "foldersTruncated": "Affichage des {count} premiers dossiers.",
     "loadingFolders": "Chargement des dossiers…",
@@ -1013,7 +1014,8 @@
     "runsHere": "S'exécute sur cet ordinateur",
     "runsOn": "S'exécute sur {host} ({target})",
     "edit": "Modifier",
-    "editHost": "Modifier l’hôte SSH"
+    "editHost": "Modifier l’hôte SSH",
+    "fromSshConfig": "Depuis la configuration ssh :"
   },
   "shortcuts": {
     "title": "Raccourcis clavier",
@@ -1095,9 +1097,6 @@
     "signOut": "Se déconnecter",
     "deviceTitle": "Cet appareil",
     "deviceDescription": "Associé à {host}. La déconnexion retire l’accès de cet appareil et ce que ce navigateur a enregistré.",
-    "openFolder": "Ouvrir un dossier",
-    "openFolderTitle": "Ouvrir un dossier sur {host}",
-    "folderPath": "Chemin du dossier",
     "runsOnHost": "S’exécute sur {host}",
     "accessTitle": "Accès à distance",
     "accessDescription": "Utilisez les projets de cet ordinateur depuis un téléphone ou un autre appareil. Chaque appareil doit d’abord être associé.",

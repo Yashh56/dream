@@ -89,3 +89,6 @@ Module names and current ownership live in ../../GLOSSARY.md.
   Git history pagination.
 - `tasks/review-20261025.md` tracks ARC-01, ARC-02 and ARC-03:
   Agent turn completion, Connection recovery and Remote access state.
+- `tasks/open-project-flow.md` tracks OPEN-01 from the T3 Code comparison:
+  one open-project dialog with path completion on any host, connecting SSH
+  hosts before opening, and one Connections section in Settings.

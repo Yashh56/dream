@@ -155,6 +155,12 @@
     "removeRecentTitle": "Remover {name}?",
     "removeRecentDescription": "O projeto e seus chats são removidos do Dream. A pasta em si não é alterada."
   },
+  "openProject": {
+    "title": "Abrir pasta",
+    "openOn": "Abrir em",
+    "browse": "Procurar…",
+    "addSshHost": "Adicionar host SSH…"
+  },
   "workspace": {
     "chatHistory": "Histórico de chats",
     "disableMultiChat": "Desativar multichat",
@@ -409,7 +415,8 @@
     "chatNotifications": "Notificações da área de trabalho",
     "chatNotificationsDescription": "Notificar quando um chat terminar, falhar ou precisar da sua resposta enquanto o app estiver em segundo plano",
     "chatNotificationSound": "Som de notificação",
-    "chatNotificationSoundDescription": "Tocar um som quando um chat terminar, falhar ou precisar da sua resposta"
+    "chatNotificationSoundDescription": "Tocar um som quando um chat terminar, falhar ou precisar da sua resposta",
+    "connections": "Conexões"
   },
   "models": {
     "fast": "Rápido",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Reconectando…",
     "stateDisconnected": "Desconectado",
     "stateFailed": "Falha na conexão",
-    "openOnHost": "Abrir em host SSH",
-    "openTitle": "Abrir uma pasta em um host SSH",
-    "host": "Host",
     "folderPath": "Caminho da pasta",
-    "folderPlaceholder": "/home/eu/projeto",
     "open": "Abrir",
     "promptTitle": "{host} pergunta",
     "promptConfirmTitle": "Confiar neste host?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Reconectar",
     "connectToBrowse": "Conecte-se a {host} para navegar pelas pastas.",
     "upFolder": "Subir uma pasta",
-    "homeFolder": "Pasta pessoal",
-    "showHidden": "Mostrar ocultas",
     "noFolders": "Nenhuma pasta aqui.",
     "foldersTruncated": "Mostrando as primeiras {count} pastas.",
     "loadingFolders": "Carregando pastas…",
@@ -1013,7 +1014,8 @@
     "runsHere": "Executa neste computador",
     "runsOn": "Executa em {host} ({target})",
     "edit": "Editar",
-    "editHost": "Editar host SSH"
+    "editHost": "Editar host SSH",
+    "fromSshConfig": "Da configuração do ssh:"
   },
   "shortcuts": {
     "title": "Atalhos de teclado",
@@ -1095,9 +1097,6 @@
     "signOut": "Sair",
     "deviceTitle": "Este dispositivo",
     "deviceDescription": "Emparelhado com {host}. Ao sair, o acesso deste dispositivo e o que este navegador salvou são removidos.",
-    "openFolder": "Abrir pasta",
-    "openFolderTitle": "Abrir uma pasta em {host}",
-    "folderPath": "Caminho da pasta",
     "runsOnHost": "Executa em {host}",
     "accessTitle": "Acesso remoto",
     "accessDescription": "Use os projetos deste computador a partir de um telefone ou outro dispositivo. Cada dispositivo precisa ser emparelhado primeiro.",

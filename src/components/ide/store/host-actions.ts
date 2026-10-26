@@ -1,7 +1,7 @@
 /**
  * SSH hosts in the store: connecting one (the main process runs ssh and
  * the host's daemon; this window then loads the host's catalog), its state
- * as main reports it, and opening a folder on it as a project. A host's
+ * as main reports it. A host's
  * projects stay in the store while it is away, so its tabs do not vanish
  * with a dropped connection.
  *
@@ -67,7 +67,6 @@ export const createHostActions = (
   | "updateSshHost"
   | "disconnectHost"
   | "setHostStatus"
-  | "openProjectOnHost"
   | "removeSshHost"
 > => {
   // An SSH host's connection state is the main process's (it owns the ssh
@@ -336,19 +335,6 @@ export const createHostActions = (
         catalogs.resume(hostId);
         void refreshCatalog(hostId).catch(() => undefined);
       }
-    },
-
-    openProjectOnHost: async (hostId, path) => {
-      const trimmed = path.trim();
-      if (!trimmed) return false;
-      // The host's projects must be here first: one already at this path
-      // opens as itself, not as a second project the host would refuse.
-      const runtime = get().hosts[hostId];
-      if (runtime?.state !== "connected" || !runtime.loaded) {
-        if (!(await connectHost(hostId))) return false;
-      }
-      get().addProject(trimmed, { hostId });
-      return true;
     },
   };
 };

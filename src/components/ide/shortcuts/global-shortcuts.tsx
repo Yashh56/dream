@@ -1,6 +1,6 @@
-import { getDesktopApi } from "@/lib/electron";
 import { useChatSearchStore } from "../chat-search";
 import { useIdeStore } from "../ide-store";
+import { showOpenProjectDialog } from "../open-project/open-project-dialog";
 import { useShortcut, useShortcutDispatcher } from "./shortcuts";
 
 const cycleProject = (step: 1 | -1) => {
@@ -24,19 +24,6 @@ const cycleProject = (step: 1 | -1) => {
   }
 };
 
-const openProjectFolder = async () => {
-  const desktopApi = getDesktopApi();
-  if (!desktopApi) {
-    return;
-  }
-  const selectedPath = await desktopApi.pickProjectDirectory();
-  if (selectedPath) {
-    const state = useIdeStore.getState();
-    state.setSettingsOpen(false);
-    state.addProject(selectedPath);
-  }
-};
-
 /**
  * Installs the shortcut dispatcher and the shortcuts that belong to the whole
  * window rather than to one project. Renders nothing.
@@ -50,7 +37,7 @@ export const GlobalShortcuts = () => {
 
   useShortcut("openSettings", () => setSettingsOpen(true), !settingsOpen);
   useShortcut("searchChats", () => openChatSearch(true));
-  useShortcut("openProject", () => void openProjectFolder());
+  useShortcut("openProject", showOpenProjectDialog);
   useShortcut("nextProject", () => cycleProject(1), !settingsOpen);
   useShortcut("previousProject", () => cycleProject(-1), !settingsOpen);
 

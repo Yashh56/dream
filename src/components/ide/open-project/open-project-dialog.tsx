@@ -1,0 +1,301 @@
+/**
+ * The one way to open a folder as a project: pick where it is (this
+ * computer, or an SSH host on the desktop), then type its path with the
+ * folders that could come next listed from that host. An SSH host is
+ * connected as soon as it is picked. On the desktop's own computer the
+ * system's folder picker is offered too.
+ */
+import { FolderOpen, PlugZap, Plus } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { useEffect, useState } from "react";
+import { create } from "zustand";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { apiClient, getApiErrorMessage } from "@/lib/api-client";
+import { getClientPlatform } from "@/lib/connections/platform";
+import { useConnectionState } from "@/lib/connections/use-connection-state";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
+import type { SshHostConfig } from "@/types/ide";
+import { useIdeStore } from "../ide-store";
+import {
+  EMPTY_HOST_FORM,
+  SshHostDialog,
+  useAddSshHost,
+} from "../ssh/ssh-hosts-settings-section";
+import { HOME_FOLDER_INPUT } from "./folder-path";
+import { FolderPathField } from "./folder-path-field";
+
+const NO_SSH_HOSTS: SshHostConfig[] = [];
+
+/** The Select value that opens the Add SSH host form instead of a host. */
+const ADD_SSH_HOST = "__add-ssh-host__";
+
+interface OpenProjectDialogState {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}
+
+/** Whether the dialog is open; opened from the empty page or the shortcut. */
+export const useOpenProjectDialog = create<OpenProjectDialogState>((set) => ({
+  open: false,
+  setOpen: (open) => set({ open }),
+}));
+
+/** Opens the dialog; Settings closes once a project opens. */
+export const showOpenProjectDialog = () => {
+  useOpenProjectDialog.getState().setOpen(true);
+};
+
+export const OpenProjectDialog = () => {
+  const open = useOpenProjectDialog((state) => state.open);
+  const setOpen = useOpenProjectDialog((state) => state.setOpen);
+  // Mounted only while open, so each opening starts fresh.
+  return open ? <OpenProjectForm onClose={() => setOpen(false)} /> : null;
+};
+
+const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
+  const t = useTranslations("openProject");
+  const sshT = useTranslations("sshHosts");
+  const platform = getClientPlatform();
+  const desktop = platform.desktop;
+  // SSH hosts are the desktop's: a browser client opens on its own host.
+  const savedSshHosts = useIdeStore((state) => state.settings.sshHosts);
+  const sshHosts = desktop ? savedSshHosts : NO_SSH_HOSTS;
+  const hosts = useIdeStore((state) => state.hosts);
+  const connectHost = useIdeStore((state) => state.connectHost);
+  const openProject = useIdeStore((state) => state.openProject);
+  const setSettingsOpen = useIdeStore((state) => state.setSettingsOpen);
+  const addSshHost = useAddSshHost();
+  const homeState = useConnectionState(LOCAL_HOST_ID);
+
+  const [hostId, setHostId] = useState(LOCAL_HOST_ID);
+  const [path, setPath] = useState(HOME_FOLDER_INPUT);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [addingHost, setAddingHost] = useState(false);
+
+  const home = hostId === LOCAL_HOST_ID;
+  const sshHost = sshHosts.find((host) => host.id === hostId);
+  const runtime = home ? undefined : hosts[hostId];
+  const reachable = home
+    ? homeState.status === "ready"
+    : runtime?.state === "connected";
+  const hostLabel = home ? platform.homeLabel : (sshHost?.label ?? hostId);
+
+  // A host removed while picked falls back to this computer.
+  useEffect(() => {
+    if (!home && !sshHost) setHostId(LOCAL_HOST_ID);
+  }, [home, sshHost]);
+
+  // Picking an SSH host connects it; ssh's prompts appear in their own
+  // dialog. A failed attempt waits for Connect rather than retrying.
+  useEffect(() => {
+    if (hostId === LOCAL_HOST_ID) return;
+    const state = useIdeStore.getState().hosts[hostId]?.state;
+    if (state !== "connected" && state !== "connecting") {
+      void connectHost(hostId);
+    }
+  }, [connectHost, hostId]);
+
+  const pickHost = (next: string) => {
+    if (next === ADD_SSH_HOST) {
+      setAddingHost(true);
+      return;
+    }
+    setHostId(next);
+    setPath(HOME_FOLDER_INPUT);
+    setError(null);
+  };
+
+  const finish = async (folder: string) => {
+    if (await openProject(folder, { hostId })) {
+      setSettingsOpen(false);
+      onClose();
+    }
+  };
+
+  const handleOpen = async () => {
+    if (!path.trim()) return;
+    setOpening(true);
+    setError(null);
+    try {
+      if (!home && !(await connectHost(hostId))) return;
+      // The host resolves the path (`~`, relative to home) and says
+      // whether it is a folder before anything is added.
+      const folder = await apiClient.hostDirectories({ path }, { hostId });
+      await finish(folder.path);
+    } catch (failure) {
+      setError(getApiErrorMessage(failure, sshT("foldersFailed")));
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const handleBrowse = async () => {
+    const selected = await desktop?.pickProjectDirectory();
+    if (selected) await finish(selected);
+  };
+
+  const busy =
+    runtime?.state === "connecting" || runtime?.state === "reconnecting";
+  const unavailable = reachable ? undefined : home ? (
+    <Spinner className="size-4" />
+  ) : busy ? (
+    <>
+      <Spinner className="size-4" />
+      <span>{sshT("connectingTo", { host: hostLabel })}</span>
+    </>
+  ) : (
+    <>
+      <span>
+        {runtime?.state === "failed" && runtime.error
+          ? runtime.error
+          : sshT("connectToBrowse", { host: hostLabel })}
+      </span>
+      <Button
+        onClick={() => void connectHost(hostId)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        <PlugZap className="size-3.5" />
+        {sshT("connect")}
+      </Button>
+    </>
+  );
+
+  return (
+    <Dialog
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      open
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t("title")}</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleOpen();
+          }}
+        >
+          {sshHosts.length > 0 ? (
+            <div className="grid gap-1.5">
+              <Label htmlFor="open-project-host">{t("openOn")}</Label>
+              <Select
+                onValueChange={(value) => {
+                  if (value !== null) pickHost(value);
+                }}
+                value={hostId}
+              >
+                <SelectTrigger className="w-full" id="open-project-host">
+                  <SelectValue>{hostLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" alignItemWithTrigger={false}>
+                  <SelectItem value={LOCAL_HOST_ID}>
+                    {platform.homeLabel}
+                  </SelectItem>
+                  {sshHosts.map((host) => (
+                    <SelectItem key={host.id} value={host.id}>
+                      {host.label}
+                    </SelectItem>
+                  ))}
+                  <SelectSeparator />
+                  <SelectItem value={ADD_SSH_HOST}>
+                    <Plus className="size-3.5" />
+                    {t("addSshHost")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <div className="grid gap-1.5">
+            <Label htmlFor="open-project-path">{sshT("folderPath")}</Label>
+            <FolderPathField
+              hostId={hostId}
+              id="open-project-path"
+              key={hostId}
+              onChange={(next) => {
+                setPath(next);
+                setError(null);
+              }}
+              trailing={
+                desktop && home ? (
+                  <Button
+                    onClick={() => void handleBrowse()}
+                    type="button"
+                    variant="outline"
+                  >
+                    <FolderOpen className="size-4" />
+                    {t("browse")}
+                  </Button>
+                ) : null
+              }
+              unavailable={unavailable}
+              value={path}
+            />
+            {error ? (
+              <p className="break-words text-destructive text-xs">{error}</p>
+            ) : null}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            {desktop && sshHosts.length === 0 ? (
+              <Button
+                onClick={() => setAddingHost(true)}
+                type="button"
+                variant="ghost"
+              >
+                <Plus className="size-4" />
+                {t("addSshHost")}
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button onClick={onClose} type="button" variant="ghost">
+                {sshT("cancel")}
+              </Button>
+              <Button disabled={opening || !path.trim()} type="submit">
+                {opening ? <Spinner className="size-3.5" /> : null}
+                {sshT("open")}
+              </Button>
+            </div>
+          </DialogFooter>
+        </form>
+        {/* Nested in this dialog, outside its form: the host form's
+              submit must not also open a folder. */}
+        {addingHost ? (
+          <SshHostDialog
+            initial={EMPTY_HOST_FORM}
+            isNew
+            onCancel={() => setAddingHost(false)}
+            onSave={(values) => {
+              const host = addSshHost(values);
+              setAddingHost(false);
+              pickHost(host.id);
+            }}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+};

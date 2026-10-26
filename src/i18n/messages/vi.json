@@ -155,6 +155,12 @@
     "removeRecentTitle": "Xóa {name}?",
     "removeRecentDescription": "Dự án và các cuộc trò chuyện của nó sẽ bị xóa khỏi Dream. Bản thân thư mục không bị thay đổi."
   },
+  "openProject": {
+    "title": "Mở thư mục",
+    "openOn": "Mở trên",
+    "browse": "Duyệt…",
+    "addSshHost": "Thêm máy chủ SSH…"
+  },
   "workspace": {
     "chatHistory": "Lịch sử chat",
     "disableMultiChat": "Tắt đa chat",
@@ -409,7 +415,8 @@
     "chatNotifications": "Thông báo trên màn hình",
     "chatNotificationsDescription": "Thông báo khi một cuộc trò chuyện hoàn tất, thất bại hoặc cần bạn phản hồi trong lúc ứng dụng chạy nền",
     "chatNotificationSound": "Âm thanh thông báo",
-    "chatNotificationSoundDescription": "Phát âm thanh khi một cuộc trò chuyện hoàn tất, thất bại hoặc cần bạn phản hồi"
+    "chatNotificationSoundDescription": "Phát âm thanh khi một cuộc trò chuyện hoàn tất, thất bại hoặc cần bạn phản hồi",
+    "connections": "Kết nối"
   },
   "models": {
     "fast": "Nhanh",
@@ -982,11 +989,7 @@
     "stateReconnecting": "Đang kết nối lại…",
     "stateDisconnected": "Đã ngắt kết nối",
     "stateFailed": "Kết nối thất bại",
-    "openOnHost": "Mở trên máy chủ SSH",
-    "openTitle": "Mở một thư mục trên máy chủ SSH",
-    "host": "Máy chủ",
     "folderPath": "Đường dẫn thư mục",
-    "folderPlaceholder": "/home/toi/du-an",
     "open": "Mở",
     "promptTitle": "{host} hỏi",
     "promptConfirmTitle": "Tin cậy máy chủ này?",
@@ -1003,8 +1006,6 @@
     "reconnect": "Kết nối lại",
     "connectToBrowse": "Kết nối tới {host} để duyệt thư mục.",
     "upFolder": "Lên một thư mục",
-    "homeFolder": "Thư mục chính",
-    "showHidden": "Hiện thư mục ẩn",
     "noFolders": "Không có thư mục nào ở đây.",
     "foldersTruncated": "Đang hiển thị {count} thư mục đầu tiên.",
     "loadingFolders": "Đang tải thư mục…",
@@ -1013,7 +1014,8 @@
     "runsHere": "Chạy trên máy tính này",
     "runsOn": "Chạy trên {host} ({target})",
     "edit": "Chỉnh sửa",
-    "editHost": "Sửa máy chủ SSH"
+    "editHost": "Sửa máy chủ SSH",
+    "fromSshConfig": "Từ cấu hình ssh:"
   },
   "shortcuts": {
     "title": "Phím tắt",
@@ -1095,9 +1097,6 @@
     "signOut": "Đăng xuất",
     "deviceTitle": "Thiết bị này",
     "deviceDescription": "Đã ghép nối với {host}. Đăng xuất sẽ xóa quyền truy cập của thiết bị này và nội dung trình duyệt này đã lưu.",
-    "openFolder": "Mở thư mục",
-    "openFolderTitle": "Mở thư mục trên {host}",
-    "folderPath": "Đường dẫn thư mục",
     "runsOnHost": "Chạy trên {host}",
     "accessTitle": "Truy cập từ xa",
     "accessDescription": "Dùng các dự án của máy tính này từ điện thoại hoặc thiết bị khác. Mỗi thiết bị phải được ghép nối trước.",

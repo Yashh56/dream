@@ -63,6 +63,8 @@ const fields = (payload) =>
  * @param {() => boolean} deps.systemPrefersDark
  * @param {{ loadWorkspace: () => unknown, saveWorkspaceChanges: (changes: unknown) => unknown }} deps.state
  * @param {{ connect: (options: { hostCommand?: string, hostId: string, target: string, expectedIdentity?: { hostId: string, fingerprint?: string | null } | null }) => Promise<{ hostProtocolVersion: number, version?: string | null, hostId?: string | null, fingerprint?: string | null }>, disconnect: (hostId: string) => void, getState: (hostId: string) => unknown, forwardPort: (hostId: string, port: number) => unknown }} deps.sshHosts
+ * @param {() => Promise<string[]>} deps.sshConfigHosts The aliases in the
+ *   user's ssh config.
  * @param {{ answer: (promptId: unknown, answer: unknown) => void }} deps.sshPrompts
  * @param {{ update: (payload: unknown) => void, capturePage: (payload: unknown) => unknown }} deps.browserSessions
  * @param {{ detect: () => unknown, open: (options: { editorId: unknown, projectPath: unknown, sshTarget: unknown }) => unknown }} deps.editors
@@ -77,6 +79,7 @@ export const createDesktopHandlers = ({
   getPath,
   getWindow,
   sendToRenderer,
+  sshConfigHosts,
   sshHosts,
   sshPrompts,
   state,
@@ -333,6 +336,7 @@ export const createDesktopHandlers = ({
         version: endpoint.version ?? null,
       };
     },
+    listSshConfigHosts: () => sshConfigHosts(),
     disconnectHost: (/** @type {unknown} */ payload) => {
       const { hostId } = fields(payload);
       if (typeof hostId === "string") sshHosts.disconnect(hostId);

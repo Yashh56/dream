@@ -215,6 +215,16 @@ export interface IdeState {
       worktree?: ProjectWorktreeInfo;
     },
   ) => void;
+  /**
+   * Opens the folder at `path` on a host as a project, the way a person
+   * opens one: an SSH host is connected first (ssh's prompts appear in
+   * their own dialog), so a project already there opens as itself. False
+   * when the host could not be reached; nothing is added then.
+   */
+  openProject: (
+    path: string,
+    options?: { activate?: boolean; hostId?: string },
+  ) => Promise<boolean>;
   createWorktreeProject: (
     parentProjectId: string,
     options: {
@@ -570,8 +580,6 @@ export interface IdeState {
    * window (the host keeps them) and removes it from settings.
    */
   removeSshHost: (hostId: string) => Promise<void>;
-  /** Opens the folder at `path` on an SSH host as a project. */
-  openProjectOnHost: (hostId: string, path: string) => Promise<boolean>;
   /** A turn started or ended on the host. */
   setHostTurnRunning: (chatId: string, running: boolean) => void;
   persist: () => void;

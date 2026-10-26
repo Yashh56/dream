@@ -100,6 +100,7 @@ const createFakes = ({ window = true } = {}) => {
     getPath: () => "/pictures",
     getWindow: () => (window ? fakeWindow : null),
     sendToRenderer: record("renderer"),
+    sshConfigHosts: async () => ["devbox"],
     sshHosts: {
       connect: async (options) => {
         log.push(["connect", options]);
@@ -237,6 +238,7 @@ test("SSH host calls are checked before they reach the hosts", async () => {
   assert.throws(() => handlers.forwardHostPort({ hostId: "h", port: 70000 }));
   assert.equal(handlers.forwardHostPort({ hostId: "h", port: "3000" }), 43000);
   assert.equal(handlers.getHostState({}), "idle");
+  assert.deepEqual(await handlers.listSshConfigHosts(), ["devbox"]);
   handlers.answerHostPrompt({ answer: "pw", promptId: 2 });
   assert.deepEqual(log, [
     [
