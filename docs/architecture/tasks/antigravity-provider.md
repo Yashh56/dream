@@ -18,7 +18,8 @@ Scope:
 - Provider capabilities & registry:
   - Provider ID `"antigravity"` registered in `electron/shared/provider-capabilities.js`
     with `modelSwitchInSession: true`, `mcp: false`, `skills: { dispatch: "slash" }`,
-    `selectedModelsSetting: "antigravitySelectedModels"`.
+    `selectedModelsSetting: "antigravitySelectedModels"`. Dream-managed MCP is deferred
+    (matching Cursor).
   - Added to `PROVIDER_IDS` and validation schemas across chat, git, skills, and delegation.
   - Model options reasoning effort support (`["low", "medium", "high", "xhigh", "max"]`)
     in `electron/shared/model-options.js`.
@@ -35,29 +36,34 @@ Scope:
 - Dynamic model discovery:
   - `fetchAntigravityModels` and `parseAntigravityModelsOutput` in
     `electron/api/providers/provider-models.js`. Discovers available models via `agy models`,
-    with context window mappings (1M tokens for Gemini models), and
+    with context window mappings (1M tokens for Gemini models, 200k tokens for Claude models), and
     reasoning effort capabilities; unavailable discovery returns no models.
 - Chat streaming adapter:
   - `electron/api/chat/antigravity-stream.js`: executes `agy` in streaming JSON mode
-    (`--output-format stream-json`).
+    (`--output-format stream-json`). When prompts exceed command-line limits or run via Windows shell,
+    uses `--input-format stream-json` to pipe NDJSON user events over standard input.
   - Translates NDJSON events (`init`, `step_update`, `agent_response`, `tool`, `result`)
     into Dream's `turn` contract:
     - `turn.session` from `conversation_id`.
     - `turn.text` from streamed message chunks.
     - `turn.reasoning` from `thought_delta` / `reasoning_delta` fields.
     - `turn.toolStart`, `turn.toolOutput`, and `turn.toolError` from tool calls
-      (`run_command`, `read_file`, `write_file`, `edit_file`).
-    - `turn.usage` from token usage reports.
+      (`run_command`, `read_file`, `write_file`, `edit_file`). Raw tool names are preserved.
+      Soft-denied commands in headless mode (`output: undefined`) are emitted as tool errors.
+    - `turn.usage` reported once from final turn `result.usage` with `thinking_tokens` mapped
+      to reasoning tokens and model-specific context window.
   - Maps Dream permission modes:
     - `full-access`: `--dangerously-skip-permissions`
     - `auto-accept-edits`: `--mode accept-edits`
-    - `ask`: default strict prompt permissions (never auto-approved).
+    - `ask`: `--mode plan` (interactive mid-turn approval in headless print mode is deferred;
+      `--mode plan` safely prevents unprompted workspace modifications or shell execution).
   - Session continuation via `--conversation <conversationId>`.
   - Reasoning effort via `--effort <effort>`.
   - Process cancellation via `stopChildProcess(child)`.
 - Background text generation:
   - `runAntigravityPrompt` in `electron/api/providers/generate-text.js` using safe
-    `--mode plan` with zero mutating tools for chat titles, git commit messages, and PR summaries.
+    `--mode plan` with zero mutating tools for chat titles, git commit messages, and PR summaries,
+    configured with process timeout handling (`--print-timeout` and Node-level kill timer).
 - Usage limits & stats:
   - `fetchAntigravityUsageLimits` in `electron/api/providers/usage-limits.js` parsing
     `agy -p "/usage" --output-format json`.

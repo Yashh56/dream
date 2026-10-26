@@ -183,7 +183,7 @@ describe("streamAntigravityResponse", () => {
 
     const toolStart = chunks.find((c) => c.type === "tool-input-available");
     expect(toolStart).toBeDefined();
-    expect(toolStart.toolName).toBe("writeFile");
+    expect(toolStart.toolName).toBe("edit_file");
     expect(toolStart.input.filePath).toBe("src/index.ts");
     expect(toolStart.input.old_string).toBe("console.log('broken');");
     expect(toolStart.input.new_string).toBe("console.log('fixed');");
@@ -342,7 +342,7 @@ describe("streamAntigravityResponse", () => {
     expect(args).not.toContain("--effort");
   });
 
-  it("pipes prompt to stdin when launch requires shell or prompt is large", async () => {
+  it("pipes prompt to stdin with --input-format stream-json when launch requires shell or prompt is large", async () => {
     const { streamAntigravityResponse } = await import(
       "./antigravity-stream.js"
     );
@@ -353,7 +353,7 @@ describe("streamAntigravityResponse", () => {
       writtenStdin += d.toString();
     });
 
-    const largePrompt = "A".repeat(9000);
+    const largePrompt = "A".repeat(35000);
     const responsePromise = streamAntigravityResponse({
       messages: [
         {
@@ -372,9 +372,156 @@ describe("streamAntigravityResponse", () => {
 
     expect(spawnCalls.length).toBe(1);
     const { args, options } = spawnCalls[0];
+    expect(args).toContain("--input-format");
+    expect(args).toContain("stream-json");
     expect(args).not.toContain("-p");
     expect(options.stdio[0]).toBe("pipe");
-    expect(writtenStdin).toBe(largePrompt);
+    const parsed = JSON.parse(writtenStdin.trim());
+    expect(parsed).toEqual({
+      event: "user",
+      message: { content: largePrompt },
+    });
+  });
+
+  it("maps default ask permissionMode to --mode plan", async () => {
+    const { streamAntigravityResponse } = await import(
+      "./antigravity-stream.js"
+    );
+
+    const responsePromise = streamAntigravityResponse({
+      messages: [
+        { id: "u1", parts: [{ text: "Inspect", type: "text" }], role: "user" },
+      ],
+      permissionMode: "ask",
+      projectPath: "D:/project",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    fakeChild.emit("close", 0);
+    await responsePromise;
+
+    expect(spawnCalls.length).toBe(1);
+    const { args } = spawnCalls[0];
+    expect(args).toContain("--mode");
+    expect(args).toContain("plan");
+  });
+
+  it("surfaces soft-denied command as tool error in headless mode", async () => {
+    const { streamAntigravityResponse } = await import(
+      "./antigravity-stream.js"
+    );
+
+    const responsePromise = streamAntigravityResponse({
+      messages: [
+        { id: "u1", parts: [{ text: "Run ls", type: "text" }], role: "user" },
+      ],
+      permissionMode: "ask",
+      projectPath: "D:/project",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // When agy soft-denies a command in print mode, state is DONE, output is undefined
+    fakeChild.stdout.write(
+      `${JSON.stringify({
+        event: "step_update",
+        step_update: {
+          state: "DONE",
+          step_index: 0,
+          step_type: "tool",
+          tool_info: {
+            parameters: { CommandLine: "ls" },
+            tool_name: "run_command",
+          },
+        },
+      })}\n`,
+    );
+
+    fakeChild.emit("close", 0);
+
+    const response = await responsePromise;
+    const chunks = await readChunks(response);
+
+    const toolError = chunks.find((c) => c.type === "tool-output-error");
+    expect(toolError).toBeDefined();
+    expect(toolError.errorText).toContain("Action was denied (headless mode)");
+  });
+
+  it("surfaces denied_actions in result event as policy notice", async () => {
+    const { streamAntigravityResponse } = await import(
+      "./antigravity-stream.js"
+    );
+
+    const responsePromise = streamAntigravityResponse({
+      messages: [
+        {
+          id: "u1",
+          parts: [{ text: "Run npm install", type: "text" }],
+          role: "user",
+        },
+      ],
+      projectPath: "D:/project",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    fakeChild.stdout.write(
+      `${JSON.stringify({
+        event: "result",
+        result: {
+          denied_actions: [{ action: "command", display_name: "RunCommand" }],
+          response: "Finished without executing command",
+          status: "SUCCESS",
+        },
+      })}\n`,
+    );
+
+    fakeChild.emit("close", 0);
+
+    const response = await responsePromise;
+    const chunks = await readChunks(response);
+
+    const policyError = chunks.find(
+      (c) =>
+        c.type === "tool-output-error" &&
+        c.errorText.includes("Actions denied by policy"),
+    );
+    expect(policyError).toBeDefined();
+    expect(policyError.errorText).toContain("RunCommand");
+  });
+
+  it("captures non-SUCCESS status in result event and surfaces it upon completion", async () => {
+    const { streamAntigravityResponse } = await import(
+      "./antigravity-stream.js"
+    );
+
+    const response = await streamAntigravityResponse({
+      messages: [
+        { id: "u1", parts: [{ text: "Fix bug", type: "text" }], role: "user" },
+      ],
+      model: "gemini-3.8-flash",
+      projectPath: "D:/project",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    fakeChild.stdout.write(
+      `${JSON.stringify({
+        event: "result",
+        result: {
+          error: { message: "Invalid model selection" },
+          status: "INVALID",
+        },
+      })}\n`,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    fakeChild.emit("close", 0);
+
+    const chunks = await readChunks(response);
+    const errorChunk = chunks.find((c) => c.type === "error");
+    expect(errorChunk).toBeDefined();
+    expect(errorChunk.errorText).toContain("Invalid model selection");
   });
 
   it("captures result error event and surfaces it upon completion", async () => {
@@ -438,5 +585,34 @@ describe("streamAntigravityResponse", () => {
         projectPath: "D:/project",
       }),
     ).rejects.toThrow(/Unsupported model/);
+  });
+});
+
+describe("resolveAntigravityContextWindow", () => {
+  it("returns 1_000_000 for Gemini models", async () => {
+    const { resolveAntigravityContextWindow } = await import(
+      "./antigravity-stream.js"
+    );
+    expect(resolveAntigravityContextWindow("gemini-3.8-flash")).toBe(1_000_000);
+    expect(resolveAntigravityContextWindow("gemini-3.8-pro")).toBe(1_000_000);
+    expect(resolveAntigravityContextWindow("GEMINI-2.5-FLASH")).toBe(1_000_000);
+  });
+
+  it("returns 200_000 for Claude models", async () => {
+    const { resolveAntigravityContextWindow } = await import(
+      "./antigravity-stream.js"
+    );
+    expect(resolveAntigravityContextWindow("claude-sonnet-4-6")).toBe(200_000);
+    expect(resolveAntigravityContextWindow("claude-3-5-sonnet")).toBe(200_000);
+  });
+
+  it("returns undefined for unknown models or null/undefined", async () => {
+    const { resolveAntigravityContextWindow } = await import(
+      "./antigravity-stream.js"
+    );
+    expect(resolveAntigravityContextWindow("gpt-4o")).toBeUndefined();
+    expect(resolveAntigravityContextWindow("")).toBeUndefined();
+    expect(resolveAntigravityContextWindow(null)).toBeUndefined();
+    expect(resolveAntigravityContextWindow(undefined)).toBeUndefined();
   });
 });

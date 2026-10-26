@@ -16,23 +16,14 @@ import { shouldResumeProviderSession } from "./provider-session.js";
 import { applySkillSlashPrefix } from "./skill-dispatch.js";
 
 const MAX_STDERR_CHARS = 64_000;
-const ANTIGRAVITY_CONTEXT_WINDOW = 1_000_000;
 
-const normalizeAntigravityToolName = (name) => {
-  const stripped = String(name ?? "")
-    .replace(/^default_api:/, "")
-    .trim();
-  switch (stripped) {
-    case "run_command":
-      return "runCommand";
-    case "read_file":
-      return "readFile";
-    case "write_file":
-    case "edit_file":
-      return "writeFile";
-    default:
-      return stripped || "tool";
+export const resolveAntigravityContextWindow = (model) => {
+  if (typeof model === "string") {
+    const lower = model.toLowerCase();
+    if (lower.includes("gemini")) return 1_000_000;
+    if (lower.includes("claude")) return 200_000;
   }
+  return undefined;
 };
 
 const normalizeAntigravityToolInput = (_toolName, params) => {
@@ -171,6 +162,8 @@ export const streamAntigravityResponse = async (options) => {
     cliArgs.push("--dangerously-skip-permissions");
   } else if (permissionMode === "auto-accept-edits") {
     cliArgs.push("--mode", "accept-edits");
+  } else {
+    cliArgs.push("--mode", "plan");
   }
 
   if (!skillSlashCommand) {
@@ -193,9 +186,13 @@ export const streamAntigravityResponse = async (options) => {
   const launch = await resolveAntigravityCliLaunch();
   assertSafeAntigravityArg(launch, model, "model");
   assertSafeAntigravityArg(launch, targetSessionId, "conversation ID");
-  const useStdin = Boolean(launch.shell) || finalPrompt.length > 8000;
+  const maxCommandLineLength = launch.shell ? 8000 : 30000;
+  const useStdin =
+    Boolean(launch.shell) || finalPrompt.length > maxCommandLineLength;
 
-  if (!useStdin) {
+  if (useStdin) {
+    cliArgs.push("--input-format", "stream-json");
+  } else {
     cliArgs.push("-p", finalPrompt);
   }
 
@@ -222,7 +219,11 @@ export const streamAntigravityResponse = async (options) => {
         });
         if (useStdin && child.stdin) {
           child.stdin.on("error", () => {});
-          child.stdin.end(finalPrompt);
+          const payload = `${JSON.stringify({
+            event: "user",
+            message: { content: finalPrompt },
+          })}\n`;
+          child.stdin.end(payload);
         }
       } catch (error) {
         throw new Error(getAntigravityCliSpawnErrorMessage(error));
@@ -244,8 +245,9 @@ export const streamAntigravityResponse = async (options) => {
         }
       }
 
+      child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk) => {
-        stderr = `${stderr}${chunk.toString()}`.slice(-MAX_STDERR_CHARS);
+        stderr = `${stderr}${chunk}`.slice(-MAX_STDERR_CHARS);
       });
 
       child.on("error", (error) => {
@@ -283,12 +285,6 @@ export const streamAntigravityResponse = async (options) => {
               hasStreamedText = true;
               turn.text(update.text_delta);
             }
-            if (update.usage) {
-              const formattedUsage = normalizeAntigravityUsage(update.usage);
-              if (formattedUsage) {
-                turn.usage(formattedUsage, ANTIGRAVITY_CONTEXT_WINDOW);
-              }
-            }
             if (update.state === "DONE") {
               turn.closeText();
             }
@@ -298,12 +294,13 @@ export const streamAntigravityResponse = async (options) => {
           if (update.step_type === "tool") {
             const rawName =
               update.tool_name ?? update.tool_info?.tool_name ?? "tool";
-            const toolName = normalizeAntigravityToolName(rawName);
+            const toolName =
+              String(rawName)
+                .replace(/^default_api:/, "")
+                .trim() || "tool";
             const toolCallId =
               update.tool_call_id ??
-              (update.step_index !== undefined
-                ? `antigravity-step-${update.step_index}`
-                : `antigravity-tool-${Date.now()}`);
+              `antigravity-step-${update.step_index ?? 0}`;
             const input = normalizeAntigravityToolInput(
               rawName,
               update.tool_info?.parameters,
@@ -315,22 +312,28 @@ export const streamAntigravityResponse = async (options) => {
               if (!turn.hasStartedTool(toolCallId)) {
                 turn.toolStart({ input, toolCallId, toolName });
               }
-              const output = update.tool_info?.output ?? "Done";
-              turn.toolOutput(toolCallId, output);
+              if (
+                (toolName === "run_command" || toolName === "runCommand") &&
+                update.tool_info?.output === undefined
+              ) {
+                turn.toolError(toolCallId, "Action was denied (headless mode)");
+              } else {
+                const output = update.tool_info?.output ?? "Done";
+                turn.toolOutput(toolCallId, output);
+              }
             } else if (update.state === "ERROR") {
               if (!turn.hasStartedTool(toolCallId)) {
                 turn.toolStart({ input, toolCallId, toolName });
               }
-              const errorText =
+              const rawError =
                 update.tool_info?.error ??
                 update.error ??
                 "Antigravity tool failed.";
-              turn.toolError(
-                toolCallId,
-                typeof errorText === "string"
-                  ? errorText
-                  : JSON.stringify(errorText),
-              );
+              const errorText =
+                typeof rawError === "object" && rawError !== null
+                  ? rawError.message || JSON.stringify(rawError)
+                  : String(rawError);
+              turn.toolError(toolCallId, errorText);
             }
             return;
           }
@@ -346,17 +349,44 @@ export const streamAntigravityResponse = async (options) => {
           if (result.usage) {
             const formattedUsage = normalizeAntigravityUsage(result.usage);
             if (formattedUsage) {
-              turn.usage(formattedUsage, ANTIGRAVITY_CONTEXT_WINDOW);
+              turn.usage(
+                formattedUsage,
+                resolveAntigravityContextWindow(model),
+              );
             }
           }
           if (!hasStreamedText && typeof result.response === "string") {
             hasStreamedText = true;
             turn.text(result.response);
           }
-          if (result.status === "ERROR") {
-            throw new Error(
-              result.error ?? result.response ?? "Antigravity request failed.",
-            );
+          if (
+            Array.isArray(result.denied_actions) &&
+            result.denied_actions.length > 0
+          ) {
+            for (const [index, action] of result.denied_actions.entries()) {
+              const toolCallId = `antigravity-denied-${index}`;
+              const actionName =
+                action.display_name || action.action || "action";
+              turn.toolStart({
+                input: action,
+                toolCallId,
+                toolName: actionName,
+              });
+              turn.toolError(
+                toolCallId,
+                `Actions denied by policy: ${actionName}`,
+              );
+            }
+          }
+          if (result.status && result.status !== "SUCCESS") {
+            const rawErr = result.error;
+            const errorMsg =
+              (typeof rawErr === "object" && rawErr !== null
+                ? rawErr.message || JSON.stringify(rawErr)
+                : rawErr) ||
+              result.response ||
+              `Antigravity request ended with status ${result.status}.`;
+            throw new Error(errorMsg);
           }
         }
       };

@@ -6,7 +6,9 @@ import {
   execCliCommand,
   getCliVersion,
   isCliCommandAvailable,
+  resolveCliCommandPath,
 } from "../shared/cli.js";
+import { getModelReasoningEfforts } from "./model-options.js";
 
 const ANTIGRAVITY_CLI_COMMANDS = ["agy"];
 
@@ -119,12 +121,14 @@ export const resolveAntigravityCliLaunch = async () => {
     throw new Error(getAntigravityCliUnavailableMessage());
   }
 
+  const commandPath = await resolveCliCommandPath(commandName);
+  const command = commandPath ?? commandName;
   const isBatchFile =
-    process.platform === "win32" && /\.(?:bat|cmd)$/i.test(commandName);
+    process.platform === "win32" && /\.(?:bat|cmd)$/i.test(command);
 
   return {
     argsPrefix: [],
-    command: commandName,
+    command,
     shell: isBatchFile,
   };
 };
@@ -137,38 +141,8 @@ export const assertSafeAntigravityArg = (launch, value, label) => {
   }
 };
 
-const ANTIGRAVITY_REASONING_EFFORTS = new Set([
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
-
-/**
- * Resolves the CLI `--effort` argument value if applicable to the given model.
- * Models that already encode reasoning effort in their ID (e.g. *-low, *-medium, *-high)
- * or models that do not support reasoning effort (e.g. Claude) will return null
- * to prevent CLI conflict errors.
- *
- * @param {string | undefined | null} model
- * @param {string | undefined | null} reasoningEffort
- * @returns {string | null}
- */
 export const resolveAntigravityEffort = (model, reasoningEffort) => {
-  if (typeof reasoningEffort !== "string") return null;
-  const effort = reasoningEffort.trim().toLowerCase();
-  if (!ANTIGRAVITY_REASONING_EFFORTS.has(effort)) return null;
-
-  const modelId = typeof model === "string" ? model.trim().toLowerCase() : "";
-  if (
-    modelId &&
-    (/-(?:low|medium|high|xhigh|max)$/.test(modelId) ||
-      modelId.startsWith("claude-") ||
-      modelId.includes("thinking"))
-  ) {
-    return null;
-  }
-
-  return effort;
+  if (!reasoningEffort) return null;
+  const allowed = getModelReasoningEfforts("antigravity", model ?? "");
+  return allowed.includes(reasoningEffort) ? reasoningEffort : null;
 };

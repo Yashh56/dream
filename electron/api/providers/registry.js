@@ -180,8 +180,7 @@ const providers = {
     checkReady: checkAntigravityReady,
     stream: (options) => streamAntigravityResponse(options),
     generateText: (options) => runAntigravityPrompt(options),
-    titleModel: (fallbackModel) =>
-      fallbackModel?.trim() || "gemini-3.8-flash-low",
+    titleModel: (fallbackModel) => fallbackModel?.trim() || null,
     fetchModels: (options) => fetchAntigravityModels(options),
     fetchUsageLimits: sharedUsageLimits("antigravity", () =>
       fetchAntigravityUsageLimits(),

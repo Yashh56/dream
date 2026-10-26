@@ -30,8 +30,8 @@ describe("antigravity-cli helpers", () => {
     expect(resolveAntigravityEffort("gemini-3.8-flash", "medium")).toBe(
       "medium",
     );
-    expect(resolveAntigravityEffort(undefined, "low")).toBe("low");
-    expect(resolveAntigravityEffort("", "max")).toBe("max");
+    expect(resolveAntigravityEffort(undefined, "low")).toBeNull();
+    expect(resolveAntigravityEffort("", "max")).toBeNull();
 
     // Models with built-in effort suffixes return null to prevent CLI conflict errors
     expect(
