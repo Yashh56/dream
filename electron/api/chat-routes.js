@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import { turnObservers } from "./chat/agent-turn.js";
 import { appendBrowserMcpServer } from "./chat/browser-tools.js";
 import { forkNativeSession } from "./chat/native-fork.js";
 import {
@@ -11,187 +10,24 @@ import {
   chatTitleRequestBodySchema,
   formatProjectReferencesForPrompt,
 } from "./chat/schema.js";
-import {
-  resolveSessionContext,
-  transcriptFingerprint,
-} from "./chat/session-context.js";
+import { resolveSessionContext } from "./chat/session-context.js";
 import {
   applySkillDispatchToMessages,
   resolveSkillDispatch,
 } from "./chat/skill-dispatch.js";
 import { generateChatTitle } from "./chat/title.js";
+import { executeAgentTurn } from "./chat/turn-execution.js";
 import {
   createTurnRegistry,
   TurnInProgressError,
 } from "./chat/turn-registry.js";
-import {
-  attachCheckpointFinalizer,
-  createCheckpoint,
-  finalizeCheckpoint,
-} from "./checkpoints/service.js";
+import { createCheckpoint, finalizeCheckpoint } from "./checkpoints/service.js";
 import { getProvider } from "./providers/registry.js";
 import { handleJsonRoute, RouteError } from "./shared/json-route.js";
 
 const CHECKPOINT_CAPTURE_TIMEOUT_MS = 20_000;
 
-/** The origin the host stamps on catalog changes it makes itself. */
-export const HOST_ORIGIN = "host";
-
-/**
- * The least time between two saves of a running turn. A step that ends
- * sooner is held, and saved when the time is up unless a later step or the
- * end replaces it: a turn of many quick steps does not rewrite its growing
- * message at every one. The end of a turn is saved at once.
- */
-export const TURN_SAVE_INTERVAL_MS = 1000;
-
 export const chatStopRequestSchema = z.object({ chatId: z.string().min(1) });
-
-/**
- * What the host keeps of a turn while it runs: the transcript after its
- * steps (at most once a second) and at the end, and (at the end) the
- * provider session the turn reported, so a turn nobody watched can still
- * be resumed later. The transcript is the client's own request (not what a
- * provider made of it) with the assistant message being written in place
- * of, or after, its last message.
- *
- * The request's messages do not change while the turn runs, so they are
- * saved once, with the first report; every later report saves only the
- * assistant message, at its place after them. Step reports closer together
- * than `saveIntervalMs` are held (see TURN_SAVE_INTERVAL_MS); saves run one
- * after another, so a held step never lands after the end.
- */
-export const createTurnRecorder = ({
-  catalog,
-  chatId,
-  projectPath,
-  requestMessages,
-  saveIntervalMs = TURN_SAVE_INTERVAL_MS,
-  onChunk,
-  provider,
-}) => {
-  let resolveDone;
-  let saveError;
-  const done = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
-  const continued = requestMessages.at(-1)?.role === "assistant";
-  const before = continued ? requestMessages.slice(0, -1) : requestMessages;
-  let beforeSaved = false;
-  let lastSaveAt = Number.NEGATIVE_INFINITY;
-  let saving = Promise.resolve();
-  /** The held step's message, saved when `heldTimer` fires. */
-  let held = null;
-  let heldTimer = null;
-
-  const save = (message) => {
-    lastSaveAt = Date.now();
-    const write = async () => {
-      if (beforeSaved) {
-        await catalog.saveTranscript(chatId, [message], {
-          fromIndex: before.length,
-          origin: HOST_ORIGIN,
-        });
-      } else {
-        beforeSaved = await catalog.saveTranscript(
-          chatId,
-          [...before, message],
-          { origin: HOST_ORIGIN },
-        );
-      }
-    };
-    saving = saving.then(write, write);
-    return saving;
-  };
-
-  const releaseHeld = () => {
-    clearTimeout(heldTimer);
-    heldTimer = null;
-    held = null;
-  };
-
-  const saveHeld = () => {
-    const message = held;
-    releaseHeld();
-    if (!message) return;
-    save(message).catch((error) => {
-      console.warn("[turn] Saving the turn's messages failed.", error);
-    });
-  };
-
-  return {
-    done,
-    onChunk,
-    onFailure: (error) => {
-      saveError = error;
-    },
-    onEnd: () => resolveDone(saveError),
-    async onMessage(message, { final }) {
-      if (final)
-        message = {
-          ...message,
-          metadata: {
-            ...message.metadata,
-            completedAt: new Date().toISOString(),
-          },
-        };
-      if (!final) {
-        const wait = lastSaveAt + saveIntervalMs - Date.now();
-        if (wait > 0) {
-          held = message;
-          heldTimer ??= setTimeout(saveHeld, wait);
-          return;
-        }
-      }
-      releaseHeld();
-      await save(message);
-      if (!final) return;
-
-      const metadata = message?.metadata;
-      const sessionId =
-        typeof metadata?.remoteConversationId === "string"
-          ? metadata.remoteConversationId.trim()
-          : "";
-      const chat = sessionId ? await catalog.getChat(chatId) : null;
-      if (chat && provider && catalog.saveProviderSession) {
-        await catalog.saveProviderSession({
-          chatId,
-          provider,
-          session: {
-            remoteConversationId: sessionId,
-            remoteConversationModel:
-              metadata.remoteConversationModel ?? chat.model,
-            remoteConversationModelSpeed:
-              metadata.remoteConversationModelSpeed ?? chat.modelSpeed,
-            remoteConversationProjectPath:
-              metadata.remoteConversationProjectPath ?? projectPath,
-            lastMessageId: message.id,
-            fingerprint: transcriptFingerprint([...before, message]),
-            orchestrationToolsVersion: metadata.orchestrationToolsVersion,
-          },
-        });
-      }
-      if (!chat || chat.remoteConversationId === sessionId) return;
-      await catalog.applyChanges(
-        {
-          chats: [
-            {
-              ...chat,
-              remoteConversationId: sessionId,
-              remoteConversationModel:
-                metadata.remoteConversationModel ?? chat.model,
-              remoteConversationModelSpeed:
-                metadata.remoteConversationModelSpeed ?? chat.modelSpeed,
-              remoteConversationProjectPath:
-                metadata.remoteConversationProjectPath ?? projectPath,
-            },
-          ],
-        },
-        { origin: HOST_ORIGIN },
-      );
-    },
-  };
-};
 
 const withTimeout = (promise, timeoutMs) =>
   new Promise((resolve, reject) => {
@@ -515,17 +351,6 @@ export async function executeChatRequest(
   });
 
   const runTurn = async (abortSignal) => {
-    const recorder =
-      catalog && resolvedChatId
-        ? createTurnRecorder({
-            catalog,
-            chatId: resolvedChatId,
-            projectPath: resolvedProjectPath,
-            requestMessages: messages,
-            onChunk,
-            provider: providerId,
-          })
-        : null;
     const streamTurn = () =>
       provider.stream({
         orchestrationTools: orchestration?.tools,
@@ -558,32 +383,24 @@ export async function executeChatRequest(
         responseMessageMetadata,
         skillSlashCommand: skillDispatch?.slashCommand,
       });
-    let streamResponse = recorder
-      ? await turnObservers.run(recorder, streamTurn)
-      : await streamTurn();
-    if (recorder && streamResponse?.body && streamResponse.ok) {
-      streamResponse = new Response(
-        streamResponse.body.pipeThrough(
-          new TransformStream({
-            async flush() {
-              const error = await recorder.done;
-              if (error) throw error;
-            },
-          }),
-        ),
-        { headers: streamResponse.headers, status: streamResponse.status },
-      );
-    }
-    if (!checkpointId || !(streamResponse instanceof Response)) {
-      return streamResponse;
-    }
-
-    return attachCheckpointFinalizer(streamResponse, abortSignal, () =>
-      finalizeCheckpoint({
+    return executeAgentTurn(
+      {
+        catalog,
         chatId: resolvedChatId,
-        checkpointId,
         projectPath: resolvedProjectPath,
-      }),
+        requestMessages: messages,
+        onChunk,
+        provider: providerId,
+        finalize: checkpointId
+          ? () =>
+              finalizeCheckpoint({
+                chatId: resolvedChatId,
+                checkpointId,
+                projectPath: resolvedProjectPath,
+              })
+          : undefined,
+      },
+      streamTurn,
     );
   };
 

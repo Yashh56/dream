@@ -86,3 +86,5 @@ Module names and current ownership live in ../../GLOSSARY.md.
 - `tasks/review-20261018.md` tracks PRR-01, HCL-01, BTN-01 and GLP-01:
   pull-request resources, host catalog readiness, browser tab operations and
   Git history pagination.
+- `tasks/review-20261025.md` tracks ARC-01, ARC-02 and ARC-03:
+  Agent turn completion, Connection recovery and Remote access state.

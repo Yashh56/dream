@@ -449,6 +449,12 @@ interface every provider adapter translates its native events into. The
 writer owns the chunk shapes the client receives; adapters own only the
 translation.
 
+**Agent turn completion** means its output has settled, its final transcript
+and Provider session have been saved, and its checkpoint finalization has
+finished. A failed save fails the turn; a failed checkpoint is reported but
+does not fail it. Stopping waits for this settlement; a client ceasing to
+observe does not stop the host's work.
+
 Behind the writer, every turn's output passes one **output stage**
 (`electron/api/chat/turn-output.js`): consecutive deltas of one part are
 joined, waiting at most 50 ms, so how often the client and the host's

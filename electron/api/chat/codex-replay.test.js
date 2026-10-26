@@ -7,12 +7,11 @@ import { z } from "zod";
 import { createHostCatalog } from "../../host/catalog.js";
 import { createStateReadPool } from "../../state-read-pool.js";
 import { createStateSaveQueue } from "../../state-save-queue.js";
-import { createTurnRecorder } from "../chat-routes.js";
 import { resolveToolApproval } from "../tool-approvals.js";
-import { turnObservers } from "./agent-turn.js";
 import { streamCodexAppServerResponse } from "./codex-app-server.js";
 import { getCodexAppServerClient } from "./codex-app-server-client.js";
 import { createRunScheduler } from "./run-scheduler.js";
+import { executeAgentTurn } from "./turn-execution.js";
 import { createTurnRegistry } from "./turn-registry.js";
 
 // Only the native JSON-RPC transport is replaced. Adapter and stream writer run unchanged.
@@ -228,27 +227,16 @@ test("native replay reaches the durable queue, transcript writer and provider se
     catalog,
     turns: createTurnRegistry(),
     execute: async (data, { signal, onChunk }) => {
-      const recorder = createTurnRecorder({
-        catalog,
-        chatId: data.chatId,
-        provider: "openai",
-        projectPath: "/work",
-        requestMessages: data.messages,
-        onChunk,
-      });
-      const response = turnObservers.run(recorder, () =>
-        streamCodexAppServerResponse({ ...data, abortSignal: signal }),
-      );
-      return new Response(
-        response.body.pipeThrough(
-          new TransformStream({
-            async flush() {
-              const failure = await recorder.done;
-              if (failure) throw failure;
-            },
-          }),
-        ),
-        { headers: response.headers },
+      return executeAgentTurn(
+        {
+          catalog,
+          chatId: data.chatId,
+          provider: "openai",
+          projectPath: "/work",
+          requestMessages: data.messages,
+          onChunk,
+        },
+        () => streamCodexAppServerResponse({ ...data, abortSignal: signal }),
       );
     },
   });

@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { claudeCode, getSessionInfo } from "ai-sdk-provider-claude-code";
 import { beforeEach, test, vi } from "vitest";
-import { createTurnRecorder } from "../chat-routes.js";
-import { turnObservers } from "./agent-turn.js";
 import { streamClaudeResponse } from "./claude-stream.js";
+import { executeAgentTurn } from "./turn-execution.js";
 import { createTurnRegistry } from "./turn-registry.js";
 
 vi.mock("ai-sdk-provider-claude-code", () => ({
@@ -118,34 +117,22 @@ test("a provider network error releases the chat for another turn", async () => 
     },
   });
   const turns = createTurnRegistry();
-  const recorder = createTurnRecorder({
-    catalog: {
-      saveTranscript: async (_chatId, messages) => {
-        saved = messages;
-        return true;
-      },
-    },
-    chatId: "network-error",
-    requestMessages: request.messages,
-  });
   const response = await turns.start({
     chatId: "network-error",
     run: (abortSignal) =>
-      turnObservers.run(recorder, async () => {
-        const response = await streamClaudeResponse({
-          ...request,
-          abortSignal,
-        });
-        return new Response(
-          response.body.pipeThrough(
-            new TransformStream({
-              async flush() {
-                await recorder.done;
-              },
-            }),
-          ),
-        );
-      }),
+      executeAgentTurn(
+        {
+          catalog: {
+            saveTranscript: async (_chatId, messages) => {
+              saved = messages;
+              return true;
+            },
+          },
+          chatId: "network-error",
+          requestMessages: request.messages,
+        },
+        () => streamClaudeResponse({ ...request, abortSignal }),
+      ),
   });
   const chunks = await readChunks(response);
   assert.equal(

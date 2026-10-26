@@ -6,10 +6,10 @@ import { afterEach, test } from "vitest";
 import { createHostCatalog } from "../../host/catalog.js";
 import { createStateReadPool } from "../../state-read-pool.js";
 import { createStateSaveQueue } from "../../state-save-queue.js";
-import { createTurnRecorder } from "../chat-routes.js";
-import { streamAgentTurn, turnObservers } from "./agent-turn.js";
+import { streamAgentTurn } from "./agent-turn.js";
 import { createDelegationService } from "./delegation.js";
 import { createRunScheduler } from "./run-scheduler.js";
+import { executeAgentTurn } from "./turn-execution.js";
 import { createTurnRegistry } from "./turn-registry.js";
 
 const cleanups = [];
@@ -69,32 +69,23 @@ test("ordered durable submissions deduplicate and each sees the previous saved a
     catalog,
     async (data, { signal, onChunk }) => {
       inputs.push(data.messages);
-      const recorder = createTurnRecorder({
-        catalog,
-        chatId: "c",
-        requestMessages: data.messages,
-        projectPath: "/workspace",
-        onChunk,
-      });
-      const response = turnObservers.run(recorder, () =>
-        streamAgentTurn({
-          provider: "openai",
-          messages: data.messages,
-          abortSignal: signal,
-          execute: async (turn) => {
-            turn.text(`answer ${inputs.length}`);
-          },
-        }),
-      );
-      return new Response(
-        response.body.pipeThrough(
-          new TransformStream({
-            async flush() {
-              await recorder.done;
+      return executeAgentTurn(
+        {
+          catalog,
+          chatId: "c",
+          requestMessages: data.messages,
+          projectPath: "/workspace",
+          onChunk,
+        },
+        () =>
+          streamAgentTurn({
+            provider: "openai",
+            messages: data.messages,
+            abortSignal: signal,
+            execute: async (turn) => {
+              turn.text(`answer ${inputs.length}`);
             },
           }),
-        ),
-        { headers: response.headers },
       );
     },
   );

@@ -66,9 +66,8 @@ vi.mock("./providers/registry.js", async () => {
 });
 
 const { createTurnRegistry } = await import("./chat/turn-registry.js");
-const { createTurnRecorder, registerChatRoutes } = await import(
-  "./chat-routes.js"
-);
+const { createTurnRecorder } = await import("./chat/turn-execution.js");
+const { registerChatRoutes } = await import("./chat-routes.js");
 const { createHostCatalog } = await import("../host/catalog.js");
 const { configureHostDataDirectory } = await import("../host/host-paths.js");
 const persisted = await import("../persisted-state.js");

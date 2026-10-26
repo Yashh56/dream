@@ -32,7 +32,7 @@ export function createRunScheduler({ catalog, turns, execute }) {
         let status = "running";
         let scope;
         try {
-          const response = await turns.start({
+          await turns.run({
             chatId,
             run: async (abortSignal) => {
               signal = abortSignal;
@@ -96,11 +96,6 @@ export function createRunScheduler({ catalog, turns, execute }) {
               );
             },
           });
-          if (!response.ok) throw new Error(await response.text());
-          const reader = response.body.getReader();
-          while (!(await reader.read()).done) {
-            /* The registry owns disconnect-independent execution. */
-          }
           await change(
             chatId,
             run.id,

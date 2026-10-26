@@ -81,6 +81,47 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
     }
   };
 
+  const start = async ({ chatId, run }, observe) => {
+    if (turns.has(chatId)) throw new TurnInProgressError(chatId);
+
+    const controller = new AbortController();
+    // Claimed before `run`, so a second start while this one is still
+    // setting up is refused too.
+    const placeholder = {
+      chunks: [],
+      controller,
+      done: false,
+      ready: false,
+      headers: new Headers(),
+      status: 200,
+      waiters: new Set(),
+    };
+    turns.set(chatId, placeholder);
+
+    let response;
+    try {
+      response = await run(controller.signal);
+    } catch (error) {
+      turns.delete(chatId);
+      throw error;
+    }
+    if (!(response instanceof Response) || !response.body || !response.ok) {
+      turns.delete(chatId);
+      if (!observe && !response?.ok)
+        throw new Error(response ? await response.text() : "No turn response.");
+      return observe ? response : undefined;
+    }
+
+    placeholder.headers = response.headers;
+    placeholder.status = response.status;
+    placeholder.ready = true;
+    onChange({ chatId, running: true });
+    const completion = pump(chatId, placeholder, response.body);
+    if (observe) return subscribe(placeholder);
+    await completion;
+    if (placeholder.failure) throw placeholder.failure;
+  };
+
   return {
     isRunning: (chatId) => turns.has(chatId),
 
@@ -97,42 +138,10 @@ export function createTurnRegistry({ onChange = () => {} } = {}) {
      * as it is and no turn is kept.
      * @param {{ chatId: string, run: (signal: AbortSignal) => Promise<Response> | Response }} options
      */
-    async start({ chatId, run }) {
-      if (turns.has(chatId)) throw new TurnInProgressError(chatId);
+    start: (options) => start(options, true),
 
-      const controller = new AbortController();
-      // Claimed before `run`, so a second start while this one is still
-      // setting up is refused too.
-      const placeholder = {
-        chunks: [],
-        controller,
-        done: false,
-        ready: false,
-        headers: new Headers(),
-        status: 200,
-        waiters: new Set(),
-      };
-      turns.set(chatId, placeholder);
-
-      let response;
-      try {
-        response = await run(controller.signal);
-      } catch (error) {
-        turns.delete(chatId);
-        throw error;
-      }
-      if (!(response instanceof Response) || !response.body) {
-        turns.delete(chatId);
-        return response;
-      }
-
-      placeholder.headers = response.headers;
-      placeholder.status = response.status;
-      placeholder.ready = true;
-      onChange({ chatId, running: true });
-      void pump(chatId, placeholder, response.body);
-      return subscribe(placeholder);
-    },
+    /** Runs to completion without creating a replay subscriber. */
+    run: (options) => start(options, false),
 
     /** The running turn's stream from its start, or null when none runs. */
     resume(chatId) {
