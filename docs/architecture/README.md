@@ -92,3 +92,5 @@ Module names and current ownership live in ../../GLOSSARY.md.
 - `tasks/open-project-flow.md` tracks OPEN-01 from the T3 Code comparison:
   one open-project dialog with path completion on any host, connecting SSH
   hosts before opening, and one Connections section in Settings.
+- `tasks/antigravity-provider.md` tracks AGY-01: Google Antigravity CLI as a
+  first-class AI coding-agent provider in Dream.
