@@ -56,6 +56,16 @@ import { useIdeStore } from "../ide-store";
 import { createRemoteAccessState } from "./remote-access-state";
 import { SettingsGroup } from "./settings-shared";
 
+<<<<<<< HEAD
+=======
+const POLL_MS = 3_000;
+
+const isValidPort = (value: string) => {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65_535;
+};
+
+>>>>>>> 0a7673e01ef8e7d79ecabf8fcc87ac14d1f29f86
 type ScopeChoice = "view" | "operate" | "manage";
 const SCOPES_FOR: Record<ScopeChoice, string[]> = {
   manage: ["view", "operate", "manage"],
@@ -98,6 +108,7 @@ const copyText = async (text: string) => {
 export const RemoteAccessSection = () => {
   const t = useTranslations("remote");
   const openExternalUrl = useIdeStore((state) => state.openExternalUrl);
+<<<<<<< HEAD
   const remote = useMemo(() => createRemoteAccessState(), []);
   const {
     status,
@@ -135,6 +146,17 @@ export const RemoteAccessSection = () => {
   const mode = modeDraft ?? initialStatus?.mode ?? "tailscale";
   const origin = originDraft ?? initialStatus?.requestedOrigin ?? "";
   const httpsPort = portDraft ?? String(initialStatus?.httpsPort ?? 443);
+=======
+  const [status, setStatus] = useState<RemoteAccessStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"tailscale" | "origin">("tailscale");
+  const [origin, setOrigin] = useState("");
+  const [httpsPort, setHttpsPort] = useState("443");
+  const [localPort, setLocalPort] = useState("");
+  const [claims, setClaims] = useState<RemoteClaim[]>([]);
+  const [devices, setDevices] = useState<RemoteDeviceSession[]>([]);
+>>>>>>> 0a7673e01ef8e7d79ecabf8fcc87ac14d1f29f86
   const [pairOpen, setPairOpen] = useState(false);
   const changePairOpen = (open: boolean) => {
     setPairOpen(open);
@@ -144,13 +166,101 @@ export const RemoteAccessSection = () => {
   const [copied, setCopied] = useState(false);
   const [pendingRevoke, setPendingRevoke] =
     useState<RemoteDeviceSession | null>(null);
+<<<<<<< HEAD
   const enable = () =>
     remote.enable(
       mode === "origin"
         ? { mode, origin: origin.trim() }
         : { httpsPort: Number(httpsPort) || 443, mode },
+=======
+
+  // The form starts from what the host has saved.
+  const adopt = useCallback((next: RemoteAccessStatus) => {
+    setStatus(next);
+    setMode(next.mode);
+    if (next.requestedOrigin) setOrigin(next.requestedOrigin);
+    setHttpsPort(String(next.httpsPort));
+    setLocalPort(next.port === null ? "" : String(next.port));
+  }, []);
+
+  const loadLists = useCallback(async () => {
+    const [claimList, sessionList] = await Promise.all([
+      apiClient.remoteClaims({}),
+      apiClient.remoteSessions({}),
+    ]);
+    setClaims(claimList.claims);
+    setDevices(sessionList.sessions.filter((session) => !session.revokedAt));
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    void apiClient
+      .remoteAccess({})
+      .then((next) => {
+        if (!stopped) adopt(next);
+      })
+      .catch((failure: unknown) =>
+        setError(getApiErrorMessage(failure, t("loadFailed"))),
+      );
+    const poll = () => {
+      void apiClient
+        .remoteAccess({})
+        .then((next) => {
+          if (!stopped) setStatus(next);
+        })
+        .catch(() => undefined);
+      void loadLists().catch(() => undefined);
+    };
+    poll();
+    const timer = window.setInterval(poll, POLL_MS);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [adopt, loadLists, t]);
+
+  const run = async (work: () => Promise<RemoteAccessStatus>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      adopt(await work());
+    } catch (failure) {
+      setError(getApiErrorMessage(failure, t("changeFailed")));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enable = () =>
+    run(() =>
+      apiClient.remoteAccessEnable(
+        mode === "origin"
+          ? {
+              mode,
+              origin: origin.trim(),
+              port: localPort === "" ? null : Number(localPort),
+            }
+          : {
+              httpsPort: Number(httpsPort),
+              mode,
+              port: localPort === "" ? null : Number(localPort),
+            },
+      ),
+>>>>>>> 0a7673e01ef8e7d79ecabf8fcc87ac14d1f29f86
     );
   const enabled = status?.enabled ?? false;
+<<<<<<< HEAD
+=======
+  const portsValid =
+    (localPort === "" || isValidPort(localPort)) &&
+    (mode !== "tailscale" || isValidPort(httpsPort));
+  // Only a verified public address is offered to a device.
+  const pairingUrl =
+    pairing && status?.origin
+      ? (pairing.urls.find((url) => url.startsWith(status.origin ?? "")) ??
+        null)
+      : null;
+>>>>>>> 0a7673e01ef8e7d79ecabf8fcc87ac14d1f29f86
   const scopeLabel = (scopes: string[]) =>
     scopes.includes("manage")
       ? t("scopeManage")
@@ -200,7 +310,7 @@ export const RemoteAccessSection = () => {
           <Switch
             aria-label={t("accessToggle")}
             checked={enabled}
-            disabled={busy || status === null}
+            disabled={busy || status === null || (!enabled && !portsValid)}
             onCheckedChange={(checked) =>
               void (checked ? enable() : remote.disable())
             }
@@ -250,6 +360,7 @@ export const RemoteAccessSection = () => {
                 {t("httpsPortLabel")}
               </Label>
               <Input
+                aria-invalid={!isValidPort(httpsPort)}
                 className="w-28 font-mono"
                 id="remote-access-https-port"
                 inputMode="numeric"
@@ -260,9 +371,35 @@ export const RemoteAccessSection = () => {
               />
             </div>
           )}
+          <div className="grid gap-1.5">
+            <Label htmlFor="remote-access-local-port">
+              {t("localPortLabel")}
+            </Label>
+            <Input
+              aria-invalid={localPort !== "" && !isValidPort(localPort)}
+              className="w-28 font-mono"
+              id="remote-access-local-port"
+              inputMode="numeric"
+              onChange={(event) =>
+                setLocalPort(event.target.value.replace(/\D/g, ""))
+              }
+              placeholder={t("portAutomatic")}
+              value={localPort}
+            />
+            <span className="text-muted-foreground text-xs">
+              {t("localPortHint")}
+            </span>
+          </div>
+          {!portsValid ? (
+            <p className="text-destructive text-sm" role="alert">
+              {t("portRange")}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={busy || (mode === "origin" && !origin.trim())}
+              disabled={
+                busy || !portsValid || (mode === "origin" && !origin.trim())
+              }
               onClick={() => void enable()}
               size="sm"
               type="button"

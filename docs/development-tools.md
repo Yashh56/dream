@@ -1,5 +1,19 @@
 # Development tools
 
+## Run alongside the installed app
+
+In Settings > Remote access, choose different Local port and HTTPS port values
+in each app, then click Apply (or Turn on). For example, use local port `5411`
+and HTTPS port `8443` in development if the installed app uses `5410` and `443`.
+Leaving Local port empty chooses an available port and saves it.
+
+Remote-access settings follow the host's state database. The default `dream.db`
+keeps using `remote-access.json` beside the database. A custom database such as
+`dev.db` uses `dev.db.remote-access.json` beside it, starting with remote access
+off. Thus development can save its own ports without changing the installed
+app's settings or removing its Tailscale Serve entry. The app data folder stays
+the same; keep the databases separate with `DREAM_DB_PATH`, as before.
+
 ## Inspect an existing app
 
 Run `pnpm inspect:dev` in this checkout. It probes existing session manifests and

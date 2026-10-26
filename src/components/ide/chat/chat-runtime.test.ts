@@ -10,6 +10,7 @@ import { useIdeStore } from "../ide-store";
 import {
   CHAT_SESSION_IDLE_EVICT_MS,
   getChatSession,
+  reattachChatStreams,
   retainChatSession,
   startChatRuntime,
   submitChatPrompt,
@@ -111,6 +112,7 @@ beforeEach(() => {
 afterEach(() => {
   stopRuntime();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   useIdeStore.setState(initialState, true);
   useChatRuntimeStore.setState({ draftRestoreByChatId: {}, errorByChatId: {} });
@@ -211,6 +213,204 @@ test("a session follows a transcript the store loads later", () => {
   useIdeStore.setState({ messagesByChatId: { [chat.id]: loaded } });
 
   assert.deepEqual(getChatSession(chat.id).chat.messages, loaded);
+});
+
+test("a dropped response body reconnects to the host turn without a refresh or resubmission", async () => {
+  vi.useFakeTimers();
+  const { chat } = setUp();
+  const transport = globalThis.fetch;
+  let streamRequests = 0;
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const chunks = (text: string) =>
+    [
+      { type: "start", messageId: "assistant-1" },
+      { type: "text-start", id: "text-1" },
+      { type: "text-delta", id: "text-1", delta: text },
+    ]
+      .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+      .join("");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url) !== `/api/chat/${chat.id}/stream`)
+        return transport(url, init);
+      streamRequests++;
+      if (streamRequests === 1)
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(streamController) {
+              controller = streamController;
+              controller.enqueue(encoder.encode(chunks("Working")));
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      hostMessages = [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Done." }],
+        },
+      ];
+      useIdeStore.setState({ hostRunningChatIds: {} });
+      return new Response(
+        `${chunks("Done.")}data: {"type":"text-end","id":"text-1"}\n\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }),
+  );
+  useIdeStore.setState({ hostRunningChatIds: { [chat.id]: true } });
+  const session = getChatSession(chat.id);
+  await vi.waitFor(() => assert.equal(session.chat.status, "streaming"));
+  controller.error(new TypeError("network connection lost"));
+
+  await vi.waitFor(() => assert.equal(session.chat.status, "error"));
+  assert.equal(
+    (session.chat.messages.at(-1)?.metadata as { completedAt?: string })
+      ?.completedAt,
+    undefined,
+  );
+
+  await vi.waitFor(() => assert.equal(streamRequests, 2), { timeout: 2_000 });
+  await vi.waitFor(() => assert.equal(session.chat.status, "ready"));
+  assert.deepEqual(
+    session.chat.messages
+      .at(-1)
+      ?.parts.map((part) => (part.type === "text" ? part.text : part.type)),
+    ["Done."],
+  );
+  assert.equal(
+    useChatRuntimeStore.getState().errorByChatId[chat.id],
+    undefined,
+  );
+  assert.equal(useIdeStore.getState().streamingChatIds[chat.id], undefined);
+  assert.equal(
+    requests.some((request) => request.url === "/api/chat/submit"),
+    false,
+  );
+});
+
+test.each([
+  "network",
+  "unavailable",
+])("a failed initial stream request (%s) retries and reconciles a turn that finished offline", async (failure) => {
+  vi.useFakeTimers();
+  const { chat, project } = setUp();
+  const transport = globalThis.fetch;
+  let streamRequests = 0;
+  let catalogRequests = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url) === "/api/catalog") {
+        catalogRequests++;
+        return Response.json({
+          projects: [project],
+          chats: [chat],
+          runningChatIds: [],
+        });
+      }
+      if (String(url) !== `/api/chat/${chat.id}/stream`)
+        return transport(url, init);
+      if (++streamRequests === 1) {
+        if (failure === "network") throw new TypeError("Failed to fetch");
+        return new Response("Host restarting", { status: 503 });
+      }
+      hostMessages = [
+        {
+          id: "finished-offline",
+          role: "assistant",
+          parts: [{ type: "text", text: "Finished while disconnected." }],
+        },
+      ];
+      return new Response(null, { status: 204 });
+    }),
+  );
+  useIdeStore.setState({
+    stateHydrated: true,
+    hostRunningChatIds: { [chat.id]: true },
+  });
+  const session = getChatSession(chat.id);
+
+  await vi.waitFor(() => assert.equal(catalogRequests, 1));
+  await vi.waitFor(() =>
+    assert.equal(session.chat.messages.at(-1)?.id, "finished-offline"),
+  );
+  assert.equal(streamRequests, 2);
+  assert.equal(session.chat.status, "ready");
+  assert.equal(useIdeStore.getState().hostRunningChatIds[chat.id], undefined);
+  assert.equal(
+    useChatRuntimeStore.getState().errorByChatId[chat.id],
+    undefined,
+  );
+  await vi.advanceTimersByTimeAsync(10_000);
+  assert.equal(streamRequests, 2);
+});
+
+test.each([
+  "refused",
+  "provider",
+])("a %s error is shown without repeatedly reconnecting", async (failure) => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const { chat } = setUp();
+  const transport = globalThis.fetch;
+  let streamRequests = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url) !== `/api/chat/${chat.id}/stream`)
+        return transport(url, init);
+      streamRequests++;
+      return failure === "refused"
+        ? new Response("Pair this device again", { status: 401 })
+        : new Response(
+            'data: {"type":"start","messageId":"failed"}\n\ndata: {"type":"error","errorText":"Provider quota exceeded"}\n\ndata: [DONE]\n\n',
+            { headers: { "content-type": "text/event-stream" } },
+          );
+    }),
+  );
+  useIdeStore.setState({ hostRunningChatIds: { [chat.id]: true } });
+  const session = getChatSession(chat.id);
+  await vi.waitFor(() => assert.equal(session.chat.status, "error"));
+  await vi.advanceTimersByTimeAsync(10_000);
+  assert.equal(streamRequests, 1);
+  assert.match(
+    useChatRuntimeStore.getState().errorByChatId[chat.id],
+    failure === "refused" ? /Pair this device/ : /Provider quota/,
+  );
+});
+
+test("recovery retries back off, deduplicate lifecycle resumes, and stop when the chat is removed", async () => {
+  vi.useFakeTimers();
+  const { chat } = setUp();
+  const transport = globalThis.fetch;
+  let streamRequests = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url) !== `/api/chat/${chat.id}/stream`)
+        return transport(url, init);
+      streamRequests++;
+      throw new TypeError("Failed to fetch");
+    }),
+  );
+  useIdeStore.setState({ hostRunningChatIds: { [chat.id]: true } });
+  const session = getChatSession(chat.id);
+  await vi.waitFor(() => assert.equal(session.chat.status, "error"));
+  await vi.advanceTimersByTimeAsync(250);
+  assert.equal(streamRequests, 2);
+  await vi.advanceTimersByTimeAsync(250);
+  assert.equal(streamRequests, 2);
+  reattachChatStreams("local");
+  await vi.advanceTimersByTimeAsync(0);
+  assert.equal(streamRequests, 3);
+  await vi.advanceTimersByTimeAsync(500);
+  assert.equal(streamRequests, 3);
+  useIdeStore.setState({ chats: [] });
+  await vi.advanceTimersByTimeAsync(10_000);
+  assert.equal(streamRequests, 3);
 });
 
 test("a lost submit receipt retries the same durable request and attachment payload", async () => {

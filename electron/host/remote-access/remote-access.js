@@ -3,7 +3,7 @@
 // and a daemon behave the same, and it is applied again when the host
 // starts.
 //
-//   <data directory>/remote-access.json   0600
+//   remote-access.json beside dream.db, or <database>.remote-access.json   0600
 //     enabled      whether to serve paired devices at all
 //     mode         "tailscale" (Tailscale Serve terminates HTTPS) or
 //                  "origin" (an HTTPS reverse proxy the user runs)
@@ -104,6 +104,7 @@ const asProblem = (error) =>
 /**
  * @param {{
  *   dataDirectory: string,
+ *   settingsFile?: string,
  *   hostId: () => string,
  *   listen: (options: { port: number, publicOrigins: string[], trustForwardedHost: boolean }) => Promise<{ port: number, origins: string[] }>,
  *   close: () => Promise<void>,
@@ -116,6 +117,7 @@ const asProblem = (error) =>
  */
 export function createRemoteAccess({
   dataDirectory,
+  settingsFile = path.join(dataDirectory, SETTINGS_FILE),
   hostId,
   listen,
   close,
@@ -124,7 +126,7 @@ export function createRemoteAccess({
   pickPort = () => getPort({ host: "127.0.0.1" }),
   now = () => new Date().toISOString(),
 }) {
-  const file = path.join(dataDirectory, SETTINGS_FILE);
+  const file = settingsFile;
   let settings = readSettings(file);
   let listening = null; // { port }
   let origin = null; // the verified public origin
@@ -293,7 +295,7 @@ export function createRemoteAccess({
 
     /**
      * Turns remote access on with these settings.
-     * @param {{ mode?: "tailscale" | "origin", origin?: string, httpsPort?: number, port?: number }} options
+     * @param {{ mode?: "tailscale" | "origin", origin?: string, httpsPort?: number, port?: number | null }} options
      */
     enable: (options = {}) =>
       serially(async () => {
@@ -325,7 +327,10 @@ export function createRemoteAccess({
           httpsPort: validPort(options.httpsPort) ?? settings.httpsPort,
           mode,
           origin: requestedOrigin,
-          port: validPort(options.port) ?? settings.port,
+          port:
+            options.port === null
+              ? null
+              : (validPort(options.port) ?? settings.port),
         });
         return apply();
       }),

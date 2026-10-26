@@ -22,7 +22,10 @@ import {
   hostRequestOptions,
   reportHostResponse,
 } from "@/lib/connections/host-endpoint";
-import { connectionSupervisor } from "@/lib/connections/runtime";
+import {
+  connectionRecovery,
+  connectionSupervisor,
+} from "@/lib/connections/runtime";
 import { resolveRequestHost } from "@/lib/host-routing";
 import { getDefaultGitGenerationModelSelection } from "@/lib/ide-defaults";
 import { resolveEffectiveMcpServers } from "@/lib/mcp-servers";
@@ -71,6 +74,8 @@ import type { ToolApprovalResponder } from "./tool-call-groups";
 
 /** How long an unwatched, idle session is kept before it is dropped. */
 export const CHAT_SESSION_IDLE_EVICT_MS = 30_000;
+const MIN_STREAM_RETRY_MS = 250;
+const MAX_STREAM_RETRY_MS = 5_000;
 
 // ── Translations ────────────────────────────────────────────────────────
 // The runtime has no React context. `ChatRuntimeHost` hands it the current
@@ -170,6 +175,9 @@ export interface ChatSession {
 
 interface InternalChatSession extends ChatSession {
   evictTimer: ReturnType<typeof setTimeout> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryDelay: number;
+  reconnectNeeded: boolean;
   lastFlushedMessages: UIMessage[];
   /** Metadata captured at submit, merged into the turn's final message. */
   pendingAssistantMetadata: ChatMessageMetadata | null;
@@ -197,6 +205,8 @@ const toHostChatId = (sessionId: string) =>
  * answered. The host is named by the header the request options set.
  */
 const CHAT_HOST_HEADER = "x-dream-chat-host";
+class ChatStreamUnavailableError extends Error {}
+
 const chatFetch: typeof fetch = async (input, init) => {
   const headers = new Headers(init?.headers);
   const hostId = headers.get(CHAT_HOST_HEADER);
@@ -208,6 +218,16 @@ const chatFetch: typeof fetch = async (input, init) => {
       redirect: "error",
     });
     if (hostId) reportHostResponse(hostId, response);
+    if (
+      response.status >= 500 ||
+      response.status === 408 ||
+      response.status === 429
+    ) {
+      await response.body?.cancel();
+      throw new ChatStreamUnavailableError(
+        `Chat stream unavailable (${response.status}).`,
+      );
+    }
     return response;
   } catch (error) {
     if (
@@ -233,7 +253,13 @@ const chatRequestOptions = (hostId: string, path: string) => {
   };
 };
 
-const transport = new DefaultChatTransport<UIMessage>({
+class HostChatTransport extends DefaultChatTransport<UIMessage> {
+  // The host replays from the start, including the same assistant message ID.
+  // Reset the SDK's partial message so reconnecting does not duplicate parts.
+  readonly resumeStreamIsReplay = true;
+}
+
+const transport = new HostChatTransport({
   api: "/api/chat",
   fetch: chatFetch,
   // A turn runs on the host, detached from the request: reconnecting asks
@@ -273,6 +299,28 @@ const isChatProcessing = (chat: Chat<UIMessage>) =>
 const findChatConfig = (chatId: string) =>
   useIdeStore.getState().chats.find((chat) => chat.id === chatId);
 
+const handleSessionError = (session: InternalChatSession, error: Error) => {
+  // Provider errors arrive as ordinary Errors. A fetch/body failure means
+  // only this observer was lost; the host still owns the turn.
+  if (
+    error instanceof TypeError ||
+    error instanceof ChatStreamUnavailableError ||
+    (error instanceof ApiError &&
+      (error.status >= 500 || error.status === 408 || error.status === 429))
+  ) {
+    session.reconnectNeeded = true;
+    setChatError(session.chatId, error.message);
+    connectionSupervisor.report(
+      resolveRequestHost({ chatId: session.chatId }),
+      "unreachable",
+      error.message,
+    );
+    return;
+  }
+  session.reconnectNeeded = false;
+  handleChatError(session.chatId, error);
+};
+
 const handleChatError = (chatId: string, error: Error) => {
   useActivityStore.getState().finish(chatId, "failed", error.message);
   console.error("[chat error]", error);
@@ -309,6 +357,11 @@ const handleChatFinish = (
   },
 ) => {
   const { chat, chatId } = session;
+  if (isDisconnect || (isError && session.reconnectNeeded)) {
+    session.reconnectNeeded = true;
+    flushSession(session);
+    return;
+  }
   const attention = getActivityAttention([message]);
   if (!isAbort && !isError && !isDisconnect && attention !== null) {
     useActivityStore.getState().attention(chatId, attention);
@@ -398,6 +451,13 @@ const handleChatFinish = (
 const observeSessionMessages = (session: InternalChatSession) => {
   const { chat, chatId } = session;
   const messages = chat.messages;
+  if (chat.status === "streaming") {
+    session.retryDelay = MIN_STREAM_RETRY_MS;
+    if (session.reconnectNeeded) {
+      session.reconnectNeeded = false;
+      dismissChatError(chatId);
+    }
+  }
 
   useIdeStore
     .getState()
@@ -455,6 +515,10 @@ const disposeSession = (session: InternalChatSession) => {
     clearTimeout(session.evictTimer);
     session.evictTimer = null;
   }
+  if (session.retryTimer !== null) {
+    clearTimeout(session.retryTimer);
+    session.retryTimer = null;
+  }
   session.unsubscribeMessages();
   flushSession(session);
   session.releaseTranscript();
@@ -494,12 +558,15 @@ export const getChatSession = (chatId: string): ChatSession => {
     chat: new Chat<UIMessage>({
       id: `chat:${chatId}`,
       messages: initialMessages,
-      onError: (error) => handleChatError(chatId, error),
+      onError: (error) => handleSessionError(session, error),
       onFinish: (options) => handleChatFinish(session, options),
       transport,
     }),
     chatId,
     evictTimer: null,
+    retryTimer: null,
+    retryDelay: MIN_STREAM_RETRY_MS,
+    reconnectNeeded: false,
     lastFlushedMessages: initialMessages,
     pendingAssistantMetadata: null,
     refreshedWriteEvents: new Set(),
@@ -534,14 +601,25 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
     pendingResumes.add(chatId);
   if (
     !useIdeStore.getState().hostRunningChatIds[chatId] ||
+    !connectionRecovery.canConnect(resolveRequestHost({ chatId })) ||
     isChatProcessing(session.chat) ||
     resuming.has(chatId)
   )
     return;
+  if (session.retryTimer !== null) {
+    clearTimeout(session.retryTimer);
+    session.retryTimer = null;
+  }
   resuming.add(chatId);
   pendingResumes.delete(chatId);
   void (async () => {
     await useIdeStore.getState().applyCatalogTranscript(chatId);
+    if (
+      sessions.get(chatId) !== session ||
+      !useIdeStore.getState().hostRunningChatIds[chatId] ||
+      !connectionRecovery.canConnect(resolveRequestHost({ chatId }))
+    )
+      return;
     const messages = useIdeStore.getState().messagesByChatId[chatId] ?? [];
     session.chat.messages = mergeChatMessageHistories(
       session.chat.messages,
@@ -549,10 +627,21 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
     );
     useIdeStore.getState().setChatStreaming(chatId, true);
     await session.chat.resumeStream();
+    if (session.chat.status === "ready") {
+      session.reconnectNeeded = false;
+      dismissChatError(chatId);
+      // A 204 or completed stream may have overtaken the socket's turn-end
+      // event. Refresh the authoritative running set as well as the text.
+      if (useIdeStore.getState().hostRunningChatIds[chatId])
+        await useIdeStore
+          .getState()
+          .refreshHostCatalog(resolveRequestHost({ chatId }));
+    }
   })()
-    .catch((error: Error) => handleChatError(chatId, error))
+    .catch((error: Error) => handleSessionError(session, error))
     .finally(() => {
       resuming.delete(chatId);
+      if (sessions.get(chatId) !== session) return;
       useIdeStore.getState().setChatStreaming(chatId, false);
       const projectId = findChatConfig(chatId)?.projectId;
       if (projectId) flushProjectPanelRefresh(projectId);
@@ -574,7 +663,20 @@ const resumeHostTurn = (session: InternalChatSession, newTurn = false) => {
       void useIdeStore.getState().applyCatalogTranscript(chatId);
       void refreshChatQueue(chatId);
       scheduleEviction(session);
-      if (pendingResumes.delete(chatId)) resumeHostTurn(session);
+      if (pendingResumes.delete(chatId)) {
+        resumeHostTurn(session);
+      } else if (
+        session.reconnectNeeded &&
+        useIdeStore.getState().hostRunningChatIds[chatId] &&
+        connectionRecovery.canConnect(resolveRequestHost({ chatId }))
+      ) {
+        const delay = session.retryDelay;
+        session.retryDelay = Math.min(delay * 2, MAX_STREAM_RETRY_MS);
+        session.retryTimer = setTimeout(() => {
+          session.retryTimer = null;
+          resumeHostTurn(session);
+        }, delay);
+      }
     });
 };
 
