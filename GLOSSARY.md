@@ -471,8 +471,11 @@ A **chat run** is the durable submission around a turn: its request ID,
 queue position, captured input/model/permissions, and lifecycle state.
 `electron/host/run-store.js` owns its rows; `electron/api/chat/run-scheduler.js`
 dispatches one run per chat, after the preceding transcript has settled.
-Stop pauses pending work, and a host restart marks active work interrupted
-and pauses queues. An interrupted run retries only by explicit action.
+Stop ends the live turn as cancelled and holds queued work; Pause holds queued
+work and lets the live turn finish. A failure or a host restart marks the run
+failed or interrupted and pauses the queue. A failed or interrupted run
+retries only by explicit action; sending a new message instead dismisses it
+and resumes the queue.
 
 ## Delegated task
 

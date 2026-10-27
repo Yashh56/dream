@@ -73,8 +73,9 @@ storage-format version and exact migration hashes. Updates preserve the installe
 environment and data location; flags from the updating shell do not replace them.
 
 Replacement interrupts running turns and terminals. Running turns become
-interrupted and queues pause; review the transcripts and explicitly retry or
-resume. Downloads and rejected candidates do not interrupt work. After starting
+interrupted and queues pause; review the transcripts and explicitly retry, or
+resume (sending a new message in the chat also resumes it). Downloads and
+rejected candidates do not interrupt work. After starting
 the replacement, the updater verifies its identity, database owner and catalog
 readiness. A failed startup restores the retained compatible runtime. It never
 restores an older database over newer data.

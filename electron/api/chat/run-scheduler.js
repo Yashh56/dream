@@ -10,6 +10,12 @@ export function createRunScheduler({ catalog, turns, execute }) {
     (ready ??= catalog.mutateRunQueue({ type: "recover" }));
   const change = (chatId, id, status, error) =>
     catalog.mutateRunQueue({ type: "status", chatId, id, status, error });
+  // Only Stop and host shutdown abort a turn. A stopped turn is finished
+  // business; one cut off by shutdown is interrupted and waits for review.
+  const ended = (chatId, id) =>
+    closed
+      ? change(chatId, id, "interrupted")
+      : change(chatId, id, "cancelled", "Stopped.");
 
   const drain = (chatId) => {
     if (closed || workers.has(chatId)) return;
@@ -19,12 +25,8 @@ export function createRunScheduler({ catalog, turns, execute }) {
         const run = await catalog.mutateRunQueue({ type: "claim", chatId });
         if (!run) return;
         if (closed || held.has(chatId)) {
-          await change(
-            chatId,
-            run.id,
-            "interrupted",
-            "Stopped before dispatch.",
-          );
+          // Held while claiming: it never started, so it goes back in line.
+          await change(chatId, run.id, "queued");
           return;
         }
         let failure = null;
@@ -96,20 +98,24 @@ export function createRunScheduler({ catalog, turns, execute }) {
               );
             },
           });
-          await change(
-            chatId,
-            run.id,
-            signal?.aborted ? "interrupted" : failure ? "failed" : "completed",
-            failure,
-          );
+          if (signal?.aborted) await ended(chatId, run.id);
+          else
+            await change(
+              chatId,
+              run.id,
+              failure ? "failed" : "completed",
+              failure,
+            );
           if (failure || signal?.aborted) return;
         } catch (error) {
-          await change(
-            chatId,
-            run.id,
-            signal?.aborted ? "interrupted" : "failed",
-            error instanceof Error ? error.message : String(error),
-          );
+          if (signal?.aborted) await ended(chatId, run.id);
+          else
+            await change(
+              chatId,
+              run.id,
+              "failed",
+              error instanceof Error ? error.message : String(error),
+            );
           return;
         } finally {
           scope?.close();
@@ -148,34 +154,44 @@ export function createRunScheduler({ catalog, turns, execute }) {
         id,
         request: payload,
       });
-      drain(chatId);
+      // A new message is consent to continue a held chat (after Stop or a
+      // failure): resume it. A resent duplicate is not.
+      if (
+        !receipt.duplicate &&
+        (held.has(chatId) || (await catalog.runQueue(chatId)).paused)
+      )
+        await this.control({ chatId, action: "resume" });
+      else drain(chatId);
       return receipt;
     },
     async list(chatId) {
       await initialize();
       return catalog.runQueue(chatId);
     },
+    // pause holds queued work and lets the live turn finish; stop also ends
+    // the live turn and its delegated tasks. resume and retry never wait on a
+    // live turn: a running worker picks the work up when its turn settles.
     async control({ chatId, action, id }) {
-      if (action === "pause") held.add(chatId);
+      const holds = action === "pause" || action === "stop";
+      if (holds) held.add(chatId);
       await initialize();
-      if (action === "resume") await workers.get(chatId);
-      await catalog.mutateRunQueue({ type: action, chatId, id });
-      if (action === "pause") {
+      await catalog.mutateRunQueue({
+        type: holds ? "pause" : action,
+        chatId,
+        id,
+      });
+      if (action === "stop") {
         turns.stop(chatId);
         for (const child of (await catalog.delegatedTasks?.(chatId)) ?? []) {
           await this.cancelTask(child.childChatId);
         }
       }
       if (action === "resume") held.delete(chatId);
-      if (action === "resume" || action === "retry") {
-        // A stopped worker may still be settling its transcript/checkpoint.
-        await workers.get(chatId);
-        drain(chatId);
-      }
+      if (action === "resume" || action === "retry") drain(chatId);
       return this.list(chatId);
     },
     async cancelTask(chatId) {
-      await this.control({ chatId, action: "pause" });
+      await this.control({ chatId, action: "stop" });
       for (const run of (await this.list(chatId)).runs) {
         if (run.status === "queued")
           await this.control({ chatId, action: "cancel", id: run.id });

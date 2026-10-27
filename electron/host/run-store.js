@@ -98,6 +98,11 @@ function mutate(db, { type, chatId, id, request, status, error }) {
         "SELECT COALESCE(MAX(position), 0) + 1 AS position FROM chat_runs WHERE chat_id = ?",
       )
       .get(chatId).position;
+    // A new message moves on from failed or interrupted runs: they are
+    // dismissed rather than left waiting for a retry nobody will press.
+    db.prepare(
+      "UPDATE chat_runs SET status = 'cancelled', updated_at = ? WHERE chat_id = ? AND status IN ('failed', 'interrupted')",
+    ).run(now, chatId);
     db.prepare(
       "INSERT INTO chat_runs (id, chat_id, position, status, request, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?)",
     ).run(id, chatId, position, JSON.stringify(request), now, now);
@@ -144,9 +149,15 @@ function mutate(db, { type, chatId, id, request, status, error }) {
     ).run(now, chatId, id);
   } else if (type === "status") {
     if (
-      !["running", "waiting", "completed", "interrupted", "failed"].includes(
-        status,
-      )
+      ![
+        "queued",
+        "running",
+        "waiting",
+        "completed",
+        "interrupted",
+        "failed",
+        "cancelled",
+      ].includes(status)
     )
       throw new Error("Invalid turn status.");
     db.prepare(

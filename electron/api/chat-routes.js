@@ -134,7 +134,7 @@ export const registerChatRoutes = (
   app.post("/api/chat/stop", (c) =>
     handleJsonRoute(c, chatStopRequestSchema, async ({ chatId }) => {
       if (scheduler) {
-        await scheduler.control({ chatId, action: "pause" });
+        await scheduler.control({ chatId, action: "stop" });
         return { stopped: true };
       }
       return { stopped: turns.stop(chatId) };
