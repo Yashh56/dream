@@ -221,9 +221,16 @@ The host installed to run without the desktop (`electron/host/service/`):
 its own `serve`, supervised by the platform's service manager (a
 `systemd --user` unit, a LaunchAgent, or a Task Scheduler logon task) and
 restarted if it fails. `dream-host service` installs, starts, stops,
-restarts, reports and uninstalls it; `<home>/service.json` names the service
+restarts, updates, recovers, reports and uninstalls it; `<home>/service.json` names the service
 of a host home, which `ensure` starts instead of spawning a second host.
 Uninstalling keeps the host's data and identity.
+
+A **service runtime update** (`electron/host/service/update.js`) verifies and
+stages a packaged runtime, then replaces the service while preserving its
+captured environment, database and identity. Service runtimes are retained under
+`<home>/service-runtimes`, outside SSH's pruning. The private update journal
+survives interruption; recovery starts the previous binary only if its storage
+format and exact migration history remain compatible. No data is rolled back.
 
 In service mode the desktop's **edge listener** (`electron/desktop-host.js`)
 forwards its home host's HTTP/streams and socket, replacing the desktop token
