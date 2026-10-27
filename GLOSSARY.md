@@ -10,6 +10,11 @@ model selection. `ProjectConfig` in `src/types/ide.ts`. A project is **open**
 (in the tab strip) or **closed** (kept in the closed list so it can be
 reopened with its chats intact).
 
+An **open-project attempt** is one request from the open-folder dialog to
+open a typed or selected directory on a chosen Host. Dismissing the dialog,
+changing the Host or path, or starting another attempt retires the old one;
+late results from it cannot open a Project.
+
 ## Project file traversal
 
 The recursive selection of a Project's regular files for file-name lookup,
@@ -190,6 +195,13 @@ supervisor** keeps each host's connection state (`connecting`, `ready`,
 catalog readiness, and turns lifecycle signals into resumes: sockets
 replaced, catalogs refetched, running turns followed again.
 
+A connection's **selected route** is the verified route currently carrying its
+requests; a **fallback route** carries them while a more preferred route is
+unavailable. Its **route supervisor** (`electron/shared/route-supervisor.js`)
+owns that selection, and the **desktop connection adapter**
+(`electron/connections/desktop-connections.js`) owns its SSH endpoints and
+stable local port forwards, independently of the host's process lifetime.
+
 **Connection recovery** coordinates those resumes per host. Refused hosts
 remain quiet until their credential or route changes. Replacing a connection
 invalidates pending work from the old connection; chat observation resumes
@@ -221,9 +233,16 @@ The host installed to run without the desktop (`electron/host/service/`):
 its own `serve`, supervised by the platform's service manager (a
 `systemd --user` unit, a LaunchAgent, or a Task Scheduler logon task) and
 restarted if it fails. `dream-host service` installs, starts, stops,
-restarts, reports and uninstalls it; `<home>/service.json` names the service
+restarts, updates, recovers, reports and uninstalls it; `<home>/service.json` names the service
 of a host home, which `ensure` starts instead of spawning a second host.
 Uninstalling keeps the host's data and identity.
+
+A **service runtime update** (`electron/host/service/update.js`) verifies and
+stages a packaged runtime, then replaces the service while preserving its
+captured environment, database and identity. Service runtimes are retained under
+`<home>/service-runtimes`, outside SSH's pruning. The private update journal
+survives interruption; recovery starts the previous binary only if its storage
+format and exact migration history remain compatible. No data is rolled back.
 
 In service mode the desktop's **edge listener** (`electron/desktop-host.js`)
 forwards its home host's HTTP/streams and socket, replacing the desktop token
@@ -334,6 +353,10 @@ volatile read; remembered facts catch up when they expire.
 
 A shell process attached to a project (`__project_terminal__:<projectId>:…`)
 or to the browser panel. Not related to a chat's provider session.
+The client tracks a typed command until its output goes quiet, then refreshes
+the Project's Git and Files panels. This observation follows the Terminal
+session when its view is hidden; closing the terminal settles a pending
+refresh, while removing its Project cancels it.
 
 ## Project resources
 
@@ -387,10 +410,12 @@ may not run (an agent is still writing).
 
 Commit messages and pull request details a model writes
 (`src/components/ide/git-generated-text.ts`), cached by what they are
-written from: the changes as `electron/shared/git-changes.js` names them
+written from: the Project's Host, the changes as `electron/shared/git-changes.js` names them
 (the same key the main process caches by), the model settings, and for pull
 requests the branches, next step and git version. A failure reaches the
-caller and is never cached.
+caller and is never cached. A pending or cached answer belongs to its Host,
+even when another Host has a Project at the same path; background warming
+reads and generates on the same captured Host.
 
 ## Changes view
 

@@ -6,9 +6,10 @@ Tailscale, read chats, submit work, answer approvals and recover after suspensio
 Then add unattended hosting, multiple routes, managed cloud access, native mobile
 clients and a browser that runs on the host.
 
-Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slices 1-3 of 4;
-native desktop walkthrough pending);
-CONN-07 through CONN-11 proposed. Task numbers
+Status: CONN-01 to CONN-06 implemented; CONN-06's native Windows/Linux update,
+login/reboot and live-provider walkthroughs remain unverified;
+CONN-07 in progress (route supervisor and desktop SSH adapter implemented);
+CONN-08 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -786,8 +787,9 @@ public managed tunnels are CONN-08.
 
 ## CONN-06: Host lifecycle independent of the desktop
 
-Status: in progress: slices 1-3 of 4 (storage ownership, the service and desktop
-attach) implemented; native desktop walkthrough and runtime updates remain
+Status: all four implementation slices complete. Native macOS service updates,
+recovery and desktop quit/reopen verified. Native Windows/Linux runtime-update,
+login/reboot and live-provider walkthroughs remain unmet validation criteria.
 
 Problem and trigger: local host work ends when Electron quits; the existing SSH
 daemon is detached but is not an installed startup service.
@@ -819,8 +821,8 @@ Completion criteria:
   return to a compatible previous binary without reversing incompatible data
   migrations. Compatibility requirements are checked before replacement.
 
-Validation: pending; exercise install, desktop attach, quit, restart, update and
-uninstall on each supported OS using copies of existing desktop data.
+Validation: per-slice evidence below. The full install/attach/quit/restart/update/
+uninstall walkthrough on each supported OS is not yet established.
 
 Agreed scope: four slices, in dependency order.
 1. Storage ownership (implemented below).
@@ -830,6 +832,21 @@ Agreed scope: four slices, in dependency order.
 3. Desktop modes: desktop-owned or service-owned, with the desktop attaching
    to a service host (an edge proxy for its SSH hosts and the browser relay).
 4. Staged, verified, recoverable runtime updates.
+
+Slice 4, agreed implementation scope (2026-10-26; implemented):
+- `dream-host service update <version>` stages the published platform archive,
+  verifies its SHA256 and runtime contract, and keeps the existing service's
+  data paths and captured environment. Offline archives require an explicit
+  SHA256. The previous runtime is retained outside SSH's version pruning.
+- Check protocol, capabilities, platform and database migrations before stopping
+  the service. Automatic replacement requires the same migration history, so
+  rollback never reverses or guesses compatibility with schema changes.
+- Journal the handoff before stopping. Verify readiness, database ownership and
+  host identity after replacement; restore the previous compatible runtime on
+  failure. Expose recovery for interrupted updates and serialize service writes.
+- Validate with isolated runtimes/data and the available native service manager;
+  preserve the no-new-tests and no-dev-server constraints. Record native or
+  cross-platform walkthroughs that cannot be completed as unmet criteria.
 
 Slice 3, agreed implementation scope (2026-10-21; implemented, native walkthrough pending):
 - Explicit desktop-owned (default) and service-owned desktop startup modes.
@@ -1058,15 +1075,77 @@ were added. Scratch programs outside the checkout exercised:
 - Terminal restoration: local project matching, output retention, repeated
   restoration, runner sessions, and refusal to adopt SSH/unknown projects.
 
-Not yet inspected: the native Electron desktop attaching, quitting and reopening
-with real provider turns, real webviews or SSH machines; platform service
-handoff on macOS/Windows/Linux. `pnpm inspect:dev --json` found no renderer for
-this checkout. Native service installation was not changed. These remain unmet
-manual validation criteria. Runtime update delivery is slice 4.
+At the slice-3 checkpoint, native Electron attach/quit/reopen and platform service
+handoff were not inspected. The slice-4 macOS walkthrough below now covers native
+attachment and terminal survival. Real provider turns, real webviews and SSH
+machines, and native Windows/Linux desktop handoff remain unverified.
+
+Slice 4, runtime updates (implemented, 2026-10-26):
+- `runtime-contract.js` adds platform, architecture, protocol, capabilities,
+  storage-format version and exact migration hashes to `dream-host version`.
+  The storage-format version must change for incompatible persisted JSON,
+  queue or provider-session semantics, even without a SQL change.
+- `service/runtime.js` stages the official release archive plus SHA256SUMS, or
+  an offline archive with explicit SHA256; checks a private archive copy;
+  rejects traversal, links and special files; and runs the candidate contract.
+  Packaged installation retains its runtime immediately. Update candidates and
+  previous runtimes live under `service-runtimes`, outside SSH version pruning.
+- `service/update.js` preserves the installed launch environment and absolute
+  data paths. It checks compatibility before shutdown, journals the handoff,
+  suspends service-manager restarts, and waits for the old database owner to
+  exit. Readiness requires the expected version and identity, the database lock,
+  successful catalog reads, matching migrations and a stable process.
+- Failed startup restores the retained previous runtime only after rechecking
+  its contract, identity and database migrations. Database contents are never
+  rolled back. Schema/protocol/storage-format changes that cannot safely return
+  to the previous binary are refused before stopping the host.
+- `service update <version> [--archive file --sha256 hex]` and `service recover`
+  expose the operation. Status shows pending recovery, the last outcome and
+  runtime location without captured environment values. Private atomic records
+  survive interruption. A PID-owned operation lock serializes service commands
+  and automatic client starts; stale owners can be recovered.
+- `service.json` now keeps the installed launch settings. Earlier installations
+  without those settings need one reinstall using the same data directory and
+  explicit environment options. Checkout-based installs remain supported but
+  need a packaged runtime before automatic updates. See
+  [the operator guide](../../host-service.md).
+- Release packaging now includes Windows x64 host archives. The existing
+  runtime smoke workflow uses the shipped Node on every platform and verifies
+  the update contract, catalog access and native terminal startup.
+
+Validation, slice 4 (2026-10-26):
+- `pnpm check`: scratch hygiene, lint, typecheck and 1,244 tests across 181 files
+  passed. `pnpm vite:build` passed with the existing large-chunk warning.
+  The complete macOS arm64 runtime and archive built successfully. No tests
+  were added to the repository; diagnostics stayed in the allocated scratch
+  directory outside the checkout.
+- A real, isolated macOS LaunchAgent exercised installation, verified update,
+  checksum rejection and incompatible-migration rejection before shutdown,
+  failed-startup rollback, interrupted handoff followed by CLI recovery,
+  refusal to roll back an incompatible database, and concurrent mutation refusal.
+  The host retained its identity and catalog through update and recovery.
+- A final packaged-runtime check upgraded a fixture version from 0.30.0 to
+  0.30.1, preserved a custom database path and captured environment despite
+  different values in the updating shell, verified credential-free status,
+  and uninstalled while retaining data and identity. These versioned fixtures
+  were local archives, not published releases.
+- An isolated native Electron production renderer loaded in service mode,
+  quit, reopened and quit again. The same service PID and identity remained;
+  its native PTY terminal remained running and discoverable after both quits.
+  The temporary desktop service was uninstalled and its data retained. The
+  user's development app was not restarted and no dev server was started.
+- Platform-adapter diagnostics cover generated Linux and Windows replacement
+  commands; these do not establish native runtime-update behavior on those OSes.
+
+Remaining validation: native Windows/Linux updates and recovery, actual OS
+login/reboot, desktop handoff with real provider turns/webviews/SSH, and release
+download against a published archive containing the new contract. These are
+unmet criteria, not inferred passes from macOS or fake service-manager output.
 
 ## CONN-07: Multiple routes and unified connection management
 
-Status: proposed
+Status: implementing; slice 1 (route supervisor and desktop SSH adapter)
+implemented and validated. Slices 2-3 remain.
 
 Problem and trigger: one host should remain the same host when a client changes
 network or switches between SSH, Tailscale, LAN and managed access.
@@ -1075,6 +1154,23 @@ Scope: extend the shared supervisor with ordered routes, bounded attempts,
 backoff and cancellation. Move desktop SSH forwarding behind its platform
 adapter, reusing `electron/ssh/` installation, prompts and reconnection code.
 Keep process ownership separate from connection ownership.
+
+Implementation slices (2026-10-26; the original completion criteria below remain
+the full scope):
+1. Shared ordered-route supervisor, bounded attempts, cancellation, cooldowns,
+   verified preferred-route replacement, and desktop SSH transport adapter.
+   Preserve legacy single-route connections and the existing SSH prompts,
+   runtime installation and port forwards. Expose route status through the
+   existing bridge; do not replay writes during route replacement.
+2. Verified route merging and editing in one Connections UI, with existing
+   workspace/project ownership retained when routes are added or removed.
+3. Direct HTTPS desktop pairing, private device credentials and nonce-bound
+   host-key proof before credentials are attached; route loss/recovery across
+   transport kinds and a desktop with no local execution host.
+
+Slice 1 is implemented. Direct origins are not dialable by the
+SSH adapter; adding stored route metadata alone does not authorize a new
+credential destination. Slices 2-3 remain required to complete CONN-07.
 
 Completion criteria:
 
@@ -1091,8 +1187,58 @@ Completion criteria:
 - Removing an SSH route stops its forward, without stopping a shared service.
   Desktop can run with only remote hosts and no local execution host.
 
-Validation: pending; inspect route loss/recovery, a reassigned LAN address,
-revocation on a fallback route and SSH authentication cancellation.
+Slice 1 implementation (2026-10-26):
+- `electron/shared/route-supervisor.js` selects a verified ready handle from
+  ordered routes. Attempts time out after five minutes, transient failures use
+  capped, jittered 2-60 second backoff, and a healthy fallback keeps serving
+  during a preferred probe after a 30-second cooldown. Late attempts cannot
+  publish after replacement or cancellation. Fatal routes remain blocked until
+  explicit reconnection, which waits for any running recovery and then retries
+  every route; cancelling an SSH prompt ends the whole connect operation.
+- `electron/connections/desktop-connections.js` adapts the existing SSH manager
+  to that supervisor. SSH authenticates and checks the saved identity before
+  catalog readiness; mismatched catalogs and incompatible protocols are refused.
+  Only probes made while another route serves are silent: BatchMode, strict
+  host-key checking and an askpass helper without its secret. Recovering a
+  connection with no serving route may prompt, as single-route reconnects did.
+  Short per-connection ControlMaster names (16 hex characters, within socket
+  path limits) prevent two aliases for one machine from borrowing or closing
+  each other's master. Concurrent forwards of one port share one SSH forward.
+- Main now routes host proxies through that adapter. A bounded optional
+  `sshRoutes` bridge payload supplies ordered routes; legacy payloads remain
+  valid. Saved SSH routes are resolved against Settings by the store. Route
+  status contains ids, errors and retry times, never launch credentials.
+- Local TCP relays keep forwarded site URLs stable across route replacement.
+  A route switch closes old connections; new traffic uses the selected route.
+  Disconnect kills pending SSH work and forwards, leaving the daemon running.
+- Route changes invalidate renderer sockets/catalog reads before chat observers
+  reattach through Connection recovery. No request writes are resubmitted.
+
+Validation, slice 1 (2026-10-26): `pnpm check` passed scratch hygiene, lint,
+typecheck and 1,256 tests across 184 files. `pnpm vite:build` passed with the
+existing large-chunk warning. No tests were added to the repository.
+- Scratch diagnostics outside the checkout exercised ordered fallback,
+  cooldowns, delayed preferred readiness, dropped routes, copied ids with wrong
+  keys, terminal refusal, prompt cancellation, timeouts, late completion after
+  disconnect and a replacement attempt, upgrading a legacy pin with its first
+  verified key before fallback, and credential-free route status.
+- The desktop adapter preserved one local forwarded URL across fallback →
+  preferred → fallback using real HTTP/TCP traffic and controlled transports.
+- The production SSH manager connected to a real isolated daemon through the
+  existing scripted SSH stand-in and real TCP forwards. Losing the preferred
+  forward switched routes, retained host identity and the forwarded site's URL,
+  and left the daemon running after disconnect. The isolated daemon was stopped
+  explicitly at diagnostic cleanup.
+- A separate diagnostic checked distinct ControlMaster paths for two routes
+  to the same target and for two independent managers.
+- An askpass diagnostic kept a foreground password prompt pending while a
+  background probe ran; the prompt stayed assigned to the foreground host,
+  and declining it cancelled that host's attempt.
+
+Remaining validation: live remote SSH, native desktop route switching and
+draft/turn recovery, reassigned LAN endpoints and revocation on direct fallback
+routes. The last two depend on slice 3. The existing app was not restarted and
+no dev server was started.
 
 Remaining/deferred: the managed route provider arrives in CONN-08.
 
@@ -1255,8 +1401,10 @@ contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
-pending). CONN-06 in progress: slices 1 (storage ownership), 2 (the service)
-and 3 (desktop attach) implemented; native desktop walkthrough pending.
-Next implementation is slice 4, runtime updates. CONN-07 through CONN-11 proposed. Preserve
+pending). CONN-06's four slices implemented; macOS service/update/recovery and
+native desktop quit/reopen checked. Cross-platform, reboot/login and live-provider
+validation remains as listed above. CONN-07 slice 1 is implemented and validated;
+next is slice 2, verified route merging/editing. Slice 3 (direct HTTPS pairing
+and remote-only desktop) also remains. CONN-08 through CONN-11 proposed. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.

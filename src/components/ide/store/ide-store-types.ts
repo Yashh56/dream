@@ -90,6 +90,8 @@ export interface HostRuntimeState {
   error: string | null;
   /** Its catalog is in the store. */
   loaded: boolean;
+  routeId?: HostStatusEvent["routeId"];
+  routes?: HostStatusEvent["routes"];
 }
 
 export interface IdeState {
@@ -223,7 +225,7 @@ export interface IdeState {
    */
   openProject: (
     path: string,
-    options?: { activate?: boolean; hostId?: string },
+    options?: { activate?: boolean; hostId?: string; signal?: AbortSignal },
   ) => Promise<boolean>;
   createWorktreeProject: (
     parentProjectId: string,

@@ -302,6 +302,7 @@ export const createDesktopHandlers = ({
         hostCommand,
         hostId,
         target,
+        sshRoutes,
       } = fields(payload);
       if (
         typeof hostId !== "string" ||
@@ -310,7 +311,37 @@ export const createDesktopHandlers = ({
       ) {
         throw new Error("A host needs an id and an SSH target.");
       }
+      let routes;
+      if (sshRoutes !== undefined) {
+        if (
+          !Array.isArray(sshRoutes) ||
+          sshRoutes.length === 0 ||
+          sshRoutes.length > 8
+        )
+          throw new Error(
+            "A connection needs between one and eight SSH routes.",
+          );
+        routes = sshRoutes.map((route) => {
+          if (
+            typeof route?.id !== "string" ||
+            !route.id.trim() ||
+            typeof route?.target !== "string" ||
+            !route.target.trim() ||
+            (route.hostCommand !== undefined &&
+              typeof route.hostCommand !== "string")
+          )
+            throw new Error("Each SSH route needs a distinct id and target.");
+          return {
+            id: route.id.trim(),
+            target: route.target.trim(),
+            hostCommand: route.hostCommand?.trim() || undefined,
+          };
+        });
+        if (new Set(routes.map((route) => route.id)).size !== routes.length)
+          throw new Error("Each SSH route needs a distinct id.");
+      }
       const endpoint = await sshHosts.connect({
+        ...(routes ? { sshRoutes: routes } : {}),
         hostCommand:
           typeof hostCommand === "string" && hostCommand.trim()
             ? hostCommand.trim()
@@ -330,6 +361,12 @@ export const createDesktopHandlers = ({
       });
       // The token stays in this process; the renderer goes through the proxy.
       return {
+        ...(endpoint.routeId
+          ? {
+              routeId: endpoint.routeId,
+              routes: sshHosts.getRouteState?.(hostId)?.routes,
+            }
+          : {}),
         fingerprint: endpoint.fingerprint ?? null,
         hostId: endpoint.hostId ?? null,
         hostProtocolVersion: endpoint.hostProtocolVersion,

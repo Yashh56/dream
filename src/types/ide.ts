@@ -369,6 +369,16 @@ export interface HostStatusEvent {
   state: HostConnectionState;
   error: string | null;
   version: string | null;
+  routeId?: string | null;
+  routes?: HostRouteRuntimeState[];
+}
+
+/** Public route readiness; credentials and endpoints remain with the adapter. */
+export interface HostRouteRuntimeState {
+  routeId: string;
+  state: "idle" | "connecting" | "ready" | "cooldown" | "blocked";
+  error: string | null;
+  retryAt: number | null;
 }
 
 export interface HostPromptEvent {
@@ -955,12 +965,15 @@ export interface DesktopApi {
     hostCommand?: string;
     expectedHostId?: string | null;
     expectedFingerprint?: string | null;
+    sshRoutes?: { id: string; target: string; hostCommand?: string }[];
   }) => Promise<{
     hostProtocolVersion: number;
     version: string | null;
     /** The host's persistent id; null from a host too old to say. */
     hostId: string | null;
     fingerprint: string | null;
+    routeId?: string;
+    routes?: HostRouteRuntimeState[];
   }>;
   disconnectHost: (hostId: string) => Promise<boolean>;
   getHostState: (hostId: string) => Promise<HostConnectionState>;

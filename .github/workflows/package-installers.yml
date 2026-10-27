@@ -487,6 +487,8 @@ jobs:
               options: --init
           - target: darwin-arm64
             runner: blacksmith-6vcpu-macos-15
+          - target: windows-x64
+            runner: blacksmith-4vcpu-windows-2025
     steps:
       - name: Install Linux host build tools
         if: startsWith(matrix.target, 'linux-')
@@ -530,16 +532,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          host_home="$(mktemp -d)"
-          release/host/bin/dream-host version
-          release/host/bin/dream-host ensure --home "$host_home" --idle-timeout 0 > ensure.json
-          port="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("ensure.json","utf8")).port)')"
-          token="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("ensure.json","utf8")).token)')"
-          curl -sf -X POST -H "x-dream-api-token: $token" -H "content-type: application/json" \
-            -d '{"projects":[{"id":"p","path":"/tmp"}]}' "http://127.0.0.1:$port/api/catalog/changes"
-          curl -sf -X POST -H "x-dream-api-token: $token" -H "content-type: application/json" \
-            -d '{"sessionId":"__project_terminal__:p:smoke","cwd":"/tmp"}' "http://127.0.0.1:$port/api/terminal-start" | grep -q '"transport":"pty"'
-          release/host/bin/dream-host stop --home "$host_home"
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { mkdtempSync } from 'node:fs';
+          import os from 'node:os';
+          import path from 'node:path';
+          const home = mkdtempSync(path.join(os.tmpdir(), 'dream-runtime-'));
+          const program = path.resolve('release/host/node', process.platform === 'win32' ? 'node.exe' : 'node');
+          const entry = path.resolve('release/host/lib/dream-host.js');
+          const cli = (...args) => JSON.parse(execFileSync(program, [entry, ...args, '--home', home], { encoding: 'utf8' }).trim());
+          try {
+            const version = cli('version');
+            if (!version.runtime?.migrations?.length) throw new Error('Missing update contract');
+            const host = cli('ensure', '--idle-timeout', '0');
+            const post = async (route, body) => {
+              const response = await fetch(`http://127.0.0.1:${host.port}/api/${route}`, {
+                method: 'POST', headers: { 'x-dream-api-token': host.token, 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+              });
+              if (!response.ok) throw new Error(`${route}: ${response.status}`);
+              return response.json();
+            };
+            await post('catalog/changes', { projects: [{ id: 'p', path: home }] });
+            const terminal = await post('terminal-start', { sessionId: '__project_terminal__:p:smoke', cwd: home });
+            if (terminal.transport !== 'pty') throw new Error('Terminal did not start');
+          } finally {
+            cli('stop');
+          }
+          NODE
 
       - name: Upload host runtime
         uses: actions/upload-artifact@v7.0.1

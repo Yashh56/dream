@@ -85,6 +85,7 @@ const createDraft = ({
   ): CommitDraftInputs => ({
     ...settings,
     canGenerate,
+    hostId: "local",
     projectPath: "/work/app",
     status,
   });

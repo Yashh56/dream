@@ -13,20 +13,15 @@ import { cn } from "@/lib/utils";
 import { echoPipeFallbackInput } from "./ide-helpers";
 import { useIdeStore } from "./ide-store";
 import { TERMINAL_MIN_HEIGHT_PX } from "./ide-types";
-import { flushProjectPanelRefresh } from "./project-panel-refresh";
 import { RightPanelExpandButton } from "./right-panel-expand-button";
 import { RightPanelHeaderIconButton } from "./right-panel-header-icon-button";
 import { isAppShortcutForTerminal } from "./shortcuts/shortcuts";
 import { StandardTabs } from "./standard-tabs";
-import { createTerminalCommandRefresh } from "./terminal-command-refresh";
 import {
   getTerminalScrollback,
   subscribeToTerminalOutput,
 } from "./terminal-scrollback";
-import {
-  isUserTerminalInput,
-  markTerminalSessionTouched,
-} from "./terminal-untouched";
+import { terminalSessions } from "./terminal-session";
 import { attachTerminalWebglRenderer } from "./terminal-webgl";
 
 const EMPTY_TERMINAL_SESSION_IDS: string[] = [];
@@ -435,25 +430,15 @@ export const TerminalPanel = ({
       void onStart?.();
     }
 
-    // A command run here (git or anything else) may change what the Git
-    // and Files panels show: they read again once its output goes quiet.
-    const commandRefresh = createTerminalCommandRefresh({
-      onSettled: () => flushProjectPanelRefresh(projectId),
-    });
-
     const removeTerminalData = subscribeToTerminalOutput(
       sessionId,
       (chunk, processed) => {
         terminal.write(stylePowerShellUpdateNotification(chunk), processed);
-        commandRefresh.output();
       },
     );
 
     const inputSubscription = terminal.onData((data) => {
-      if (isUserTerminalInput(data)) {
-        markTerminalSessionTouched(sessionId);
-        commandRefresh.input(data);
-      }
+      terminalSessions.input(sessionId, data);
 
       if (transportRef.current === "pipe") {
         echoPipeFallbackInput(terminal, data);
@@ -474,7 +459,6 @@ export const TerminalPanel = ({
         window.cancelAnimationFrame(resizeFrame);
       }
       removeTerminalData();
-      commandRefresh.dispose();
       inputSubscription.dispose();
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleFitAndSyncSize);
@@ -641,7 +625,7 @@ export const ProjectTerminalTabsPanel = ({
 
   const content = (
     <>
-      <div className="flex items-center gap-2 border-b border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-3 py-1.5">
+      <div className="flex min-h-[50px] items-center gap-2 border-b border-surface-200 dark:border-surface-800 bg-surface-50 dark:bg-surface-900 px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {onClosePanel ? (
             <RightPanelHeaderIconButton

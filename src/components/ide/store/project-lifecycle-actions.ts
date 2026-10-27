@@ -2,6 +2,7 @@ import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { terminalClient } from "@/lib/terminal-client";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { deleteTerminalScrollback } from "../terminal-scrollback";
+import { terminalSessions } from "../terminal-session";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import {
   commitWorkspaceRemoval,
@@ -72,7 +73,7 @@ export const createProjectLifecycleActions = (
 
   openProject: async (path, options) => {
     const trimmed = path.trim();
-    if (!trimmed) return false;
+    if (!trimmed || options?.signal?.aborted) return false;
     // The local host is no host at all on a project.
     const hostId =
       options?.hostId === LOCAL_HOST_ID ? undefined : options?.hostId;
@@ -85,11 +86,13 @@ export const createProjectLifecycleActions = (
         if (!(await get().connectHost(hostId))) return false;
       }
     }
+    if (options?.signal?.aborted) return false;
     get().addProject(trimmed, { activate: options?.activate, hostId });
     return true;
   },
 
   stopProjectTerminals: async (projectId: string) => {
+    terminalSessions.closeProject(projectId);
     const terminalSessionIds =
       get().projectTerminalSessionIds?.[projectId] ?? [];
     const stops = terminalSessionIds.map(async (sessionId) => {

@@ -45,6 +45,7 @@ import {
   removeHostRecord,
   writeHostRecord,
 } from "./run-directory.js";
+import { runtimeContract } from "./runtime-contract.js";
 import {
   createServiceManager,
   readInstalledServiceName,
@@ -169,7 +170,7 @@ async function ensure({ home, runDirectory, values, env, write }) {
     }
   })();
   if (service?.isInstalled() && service.servesHome(home)) {
-    await service.start().catch(() => undefined);
+    await service.start();
     const started = await waitForDaemon(runDirectory);
     if (!started) {
       write({
@@ -407,6 +408,7 @@ async function status({ runDirectory, write }) {
 async function version({ write }) {
   write({
     hostProtocolVersion: HOST_PROTOCOL_VERSION,
+    runtime: runtimeContract(),
     version: readAppVersion(),
   });
   return 0;
@@ -478,6 +480,8 @@ export async function runDaemonCli(
         tailscale: { type: "boolean" },
         env: { multiple: true, type: "string" },
         "service-name": { type: "string" },
+        archive: { type: "string" },
+        sha256: { type: "string" },
       },
     });
   } catch (error) {
@@ -496,7 +500,7 @@ export async function runDaemonCli(
 
   const home = path.resolve(parsed.values.home ?? getHostHome(env));
   const runDirectory = getRunDirectory(home, HOST_PROTOCOL_VERSION);
-  ensurePrivateDirectory(runDirectory);
+  if (name !== "version") ensurePrivateDirectory(runDirectory);
 
   try {
     return await command({

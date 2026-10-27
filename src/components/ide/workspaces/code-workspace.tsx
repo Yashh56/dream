@@ -163,6 +163,7 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   const desiredRightWidthRef = useRef(BROWSER_PANEL_DEFAULT_WIDTH_PX);
   const renderedRightWidthRef = useRef(BROWSER_PANEL_DEFAULT_WIDTH_PX);
   const horizontalPanelsRef = useRef<HTMLDivElement | null>(null);
+  const chatAreaRef = useRef<HTMLDivElement | null>(null);
   const rightPanelRef = useRef<HTMLDivElement | null>(null);
   const historyButtonRef = useRef<HTMLButtonElement | null>(null);
   const historyPanelRef = useRef<HTMLDivElement | null>(null);
@@ -361,6 +362,42 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
   const handleToggleRightPanel = useCallback(() => {
     toggleRightPanel(projectId);
   }, [projectId, toggleRightPanel]);
+
+  // Double-clicking the panel's edge gives it an equal share of the space it
+  // shares with the chats: half beside one chat, one column's worth beside
+  // several (the chat splitters equalize the same way).
+  const handleEqualizeRightPanel = useCallback(() => {
+    const chatArea = chatAreaRef.current;
+    const rightPanel = rightPanelRef.current;
+    if (!rightVisible || panelExpanded || !chatArea || !rightPanel) {
+      return;
+    }
+
+    const mountedChatIds = new Set(mountedChats.map((chat) => chat.id));
+    const chatCount = Math.max(
+      1,
+      openChatIds.filter((chatId) => mountedChatIds.has(chatId)).length,
+    );
+    const sharedWidth =
+      chatArea.getBoundingClientRect().width +
+      rightPanel.getBoundingClientRect().width;
+    const width = Math.max(
+      BROWSER_PANEL_MIN_WIDTH_PX,
+      Math.min(getRightPanelMaxWidth(), sharedWidth / (chatCount + 1)),
+    );
+
+    desiredRightWidthRef.current = width;
+    syncHorizontalPanelWidths();
+    handleRightResizeEnd(renderedRightWidthRef.current);
+  }, [
+    getRightPanelMaxWidth,
+    handleRightResizeEnd,
+    mountedChats,
+    openChatIds,
+    panelExpanded,
+    rightVisible,
+    syncHorizontalPanelWidths,
+  ]);
 
   const handleCloseRightPanel = useCallback(() => {
     setRightPanelExpandedRequested(false);
@@ -648,6 +685,7 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
       {/* ─── MIDDLE: Chat ─── */}
       <div
         className="min-w-0 flex-1"
+        ref={chatAreaRef}
         style={{
           minWidth: middleVisible ? CHAT_PANEL_MIN_WIDTH_PX : 0,
           display: middleVisible ? undefined : "none",
@@ -681,7 +719,7 @@ const CodeWorkspaceComponent = ({ active, project }: CodeWorkspaceProps) => {
         onCloseRightPanel={handleCloseRightPanel}
         onResizeEnd={handleRightResizeEnd}
         onResizeStart={markRightPanelDragging}
-        onToggleRightPanel={handleToggleRightPanel}
+        onHandleDoubleClick={handleEqualizeRightPanel}
         open={rightVisible}
         project={project}
         rightPanelRef={rightPanelRef}

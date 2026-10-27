@@ -8,6 +8,15 @@ const api = vi.hoisted(() => ({
   gitCommitMessage: vi.fn(),
   gitPullRequestDetails: vi.fn(),
 }));
+const resources = vi.hoisted(() => ({
+  projectResourceKey: vi.fn((kind, projectPath, options) => ({
+    kind,
+    projectPath,
+    ...options,
+  })),
+  readProjectResource: vi.fn(),
+}));
+vi.mock("./project-resources", () => resources);
 vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
   return { ...actual, apiClient: { ...actual.apiClient, ...api } };
@@ -19,12 +28,15 @@ const {
   clearGeneratedGitText,
   generateCommitMessage,
   generatePullRequestDetails,
+  warmProjectCommitMessage,
 } = await import("./git-generated-text");
 
 afterEach(() => {
   clearGeneratedGitText();
   api.gitCommitMessage.mockReset();
   api.gitPullRequestDetails.mockReset();
+  resources.readProjectResource.mockReset();
+  resources.projectResourceKey.mockClear();
 });
 
 const change = (path: string): ProjectGitStatusEntry => ({
@@ -40,6 +52,7 @@ const change = (path: string): ProjectGitStatusEntry => ({
 const commitRequest = (model = "gpt-5-codex") => ({
   changes: [change("b.ts"), change("a.ts")],
   includeUnstaged: true,
+  hostId: "local",
   model,
   modelSpeed: "standard" as const,
   projectPath: "/work/app",
@@ -109,6 +122,63 @@ test("a pull request details failure reaches the caller and is not kept", async 
     title: "Title",
   });
   expect(cachedPullRequestDetails(prRequest())?.title).toBe("Title");
+});
+
+test("identical projects on different hosts do not share text or pending requests", async () => {
+  api.gitCommitMessage.mockImplementation(async (_body, options) => ({
+    commitMessage: `commit on ${options.hostId}`,
+  }));
+  api.gitPullRequestDetails.mockImplementation(async (_body, options) => ({
+    title: `PR on ${options.hostId}`,
+    description: "Body",
+  }));
+  const hostA = { ...commitRequest(), hostId: "host-a" };
+  const hostB = { ...commitRequest(), hostId: "host-b" };
+  expect(
+    await Promise.all([
+      generateCommitMessage(hostA),
+      generateCommitMessage(hostA),
+      generateCommitMessage(hostB),
+    ]),
+  ).toEqual(["commit on host-a", "commit on host-a", "commit on host-b"]);
+  expect(api.gitCommitMessage).toHaveBeenCalledTimes(2);
+  expect(cachedCommitMessage(hostA)).toBe("commit on host-a");
+  expect(cachedCommitMessage(hostB)).toBe("commit on host-b");
+
+  const prA = { ...prRequest(), hostId: "host-a" };
+  const prB = { ...prRequest(), hostId: "host-b" };
+  const [first, second] = await Promise.all([
+    generatePullRequestDetails(prA),
+    generatePullRequestDetails(prB),
+  ]);
+  expect(first.title).toBe("PR on host-a");
+  expect(second.title).toBe("PR on host-b");
+  expect(cachedPullRequestDetails(prA)?.title).toBe("PR on host-a");
+  expect(cachedPullRequestDetails(prB)?.title).toBe("PR on host-b");
+});
+
+test("warming retains its host while its status read is pending", async () => {
+  let finishStatus!: (status: unknown) => void;
+  resources.readProjectResource.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishStatus = resolve;
+      }),
+  );
+  api.gitCommitMessage.mockResolvedValue({ commitMessage: "Ready" });
+  const request = commitRequest();
+  const warming = warmProjectCommitMessage({ ...request, hostId: "host-a" });
+  expect(resources.projectResourceKey).toHaveBeenCalledWith(
+    "gitStatus",
+    request.projectPath,
+    expect.objectContaining({ hostId: "host-a" }),
+  );
+  finishStatus({ changes: request.changes });
+  expect(await warming).toBe("Ready");
+  expect(api.gitCommitMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ projectPath: request.projectPath }),
+    { hostId: "host-a" },
+  );
 });
 
 test("pull request details are per git version", async () => {

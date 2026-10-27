@@ -65,9 +65,13 @@ export const FolderPathField = ({
   useEffect(() => {
     if (!listable) return;
     const request = ++requestRef.current;
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
       apiClient
-        .hostDirectories({ path: folderToList(parent) }, { hostId })
+        .hostDirectories(
+          { path: folderToList(parent) },
+          { hostId, signal: controller.signal },
+        )
         .then((result) => {
           if (request === requestRef.current)
             setListing({ error: null, parent, result });
@@ -81,7 +85,11 @@ export const FolderPathField = ({
             });
         });
     }, LIST_DELAY_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      requestRef.current += 1;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [hostId, listable, parent, t]);
 
   const current = listing?.parent === parent ? listing : null;

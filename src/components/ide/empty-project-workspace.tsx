@@ -38,7 +38,7 @@ import type { ProjectConfig } from "@/types/ide";
 import { ProjectTabIcon } from "./header/project-tab-icon";
 import { useIdeStore } from "./ide-store";
 import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
-import { showOpenProjectDialog } from "./open-project/open-project-dialog";
+import { showOpenProjectDialog } from "./open-project/open-project-dialog-state";
 
 const RECENT_PROJECT_LIMIT = 50;
 const RECENT_PROJECT_VISIBLE_COUNT = 10;
