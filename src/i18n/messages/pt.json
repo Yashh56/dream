@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "Hosts remotos",
+    "description": "Acesse um host por rotas SSH e HTTPS em ordem de preferência.",
+    "pair": "Parear host",
+    "empty": "Adicione um host SSH ou cole um link de pareamento HTTPS.",
+    "active": "Rota ativa",
+    "idle": "Inativo",
+    "connecting": "Conectando",
+    "ready": "Pronto",
+    "cooldown": "Aguardando nova tentativa",
+    "blocked": "Requer atenção",
+    "up": "Mover para cima",
+    "down": "Mover para baixo",
+    "removeRoute": "Remover rota",
+    "addSshRoute": "Adicionar rota SSH",
+    "addHttpsRoute": "Adicionar rota HTTPS",
+    "pairHint": "Crie um link de pareamento nas configurações de acesso remoto do host e cole-o aqui.",
+    "pairLink": "Link de pareamento",
+    "name": "Nome (opcional)",
+    "cancel": "Cancelar",
+    "pairing": "Pareando…"
+  },
   "app": {
     "loadingDream": "Carregando Dream",
     "working": "Processando",

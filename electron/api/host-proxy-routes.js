@@ -29,6 +29,12 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "keep-alive",
   "transfer-encoding",
   "upgrade",
+  "authorization",
+  "cookie",
+  "origin",
+  "sec-fetch-site",
+  "x-forwarded-host",
+  "x-forwarded-proto",
   API_SESSION_TOKEN_HEADER,
 ]);
 const DROPPED_RESPONSE_HEADERS = new Set([
@@ -37,6 +43,7 @@ const DROPPED_RESPONSE_HEADERS = new Set([
   "content-length",
   "keep-alive",
   "transfer-encoding",
+  "set-cookie",
 ]);
 
 const splitRoute = (path, hostId) =>
@@ -93,7 +100,7 @@ export function registerEndpointProxyRoutes(
         const pending = [];
         return {
           onOpen: (_event, ws) => {
-            remote = new WebSocket(remoteUrl);
+            remote = new WebSocket(remoteUrl, endpoint.socketOptions);
             remote.on("open", () => {
               for (const text of pending.splice(0)) remote.send(text);
             });
@@ -128,13 +135,13 @@ export function registerEndpointProxyRoutes(
         headers.set(name, value);
       }
     }
-    headers.set(API_SESSION_TOKEN_HEADER, endpoint.token);
+    if (endpoint.token) headers.set(API_SESSION_TOKEN_HEADER, endpoint.token);
 
     const method = c.req.method;
     const hasBody = method !== "GET" && method !== "HEAD";
     let upstream;
     try {
-      upstream = await fetchImpl(target, {
+      upstream = await (endpoint.fetch ?? fetchImpl)(target, {
         body: hasBody ? c.req.raw.body : undefined,
         duplex: hasBody ? "half" : undefined,
         headers,

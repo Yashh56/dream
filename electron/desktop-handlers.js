@@ -295,6 +295,45 @@ export const createDesktopHandlers = ({
       return true;
     },
 
+    pairHost: async (payload) => {
+      const {
+        url,
+        deviceName,
+        expectedHostId,
+        expectedFingerprint,
+        knownIdentities,
+      } = fields(payload);
+      if (
+        typeof url !== "string" ||
+        url.length > 2000 ||
+        (deviceName !== undefined && typeof deviceName !== "string")
+      )
+        throw new Error("A pairing link and device name are required.");
+      return sshHosts.pair({
+        url,
+        knownIdentities: Array.isArray(knownIdentities)
+          ? knownIdentities
+              .filter(
+                (host) =>
+                  typeof host?.hostId === "string" &&
+                  (host.fingerprint === null ||
+                    typeof host.fingerprint === "string"),
+              )
+              .slice(0, 1000)
+          : [],
+        deviceName: deviceName?.slice(0, 200),
+        expectedIdentity: expectedHostId
+          ? { hostId: expectedHostId, fingerprint: expectedFingerprint }
+          : null,
+      });
+    },
+    forgetHostCredential: (payload) => {
+      const { credentialId } = fields(payload);
+      if (typeof credentialId !== "string")
+        throw new Error("A device credential id is required.");
+      sshHosts.forgetCredential(credentialId);
+      return true;
+    },
     connectHost: async (/** @type {unknown} */ payload) => {
       const {
         expectedHostId,
@@ -303,15 +342,55 @@ export const createDesktopHandlers = ({
         hostId,
         target,
         sshRoutes,
+        routes: configuredRoutes,
       } = fields(payload);
       if (
         typeof hostId !== "string" ||
-        typeof target !== "string" ||
-        !target.trim()
+        (!configuredRoutes && (typeof target !== "string" || !target.trim()))
       ) {
         throw new Error("A host needs an id and an SSH target.");
       }
       let routes;
+      if (configuredRoutes !== undefined) {
+        if (
+          !Array.isArray(configuredRoutes) ||
+          !configuredRoutes.length ||
+          configuredRoutes.length > 8
+        )
+          throw new Error("A connection needs between one and eight routes.");
+        routes = configuredRoutes.map((route) => {
+          if (typeof route?.id !== "string" || !route.id.trim())
+            throw new Error("A route needs an id.");
+          if (
+            route.kind === "https" &&
+            typeof route.origin === "string" &&
+            typeof route.credentialId === "string"
+          )
+            return {
+              id: route.id,
+              kind: "https",
+              origin: route.origin,
+              credentialId: route.credentialId,
+            };
+          if (
+            route.kind === "ssh" &&
+            typeof route.target === "string" &&
+            route.target.trim() &&
+            (!route.hostCommand || typeof route.hostCommand === "string")
+          )
+            return {
+              id: route.id,
+              kind: "ssh",
+              target: route.target.trim(),
+              hostCommand: route.hostCommand?.trim() || undefined,
+            };
+          throw new Error(
+            "Each route needs an SSH target or paired HTTPS origin.",
+          );
+        });
+        if (new Set(routes.map((route) => route.id)).size !== routes.length)
+          throw new Error("Route ids must be distinct.");
+      }
       if (sshRoutes !== undefined) {
         if (
           !Array.isArray(sshRoutes) ||
@@ -341,13 +420,17 @@ export const createDesktopHandlers = ({
           throw new Error("Each SSH route needs a distinct id.");
       }
       const endpoint = await sshHosts.connect({
-        ...(routes ? { sshRoutes: routes } : {}),
+        ...(routes
+          ? configuredRoutes
+            ? { routes }
+            : { sshRoutes: routes }
+          : {}),
         hostCommand:
           typeof hostCommand === "string" && hostCommand.trim()
             ? hostCommand.trim()
             : undefined,
         hostId,
-        target: target.trim(),
+        target: typeof target === "string" ? target.trim() : undefined,
         expectedIdentity:
           typeof expectedHostId === "string" && expectedHostId
             ? {
@@ -411,7 +494,9 @@ export const createDesktopHandlers = ({
 
     detectEditors: () => editors.detect(),
     openInEditor: (/** @type {unknown} */ payload) => {
-      const { editorId, projectPath, sshTarget } = fields(payload);
+      const { editorId, projectPath, sshTarget, hostId } = fields(payload);
+      if (hostId && (typeof sshTarget !== "string" || !sshTarget.trim()))
+        return false;
       return editors.open({ editorId, projectPath, sshTarget });
     },
   };

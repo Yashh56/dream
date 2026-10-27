@@ -573,6 +573,20 @@ export interface IdeState {
   loadHostCatalog: (hostId: string) => Promise<void>;
   /** Connects an SSH host from settings and loads its catalog. */
   connectHost: (hostId: string) => Promise<boolean>;
+  pairHost: (
+    url: string,
+    label: string,
+    connectionId?: string,
+    replaceRouteId?: string,
+  ) => Promise<string>;
+  addSshRoute: (
+    connectionId: string,
+    values: Pick<SshHostConfig, "label" | "target" | "hostCommand">,
+  ) => Promise<void>;
+  setHostRoutes: (
+    hostId: string,
+    routes: SavedHostConnection["routes"],
+  ) => Promise<void>;
   /** Disconnects an SSH host; its work keeps running there. */
   disconnectHost: (hostId: string) => Promise<void>;
   /** Main reported a host's connection state. */

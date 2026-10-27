@@ -3,6 +3,7 @@ import { lazy, Suspense, useDeferredValue, useEffect } from "react";
 import { AppLoadingScreen } from "@/components/dream-loading-screen";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { getClientPlatform } from "@/lib/connections/platform";
 import { getDesktopApi, hasDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { getHostSocketClient } from "@/lib/host-socket";
@@ -167,7 +168,12 @@ export const IdeShell = () => {
   // Desktop-owned terminals stop on unload; service work outlives the page.
   useEffect(() => {
     const desktop = getDesktopApi();
-    if (!desktop || desktop.hostMode === "service") return;
+    if (
+      !desktop ||
+      desktop.hostMode === "service" ||
+      desktop.hostMode === "remote"
+    )
+      return;
     return watchRendererUnload({
       getState: useIdeStore.getState,
       stopAll: () => terminalClient.stopAll({ keepalive: true }),
@@ -181,21 +187,30 @@ export const IdeShell = () => {
   useEffect(() => {
     const desktop = getDesktopApi();
     const watching = new Map<string, () => void>();
+    const routes = new Map<string, string | null | undefined>();
     const follow = (
       hosts: ReturnType<typeof useIdeStore.getState>["hosts"],
     ) => {
       const wanted = new Set([
-        LOCAL_HOST_ID,
+        ...(getClientPlatform().hasHomeHost ? [LOCAL_HOST_ID] : []),
         ...Object.entries(hosts)
           .filter(([, host]) => host.loaded)
           .map(([hostId]) => hostId),
       ]);
       for (const hostId of wanted) {
-        if (watching.has(hostId)) continue;
+        const routeId = hosts[hostId]?.routeId;
+        if (watching.has(hostId) && routes.get(hostId) === routeId) continue;
+        watching.get(hostId)?.();
+        routes.set(hostId, routeId);
         const stopCatalog = watchHostCatalog(hostId);
+        const route = useIdeStore
+          .getState()
+          .hostConnections.find((host) => host.id === hostId)
+          ?.routes.find((item) => item.id === routeId);
         // SSH and service-hosted agents use this window's browser.
         const stopBrowser =
           !desktop ||
+          route?.kind === "https" ||
           (hostId === LOCAL_HOST_ID && desktop.hostMode !== "service")
             ? null
             : watchHostBrowser(hostId);
@@ -208,6 +223,7 @@ export const IdeShell = () => {
         if (!wanted.has(hostId)) {
           stop();
           watching.delete(hostId);
+          routes.delete(hostId);
         }
       }
     };

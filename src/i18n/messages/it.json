@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "Host remoti",
+    "description": "Accedi a un host tramite percorsi SSH e HTTPS ordinati.",
+    "pair": "Associa host",
+    "empty": "Aggiungi un host SSH o incolla un link di associazione HTTPS.",
+    "active": "Percorso attivo",
+    "idle": "Inattivo",
+    "connecting": "Connessione",
+    "ready": "Pronto",
+    "cooldown": "In attesa di riprovare",
+    "blocked": "Richiede attenzione",
+    "up": "Sposta su",
+    "down": "Sposta giù",
+    "removeRoute": "Rimuovi percorso",
+    "addSshRoute": "Aggiungi percorso SSH",
+    "addHttpsRoute": "Aggiungi percorso HTTPS",
+    "pairHint": "Crea un link di associazione nelle impostazioni di accesso remoto dell’host e incollalo qui.",
+    "pairLink": "Link di associazione",
+    "name": "Nome (facoltativo)",
+    "cancel": "Annulla",
+    "pairing": "Associazione…"
+  },
   "app": {
     "loadingDream": "Caricamento di Dream",
     "working": "Elaborazione in corso",

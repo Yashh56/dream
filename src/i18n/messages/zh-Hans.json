@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "远程主机",
+    "description": "按优先顺序通过 SSH 和 HTTPS 路由连接同一主机。",
+    "pair": "配对主机",
+    "empty": "添加 SSH 主机或粘贴 HTTPS 配对链接。",
+    "active": "当前路由",
+    "idle": "空闲",
+    "connecting": "正在连接",
+    "ready": "就绪",
+    "cooldown": "等待重试",
+    "blocked": "需要处理",
+    "up": "上移",
+    "down": "下移",
+    "removeRoute": "移除路由",
+    "addSshRoute": "添加 SSH 路由",
+    "addHttpsRoute": "添加 HTTPS 路由",
+    "pairHint": "在主机的远程访问设置中创建配对链接，然后粘贴到此处。",
+    "pairLink": "配对链接",
+    "name": "名称（可选）",
+    "cancel": "取消",
+    "pairing": "正在配对…"
+  },
   "app": {
     "loadingDream": "正在加载 Dream",
     "working": "正在处理",

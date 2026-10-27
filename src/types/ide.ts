@@ -329,6 +329,8 @@ export type HostRoute =
   | { id: string; kind: "local" }
   /** An SSH host from Settings, by its id there. */
   | { id: string; kind: "ssh"; sshHostId: string }
+  /** Native desktop route; its opaque credential reference contains no secret. */
+  | { id: string; kind: "https"; origin: string; credentialId: string }
   /**
    * The paired host that serves this page (a browser client): its origin.
    * Unlike `local`, it is pinned like any route: a different host there is
@@ -351,6 +353,7 @@ export interface SavedHostConnection {
   /** The persistent host it reaches (HostDescriptor.hostId). */
   hostId: string;
   fingerprint: string | null;
+  label?: string;
   /** When a route first confirmed this host. */
   verifiedAt: string | null;
   routes: HostRoute[];
@@ -910,7 +913,7 @@ export type AppScreenshotResult =
 export interface DesktopApi {
   isElectron: true;
   apiSessionToken: string;
-  hostMode?: "desktop" | "service";
+  hostMode?: "desktop" | "service" | "remote";
   initialThemePreferences?: {
     accentColor?: string;
     baseColor?: string;
@@ -961,11 +964,15 @@ export interface DesktopApi {
    */
   connectHost: (payload: {
     hostId: string;
-    target: string;
+    target?: string;
     hostCommand?: string;
     expectedHostId?: string | null;
     expectedFingerprint?: string | null;
     sshRoutes?: { id: string; target: string; hostCommand?: string }[];
+    routes?: (
+      | { id: string; kind: "ssh"; target: string; hostCommand?: string }
+      | { id: string; kind: "https"; origin: string; credentialId: string }
+    )[];
   }) => Promise<{
     hostProtocolVersion: number;
     version: string | null;
@@ -975,6 +982,14 @@ export interface DesktopApi {
     routeId?: string;
     routes?: HostRouteRuntimeState[];
   }>;
+  pairHost: (payload: {
+    url: string;
+    knownIdentities?: { hostId: string; fingerprint: string | null }[];
+    deviceName?: string;
+    expectedHostId?: string;
+    expectedFingerprint?: string | null;
+  }) => Promise<{ credentialId: string; origin: string; host: HostDescriptor }>;
+  forgetHostCredential: (credentialId: string) => Promise<boolean>;
   disconnectHost: (hostId: string) => Promise<boolean>;
   getHostState: (hostId: string) => Promise<HostConnectionState>;
   /** Forwards an SSH host's port here; resolves with the local port. */
@@ -1015,6 +1030,7 @@ export interface DesktopApi {
 
   detectEditors: () => Promise<DetectedEditor[]>;
   openInEditor: (payload: {
+    hostId?: string;
     projectPath: string;
     editorId: string;
     /** The project is on this SSH target: open it in the editor's remote mode. */

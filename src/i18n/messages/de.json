@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "Remote-Hosts",
+    "description": "Einen Host über geordnete SSH- und HTTPS-Routen erreichen.",
+    "pair": "Host koppeln",
+    "empty": "SSH-Host hinzufügen oder HTTPS-Kopplungslink einfügen.",
+    "active": "Aktive Route",
+    "idle": "Inaktiv",
+    "connecting": "Verbindung wird hergestellt",
+    "ready": "Bereit",
+    "cooldown": "Warten auf erneuten Versuch",
+    "blocked": "Aktion erforderlich",
+    "up": "Nach oben",
+    "down": "Nach unten",
+    "removeRoute": "Route entfernen",
+    "addSshRoute": "SSH-Route hinzufügen",
+    "addHttpsRoute": "HTTPS-Route hinzufügen",
+    "pairHint": "In den Fernzugriffseinstellungen des Hosts einen Kopplungslink erstellen und hier einfügen.",
+    "pairLink": "Kopplungslink",
+    "name": "Name (optional)",
+    "cancel": "Abbrechen",
+    "pairing": "Kopplung…"
+  },
   "app": {
     "loadingDream": "Dream wird geladen",
     "working": "In Bearbeitung",

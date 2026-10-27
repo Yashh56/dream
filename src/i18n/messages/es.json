@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "Hosts remotos",
+    "description": "Accede a un host mediante rutas SSH y HTTPS ordenadas.",
+    "pair": "Vincular host",
+    "empty": "Añade un host SSH o pega un enlace de vinculación HTTPS.",
+    "active": "Ruta activa",
+    "idle": "Inactivo",
+    "connecting": "Conectando",
+    "ready": "Listo",
+    "cooldown": "Esperando para reintentar",
+    "blocked": "Requiere atención",
+    "up": "Subir",
+    "down": "Bajar",
+    "removeRoute": "Eliminar ruta",
+    "addSshRoute": "Añadir ruta SSH",
+    "addHttpsRoute": "Añadir ruta HTTPS",
+    "pairHint": "Crea un enlace de vinculación en los ajustes de acceso remoto del host y pégalo aquí.",
+    "pairLink": "Enlace de vinculación",
+    "name": "Nombre (opcional)",
+    "cancel": "Cancelar",
+    "pairing": "Vinculando…"
+  },
   "app": {
     "loadingDream": "Cargando Dream",
     "working": "Procesando",

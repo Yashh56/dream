@@ -37,6 +37,7 @@ import {
   SshHostDialog,
   useAddSshHost,
 } from "../ssh/ssh-hosts-settings-section";
+import { useHostChoices } from "../ssh/use-host-choices";
 import { HOME_FOLDER_INPUT } from "./folder-path";
 import { FolderPathField } from "./folder-path-field";
 import { createOpenProjectAttempt } from "./open-project-attempt";
@@ -60,7 +61,8 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
   const platform = getClientPlatform();
   const desktop = platform.desktop;
   // SSH hosts are the desktop's: a browser client opens on its own host.
-  const savedSshHosts = useIdeStore((state) => state.settings.sshHosts);
+  const savedSshHosts = useHostChoices();
+  const connections = useIdeStore((state) => state.hostConnections);
   const sshHosts = desktop ? savedSshHosts : NO_SSH_HOSTS;
   const hosts = useIdeStore((state) => state.hosts);
   const connectHost = useIdeStore((state) => state.connectHost);
@@ -69,7 +71,9 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
   const addSshHost = useAddSshHost();
   const homeState = useConnectionState(LOCAL_HOST_ID);
 
-  const [hostId, setHostId] = useState(LOCAL_HOST_ID);
+  const [hostId, setHostId] = useState(
+    platform.hasHomeHost ? LOCAL_HOST_ID : (sshHosts[0]?.id ?? ""),
+  );
   const [path, setPath] = useState(HOME_FOLDER_INPUT);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,14 +121,30 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
     if (!home && !sshHost) {
       attempt.cancel();
       setOpening(false);
-      setHostId(LOCAL_HOST_ID);
+      const merged = connections.find((host) =>
+        host.routes.some(
+          (route) => route.kind === "ssh" && route.sshHostId === hostId,
+        ),
+      );
+      setHostId(
+        merged?.id ??
+          (platform.hasHomeHost ? LOCAL_HOST_ID : (sshHosts[0]?.id ?? "")),
+      );
     }
-  }, [attempt, home, sshHost]);
+  }, [
+    attempt,
+    home,
+    sshHost,
+    platform.hasHomeHost,
+    sshHosts,
+    connections,
+    hostId,
+  ]);
 
   // Picking an SSH host connects it; ssh's prompts appear in their own
   // dialog. A failed attempt waits for Connect rather than retrying.
   useEffect(() => {
-    if (hostId === LOCAL_HOST_ID) return;
+    if (!hostId || hostId === LOCAL_HOST_ID) return;
     const state = useIdeStore.getState().hosts[hostId]?.state;
     if (state !== "connected" && state !== "connecting") {
       void connectHost(hostId);
@@ -202,7 +222,7 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
             if (path.trim()) void handleAttempt(attempt.typed(hostId, path));
           }}
         >
-          {sshHosts.length > 0 ? (
+          {sshHosts.length > 0 || !platform.hasHomeHost ? (
             <div className="grid gap-1.5">
               <Label htmlFor="open-project-host">{t("openOn")}</Label>
               <Select
@@ -215,9 +235,11 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
                   <SelectValue>{hostLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent align="start" alignItemWithTrigger={false}>
-                  <SelectItem value={LOCAL_HOST_ID}>
-                    {platform.homeLabel}
-                  </SelectItem>
+                  {platform.hasHomeHost ? (
+                    <SelectItem value={LOCAL_HOST_ID}>
+                      {platform.homeLabel}
+                    </SelectItem>
+                  ) : null}
                   {sshHosts.map((host) => (
                     <SelectItem key={host.id} value={host.id}>
                       {host.label}

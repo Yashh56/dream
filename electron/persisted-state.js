@@ -15,7 +15,9 @@
 // One connection writes: the save worker's (state-save-queue.js), which is
 // also the first to open the file and so the one that migrates it. Readers
 // on other threads (state-read-pool.js) open it with
-// `openPersistedStateReader` and never write.import { randomUUID } from "node:crypto";
+// `openPersistedStateReader` and never write.
+
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";

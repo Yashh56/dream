@@ -13,6 +13,7 @@ import {
   ipcMain,
   Notification,
   nativeTheme,
+  safeStorage,
   shell,
   WebContentsView,
 } from "electron";
@@ -30,12 +31,17 @@ import {
 import { createBrowserAgentBridge } from "./browser-agent-bridge.js";
 import { createBrowserSessionManager } from "./browser-sessions.js";
 import { createDesktopHostConnections } from "./connections/desktop-connections.js";
+import { createDeviceCredentials } from "./connections/device-credentials.js";
+import { createHttpsRoutes } from "./connections/https-route.js";
 import {
   createDesktopHandlers,
   isHttpUrl,
   registerDesktopHandlers,
 } from "./desktop-handlers.js";
-import { createServiceHostAttachment } from "./desktop-host.js";
+import {
+  createRemoteOnlyHost,
+  createServiceHostAttachment,
+} from "./desktop-host.js";
 import { createDevLogger, publishDevSession } from "./dev-inspection.js";
 import { detectAvailableEditors, openProjectInEditor } from "./editors.js";
 import { getHelloUrl } from "./hello.js";
@@ -102,8 +108,8 @@ const readDreamVersion = () => {
 };
 const dreamVersion = readDreamVersion();
 const hostMode = process.env.DREAM_HOST_MODE?.trim() || "desktop";
-if (hostMode !== "desktop" && hostMode !== "service") {
-  throw new Error("DREAM_HOST_MODE must be desktop or service.");
+if (!["desktop", "service", "remote"].includes(hostMode)) {
+  throw new Error("DREAM_HOST_MODE must be desktop, service or remote.");
 }
 
 // Diagnostic only: opt-in via env var to test whether software rendering is
@@ -163,7 +169,7 @@ try {
     );
   }
 } catch (error) {
-  if (hostMode === "service") throw error;
+  if (hostMode !== "desktop") throw error;
   // The workspace stays where it was, with the one shared writer it had:
   // nothing is lost, and the move is tried again at the next start.
   console.error("Could not move the workspace to its own database:", error);
@@ -172,44 +178,49 @@ try {
 // The home host runs here by default, or in the installed service when
 // requested. Both use this desktop's identity and catalog in userData.
 const host =
-  hostMode === "service"
-    ? createServiceHostAttachment({
-        dataDirectory: APP_USER_DATA_PATH,
-        home: path.resolve(getHostHome()),
-        resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
-        stateDatabasePath: STATE_DATABASE_PATH,
+  hostMode === "remote"
+    ? createRemoteOnlyHost({
+        resolveRemoteHost: (id) => desktopConnections.getEndpoint(id),
+        resolveProviderHost: () => desktopConnections.getFirstEndpoint(),
       })
-    : createHost({
-        // The browser client paired devices load: this app's renderer build.
-        clientDirectory: path.join(__dirname, "..", "dist"),
-        dataDirectory: APP_USER_DATA_PATH,
-        diagnosticsEnabled: !app.isPackaged,
-        kind: "desktop",
-        // Only while the workspace could not move out: then the host's catalog
-        // writes share the workspace's queue, one writer for the one file.
-        ...(workspaceSeparate
-          ? {}
-          : {
-              getStateWriter: () => ({
-                applyCatalogChanges: (changes) =>
-                  getStateSaveQueue().applyCatalogChanges(changes),
-                mutateRunQueue: (operation) =>
-                  getStateSaveQueue().mutateRunQueue(operation),
-                ready: () => getStateSaveQueue().ready(),
-                saveChatMessages: (payload) =>
-                  getStateSaveQueue().saveChatMessages(payload),
-                saveProviderSession: (payload) =>
-                  getStateSaveQueue().saveProviderSession(payload),
-                settled: () => getStateSaveQueue().settled(),
-                writeDeviceSession: (operation) =>
-                  getStateSaveQueue().writeDeviceSession(operation),
+    : hostMode === "service"
+      ? createServiceHostAttachment({
+          dataDirectory: APP_USER_DATA_PATH,
+          home: path.resolve(getHostHome()),
+          resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
+          stateDatabasePath: STATE_DATABASE_PATH,
+        })
+      : createHost({
+          // The browser client paired devices load: this app's renderer build.
+          clientDirectory: path.join(__dirname, "..", "dist"),
+          dataDirectory: APP_USER_DATA_PATH,
+          diagnosticsEnabled: !app.isPackaged,
+          kind: "desktop",
+          // Only while the workspace could not move out: then the host's catalog
+          // writes share the workspace's queue, one writer for the one file.
+          ...(workspaceSeparate
+            ? {}
+            : {
+                getStateWriter: () => ({
+                  applyCatalogChanges: (changes) =>
+                    getStateSaveQueue().applyCatalogChanges(changes),
+                  mutateRunQueue: (operation) =>
+                    getStateSaveQueue().mutateRunQueue(operation),
+                  ready: () => getStateSaveQueue().ready(),
+                  saveChatMessages: (payload) =>
+                    getStateSaveQueue().saveChatMessages(payload),
+                  saveProviderSession: (payload) =>
+                    getStateSaveQueue().saveProviderSession(payload),
+                  settled: () => getStateSaveQueue().settled(),
+                  writeDeviceSession: (operation) =>
+                    getStateSaveQueue().writeDeviceSession(operation),
+                }),
               }),
-            }),
-        version: dreamVersion,
-        // Requests for SSH-host projects go through the local API to the host's
-        // forwarded port (api/host-proxy-routes.js).
-        resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
-      });
+          version: dreamVersion,
+          // Requests for SSH-host projects go through the local API to the host's
+          // forwarded port (api/host-proxy-routes.js).
+          resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
+        });
 
 let mainWindow = null;
 let updateManager = null;
@@ -262,6 +273,12 @@ const sshPrompts = createSshPromptBroker({
 });
 
 const desktopConnections = createDesktopHostConnections({
+  httpsRoutes: createHttpsRoutes({
+    credentials: createDeviceCredentials({
+      file: `${WORKSPACE_DATABASE_PATH}.device-credentials`,
+      safeStorage,
+    }),
+  }),
   onPrompt: (prompt) => sshPrompts.ask(prompt),
   onStatus: (status) => {
     console.log(

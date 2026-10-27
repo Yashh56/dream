@@ -23,6 +23,8 @@
 // Matching ids are a consistency check, not authentication: the route
 // (this app's own process, an authenticated SSH session) is what vouches
 // for the host. Routes that cannot will verify the fingerprint's key.
+// Explicit desktop additions merge authenticated identities before reaching
+// this catalog guard. A public descriptor alone never authorizes that merge.
 //
 // Pure, and shared: the codec decodes saved connections with it.
 import { hostProtocolProblem } from "../host/protocol.js";
@@ -60,6 +62,22 @@ const normalizeRoute = (value) => {
   if (!id) return null;
   if (value.kind === "local") return { id, kind: "local" };
   const origin = nonEmpty(value.origin);
+  const credentialId = nonEmpty(value.credentialId);
+  if (value.kind === "https" && origin && credentialId) {
+    try {
+      const url = new URL(origin);
+      if (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        url.origin === origin
+      )
+        return { id, kind: "https", origin, credentialId };
+    } catch {
+      /* An invalid origin is never dialable. */
+    }
+    return null;
+  }
   if (value.kind === "origin" && origin) return { id, kind: "origin", origin };
   const sshHostId = nonEmpty(value.sshHostId);
   if (value.kind === "ssh" && sshHostId) return { id, kind: "ssh", sshHostId };
@@ -101,6 +119,7 @@ export const normalizeHostConnections = (value) => {
       routes.push(route);
     }
     connections.push({
+      ...(nonEmpty(raw.label) ? { label: nonEmpty(raw.label) } : {}),
       fingerprint: nonEmpty(raw.fingerprint),
       hostId,
       id,
@@ -190,10 +209,11 @@ export const acceptHostDescriptor = (
 ) => {
   const refuse = (/** @type {string} */ error) => ({ connections, error });
   const host = isRecord(descriptor) ? descriptor : {};
-  const route = routeForConnectionId(connectionId, homeRoute);
+  const saved = findHostConnection(connections, connectionId);
+  const route =
+    saved?.routes[0] ?? routeForConnectionId(connectionId, homeRoute);
   // This app's own host: recorded, never refused.
   const isLocal = route.kind === "local";
-  const saved = findHostConnection(connections, connectionId);
 
   // Before anything is read from it: a host this app cannot talk to.
   // An older host lists no descriptor at all, and speaks protocol 1.
@@ -277,6 +297,40 @@ export const acceptHostDescriptor = (
     ],
     error: null,
   };
+};
+
+/** One choice per logical host, including unverified legacy SSH entries. */
+export const listHostChoices = (connections, sshHosts) => {
+  const claimed = new Set(
+    listOf(connections).flatMap((host) =>
+      host.routes.flatMap((route) =>
+        route.kind === "ssh" ? [route.sshHostId] : [],
+      ),
+    ),
+  );
+  return [
+    ...listOf(connections)
+      .filter((host) => host.id !== LOCAL_CONNECTION_ID)
+      .map((host) => {
+        const ssh = host.routes.flatMap((route) =>
+          route.kind === "ssh"
+            ? sshHosts.filter((item) => item.id === route.sshHostId)
+            : [],
+        )[0];
+        const direct = host.routes.find((route) => route.kind === "https");
+        return {
+          id: host.id,
+          label: host.label ?? ssh?.label ?? direct?.origin ?? host.id,
+          target: ssh?.target ?? "",
+          hostCommand: ssh?.hostCommand ?? "",
+        };
+      }),
+    ...sshHosts.filter(
+      (host) =>
+        !claimed.has(host.id) &&
+        !listOf(connections).some((saved) => saved.id === host.id),
+    ),
+  ];
 };
 
 /**

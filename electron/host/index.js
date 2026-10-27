@@ -25,7 +25,7 @@ import { detectAvailableTerminalShells } from "../terminal-shells.js";
 import { createHostAuth } from "./auth/host-auth.js";
 import { createHostCatalog } from "./catalog.js";
 import { configureHostDataDirectory } from "./host-paths.js";
-import { loadHostIdentity } from "./identity.js";
+import { createHostProofSigner, loadHostIdentity } from "./identity.js";
 import { HOST_CAPABILITIES, HOST_PROTOCOL_VERSION } from "./protocol.js";
 import { createRemoteAccess } from "./remote-access/remote-access.js";
 import { createTailscale } from "./remote-access/tailscale.js";
@@ -90,6 +90,7 @@ export function createHost({
   });
   // Before anything else: a host that cannot say who it is serves nobody.
   const identity = loadHostIdentity(dataDirectory);
+  const signHostProof = createHostProofSigner(dataDirectory);
 
   let ownWriter = null;
   const getWriter =
@@ -209,6 +210,7 @@ export function createHost({
   });
 
   const services = () => ({
+    signHostProof,
     activity,
     auth,
     onShutdownRequest,

@@ -163,13 +163,14 @@ vouch for it verifies the key instead.
 One client's record that a **client connection ID** reaches a persistent
 host, and by which **routes** (`electron/shared/host-connections.js`,
 `hostConnections` in persisted state). The connection ID is what that
-client's projects, workspace rows and requests name a host by: `local`, or
-an SSH host's id in Settings. A **route ID** names one way of reaching the
-host (the local route, an SSH host). The record is saved on the route's
+client's projects, workspace rows and requests name a host by: `local`, a
+legacy SSH id, or a remote connection id. A **route ID** names one way of
+reaching the host (local, SSH, or paired HTTPS). The record is saved on the route's
 first verified catalog load; until then a connection routes by its ID
 alone. After that, a route that reaches another host is refused. A second
-connection that reaches an already saved host is also refused, and so is a
-catalog whose project or chat IDs collide with another host's. The local
+connection that authenticates the same host merges its routes into the
+existing connection. A catalog whose project or chat IDs collide with another
+host's is refused. The local
 route is never refused. Device and session IDs belong to remote
 authorization, which is a separate concern.
 
@@ -181,6 +182,8 @@ host inside the app, or its installed service with `DREAM_HOST_MODE=service`
 the existing host identity before forwarding requests. In a browser it is the
 paired host serving the page (route `origin`), pinned like any address.
 Projects without a `hostId` live on the home host.
+A desktop in remote-only mode has no home execution host; its workspace stays
+on that desktop and it connects to remote hosts.
 
 ## Connection runtime
 
@@ -200,7 +203,9 @@ requests; a **fallback route** carries them while a more preferred route is
 unavailable. Its **route supervisor** (`electron/shared/route-supervisor.js`)
 owns that selection, and the **desktop connection adapter**
 (`electron/connections/desktop-connections.js`) owns its SSH endpoints and
-stable local port forwards, independently of the host's process lifetime.
+paired HTTPS transports and stable local port forwards, independently of the
+host's process lifetime. A native **device credential** is a private grant for
+one verified host and HTTPS origin, separate from exported connection metadata.
 
 **Connection recovery** coordinates those resumes per host. Refused hosts
 remain quiet until their credential or route changes. Replacing a connection

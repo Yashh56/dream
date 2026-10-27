@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "Máy chủ từ xa",
+    "description": "Kết nối một máy chủ qua các tuyến SSH và HTTPS theo thứ tự ưu tiên.",
+    "pair": "Ghép đôi máy chủ",
+    "empty": "Thêm máy chủ SSH hoặc dán liên kết ghép đôi HTTPS.",
+    "active": "Tuyến đang dùng",
+    "idle": "Chờ",
+    "connecting": "Đang kết nối",
+    "ready": "Sẵn sàng",
+    "cooldown": "Chờ thử lại",
+    "blocked": "Cần kiểm tra",
+    "up": "Di chuyển lên",
+    "down": "Di chuyển xuống",
+    "removeRoute": "Xóa tuyến",
+    "addSshRoute": "Thêm tuyến SSH",
+    "addHttpsRoute": "Thêm tuyến HTTPS",
+    "pairHint": "Tạo liên kết ghép đôi trong cài đặt truy cập từ xa của máy chủ, rồi dán vào đây.",
+    "pairLink": "Liên kết ghép đôi",
+    "name": "Tên (tùy chọn)",
+    "cancel": "Hủy",
+    "pairing": "Đang ghép đôi…"
+  },
   "app": {
     "loadingDream": "Đang tải Dream",
     "working": "Đang xử lý",

@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "遠端主機",
+    "description": "依優先順序透過 SSH 和 HTTPS 路由連線同一主機。",
+    "pair": "配對主機",
+    "empty": "新增 SSH 主機或貼上 HTTPS 配對連結。",
+    "active": "目前路由",
+    "idle": "閒置",
+    "connecting": "正在連線",
+    "ready": "就緒",
+    "cooldown": "等待重試",
+    "blocked": "需要處理",
+    "up": "上移",
+    "down": "下移",
+    "removeRoute": "移除路由",
+    "addSshRoute": "新增 SSH 路由",
+    "addHttpsRoute": "新增 HTTPS 路由",
+    "pairHint": "在主機的遠端存取設定中建立配對連結，然後貼到此處。",
+    "pairLink": "配對連結",
+    "name": "名稱（選填）",
+    "cancel": "取消",
+    "pairing": "正在配對…"
+  },
   "app": {
     "loadingDream": "正在載入 Dream",
     "working": "正在處理",

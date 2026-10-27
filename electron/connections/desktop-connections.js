@@ -13,6 +13,7 @@ export function createDesktopHostConnections({
   createSsh = createSshHostManager,
   fetchImpl = (...args) => fetch(...args),
   supervisorOptions = {},
+  httpsRoutes = null,
   ...sshOptions
 }) {
   const hosts = new Map();
@@ -43,6 +44,13 @@ export function createDesktopHostConnections({
     { signal, background, expectedIdentity, onLost },
   ) => {
     signal.throwIfAborted();
+    if (route.kind === "https") {
+      if (!httpsRoutes)
+        throw Object.assign(new Error("HTTPS pairing is unavailable."), {
+          fatal: true,
+        });
+      return httpsRoutes.open(route, { signal, expectedIdentity, onLost });
+    }
     const key = `${hostId}:${++sequence}`;
     const attempt = { hostId, ready: false, onLost };
     attempts.set(key, attempt);
@@ -121,6 +129,10 @@ export function createDesktopHostConnections({
     const selected = host.supervisor.getHandle();
     if (!selected) throw new Error("The host is not connected.");
     // Confirm the target can forward before reporting a stable local URL.
+    if (!selected.forwardPort)
+      throw new Error(
+        "This route cannot forward arbitrary ports. Add an SSH route to view this site.",
+      );
     await selected.forwardPort(port);
     if (host.closed || host.supervisor.getHandle() !== selected)
       throw new Error(
@@ -136,6 +148,8 @@ export function createDesktopHostConnections({
         return;
       }
       try {
+        if (!handle.forwardPort)
+          throw new Error("This route cannot forward ports.");
         const remotePort = await handle.forwardPort(port);
         if (
           client.destroyed ||
@@ -183,10 +197,10 @@ export function createDesktopHostConnections({
       hostCommand,
       expectedIdentity = null,
       sshRoutes,
+      routes: configuredRoutes,
     }) {
-      const routes = sshRoutes ?? [
-        { id: `ssh:${hostId}`, target, hostCommand },
-      ];
+      const routes = configuredRoutes ??
+        sshRoutes ?? [{ id: `ssh:${hostId}`, target, hostCommand }];
       const config = JSON.stringify(routes);
       let host = hosts.get(hostId);
       if (
@@ -201,8 +215,10 @@ export function createDesktopHostConnections({
         );
       }
       if (host && host.config !== config) {
-        disconnect(hostId);
-        host = null;
+        host.config = config;
+        return host.supervisor
+          .updateRoutes(routes)
+          .then(() => host.supervisor.connect());
       }
       if (!host) {
         host = {
@@ -240,8 +256,14 @@ export function createDesktopHostConnections({
       }
       return host.supervisor.connect();
     },
+    pair: (options) => httpsRoutes.pair(options),
+    forgetCredential: (id) => httpsRoutes.forget(id),
     getEndpoint: (hostId) =>
       hosts.get(hostId)?.supervisor.getEndpoint() ?? null,
+    getFirstEndpoint: () =>
+      [...hosts.values()]
+        .map((host) => host.supervisor.getEndpoint())
+        .find(Boolean) ?? null,
     getState: (hostId) =>
       hosts.get(hostId)?.supervisor.getState().state ?? "idle",
     getRouteState: (hostId) => hosts.get(hostId)?.supervisor.getState() ?? null,

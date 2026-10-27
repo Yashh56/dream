@@ -121,12 +121,42 @@ export const remoteAccessEnableSchema = z.object({
 
 export function registerRemoteAccessRoutes(
   app,
-  { auth, describeHost, remote, pairingUrls = () => [], remoteAccess = null },
+  {
+    auth,
+    describeHost,
+    signHostProof = null,
+    remote,
+    pairingUrls = () => [],
+    remoteAccess = null,
+  },
 ) {
   const principalOf = (c) => c.get("principal") ?? LOCAL_PRINCIPAL;
 
   if (remote) {
     app.get("/api/remote/descriptor", (c) => c.json(describeHost()));
+
+    app.post("/api/remote/proof", (c) =>
+      handleJsonRoute(
+        c,
+        z.object({
+          nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+          audience: z.string().url().max(500),
+        }),
+        ({ nonce, audience }) => {
+          if (!signHostProof)
+            throw new RouteError(
+              "Update the host to support native connections.",
+              426,
+            );
+          if (!pairingUrls("").some((url) => new URL(url).origin === audience))
+            throw new RouteError(
+              "The proof audience is not this host's origin.",
+              421,
+            );
+          return signHostProof({ nonce, audience, host: describeHost() });
+        },
+      ),
+    );
 
     app.post("/api/remote/pair", (c) =>
       handleJsonRoute(c, remotePairRequestSchema, (data) =>

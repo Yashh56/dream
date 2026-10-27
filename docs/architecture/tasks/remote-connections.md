@@ -8,7 +8,7 @@ clients and a browser that runs on the host.
 
 Status: CONN-01 to CONN-06 implemented; CONN-06's native Windows/Linux update,
 login/reboot and live-provider walkthroughs remain unverified;
-CONN-07 in progress (route supervisor and desktop SSH adapter implemented);
+CONN-07 implemented (physical-network and cross-platform walkthroughs pending);
 CONN-08 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
@@ -1144,8 +1144,16 @@ unmet criteria, not inferred passes from macOS or fake service-manager output.
 
 ## CONN-07: Multiple routes and unified connection management
 
-Status: implementing; slice 1 (route supervisor and desktop SSH adapter)
-implemented and validated. Slices 2-3 remain.
+Status: implemented; all three slices complete. Live SSH/network and
+cross-platform validation remains as listed below.
+
+Finish scope (2026-10-26): implement both remaining slices, including a single
+host list, ordered route editing/removal, authenticated duplicate merging,
+HTTPS link pairing with encrypted desktop credentials, proof on each new TLS
+connection before attaching credentials, mixed-route recovery, and
+`DREAM_HOST_MODE=remote` without a local execution host. Keep existing workspace
+ownership and do not add repository tests. Record unavailable physical-network
+and platform walkthroughs separately from automated validation.
 
 Problem and trigger: one host should remain the same host when a client changes
 network or switches between SSH, Tailscale, LAN and managed access.
@@ -1168,9 +1176,9 @@ the full scope):
    host-key proof before credentials are attached; route loss/recovery across
    transport kinds and a desktop with no local execution host.
 
-Slice 1 is implemented. Direct origins are not dialable by the
-SSH adapter; adding stored route metadata alone does not authorize a new
-credential destination. Slices 2-3 remain required to complete CONN-07.
+All three slices are implemented. Stored metadata alone never authorizes a new
+credential destination: each HTTPS route references a private device credential
+bound to that host and origin.
 
 Completion criteria:
 
@@ -1235,10 +1243,59 @@ existing large-chunk warning. No tests were added to the repository.
   background probe ran; the prompt stayed assigned to the foreground host,
   and declining it cancelled that host's attempt.
 
-Remaining validation: live remote SSH, native desktop route switching and
-draft/turn recovery, reassigned LAN endpoints and revocation on direct fallback
-routes. The last two depend on slice 3. The existing app was not restarted and
-no dev server was started.
+Slices 2-3 implementation (2026-10-26):
+- Connections groups verified SSH and HTTPS routes by persistent host, shows
+  their preference, active route and failures, and supports adding, editing,
+  reordering and removing routes. Authenticated duplicate additions merge before
+  catalog application. Workspace document operations preserve project/chat IDs,
+  tabs and drafts. Route removal updates the running supervisor and closes only
+  removed transports. A local home host retains its local route.
+- Direct pairing exchanges HTTPS fragment links in main and stores device
+  grants with OS-backed safeStorage encryption outside workspace exports.
+  Credentials are pinned to both installation key and origin; plaintext Linux
+  storage is refused. `/api/remote/proof` signs a fresh nonce, audience and host
+  identity. The HTTPS adapter verifies that proof on every newly opened TLS
+  socket before handing the same socket to HTTP or WebSocket requests. TLS
+  certificate validation, bounded proof framing and redirect refusal remain
+  mandatory. The proxy does not forward browser cookies or the local launch token
+  to HTTPS routes. Authorization failures block routes; polling renews sessions
+  and detects idle route loss. No write is automatically replayed.
+- `DREAM_HOST_MODE=remote` runs the desktop workspace and edge without creating
+  a local execution host. Home catalog loads/watchers and local remote-access
+  controls are omitted. Saved remote snapshots survive hydration. Authenticated
+  former home hosts can become remote connections without changing project IDs.
+  See [Desktop connections](../../desktop-connections.md).
+
+Validation, slices 2-3 (2026-10-26):
+- `pnpm check` passed scratch hygiene, lint, typecheck and all 1,256 tests
+  across 184 files. `pnpm vite:build` passed with the existing large-chunk
+  warning. Existing bridge/action/recovery fixtures were updated; no new
+  repository tests were added.
+- Scratch HTTPS diagnostics used real TLS traffic to check proof on the same
+  socket, re-verification on new sockets, copied-key and nonce refusal, pinned
+  known-host refusal before pairing, HTTPS downgrade refusal, readiness and fatal
+  grant revocation. A controlled mixed SSH/HTTPS supervisor check retained the
+  healthy fallback during preferred readiness, switched only after success, and
+  detached a removed SSH route without changing the pinned host.
+- A real isolated host paired through an HTTPS reverse proxy and a remote-only
+  desktop edge. Catalogs and session-bound socket tickets worked; revoking the
+  grant closed the live socket and blocked the route. Disconnect left the host
+  running. The edge refused local execution API requests.
+- An isolated native Electron production renderer booted in remote-only mode
+  without a host database lock, paired through the real IPC and OS encrypted
+  credential store, opened a remote project, and re-paired the same origin while
+  retaining its connection/project/chat IDs. Automatic HTTPS route failover
+  retained the composer draft; route reordering/removal retained the project,
+  and a previously local identity became a remote connection after pairing.
+  Fresh workspace startup also exposed and fixed a missing crypto import for
+  install IDs in Electron. Connection and pairing UI inspected in native
+  screenshots; local remote-access controls are hidden in remote-only mode.
+
+Remaining validation: live remote SSH with real VPN/Wi-Fi/cellular changes,
+live-provider turn recovery, native Windows/Linux secure stores, and a real
+Tailscale Serve pairing walkthrough. Controlled TLS/transport checks do not
+establish those physical-network or platform results. No dev server was started
+and the user's existing app was not restarted.
 
 Remaining/deferred: the managed route provider arrives in CONN-08.
 
@@ -1403,8 +1460,7 @@ Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
 pending). CONN-06's four slices implemented; macOS service/update/recovery and
 native desktop quit/reopen checked. Cross-platform, reboot/login and live-provider
-validation remains as listed above. CONN-07 slice 1 is implemented and validated;
-next is slice 2, verified route merging/editing. Slice 3 (direct HTTPS pairing
-and remote-only desktop) also remains. CONN-08 through CONN-11 proposed. Preserve
+validation remains as listed above. CONN-07's three slices are implemented;
+remaining validation is recorded beside the task. CONN-08 through CONN-11 proposed. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.

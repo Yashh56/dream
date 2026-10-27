@@ -98,6 +98,12 @@ const SENT = [
   ["windowClose", [], ["invoke", "window:close"]],
   ["pickProjectDirectory", [], ["invoke", "projects:pick-directory"]],
   ["loadState", [], ["invoke", "state:load"]],
+  ["pairHost", [payload], ["invoke", "hosts:pair", payload]],
+  [
+    "forgetHostCredential",
+    ["credential"],
+    ["invoke", "hosts:forget-credential", { credentialId: "credential" }],
+  ],
   [
     "saveWorkspaceChanges",
     [payload],

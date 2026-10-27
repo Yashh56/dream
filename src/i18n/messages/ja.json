@@ -1,4 +1,26 @@
 {
+  "connections": {
+    "hosts": "リモートホスト",
+    "description": "優先順に並べた SSH と HTTPS の経路でホストに接続します。",
+    "pair": "ホストをペアリング",
+    "empty": "SSH ホストを追加するか、HTTPS ペアリングリンクを貼り付けます。",
+    "active": "使用中の経路",
+    "idle": "待機中",
+    "connecting": "接続中",
+    "ready": "準備完了",
+    "cooldown": "再試行待ち",
+    "blocked": "確認が必要",
+    "up": "上へ移動",
+    "down": "下へ移動",
+    "removeRoute": "経路を削除",
+    "addSshRoute": "SSH 経路を追加",
+    "addHttpsRoute": "HTTPS 経路を追加",
+    "pairHint": "ホストのリモートアクセス設定でペアリングリンクを作成し、ここに貼り付けてください。",
+    "pairLink": "ペアリングリンク",
+    "name": "名前（任意）",
+    "cancel": "キャンセル",
+    "pairing": "ペアリング中…"
+  },
   "app": {
     "loadingDream": "Dream を読み込み中",
     "working": "処理中",

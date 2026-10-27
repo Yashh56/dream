@@ -80,8 +80,8 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   CONN-06 unattended hosting (all four slices implemented, including verified
   runtime updates and recovery; macOS service and desktop walkthrough checked,
   cross-platform and live-provider validation pending), CONN-07 multiple routes
-  (in progress: route supervisor and desktop SSH adapter implemented; route
-  editing, direct pairing and remote-only desktop remain), and proposes CONN-08
+  (implemented: ordered route management, direct desktop pairing and remote-only
+  mode; live SSH/network and cross-platform walkthroughs remain), and proposes CONN-08
   through CONN-11: Dream Connect, native mobile, push notifications and a
   host-owned browser.
 

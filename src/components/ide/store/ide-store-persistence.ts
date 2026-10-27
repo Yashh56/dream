@@ -208,6 +208,7 @@ const loadHomeCatalog = async (
   workspace: PersistedWorkspace,
 ): Promise<CatalogResponse | null> => {
   const platform = getClientPlatform();
+  if (!platform.hasHomeHost) return null;
   if (platform.kind === "desktop") {
     return loadCatalog(LOCAL_HOST_ID, STARTUP_LOAD_TIMEOUT_MS);
   }
@@ -251,9 +252,14 @@ const loadOnce = async (): Promise<PersistedIdeState> => {
     loadedRunningChatIds = catalog.runningChatIds ?? [];
     loadedLocalHost = loadedCatalog?.host;
     // SSH hosts still in Settings show their projects from the snapshot.
-    const snapshotHostIds = normalizeSshHosts(
-      (workspace.settings as { sshHosts?: unknown } | undefined)?.sshHosts,
-    ).map((host) => host.id);
+    const snapshotHostIds = [
+      ...normalizeHostConnections(workspace.hostConnections).map(
+        (host) => host.id,
+      ),
+      ...normalizeSshHosts(
+        (workspace.settings as { sshHosts?: unknown } | undefined)?.sshHosts,
+      ).map((host) => host.id),
+    ];
     const state = decodePersistedState(
       mergeWorkspaceAndCatalog({
         catalog,

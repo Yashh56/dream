@@ -145,6 +145,7 @@ export const REMOTE_ROUTE_POLICY = Object.freeze({
 
 /** Routes anyone may call: they grant nothing without a secret. */
 export const PUBLIC_REMOTE_ROUTES = Object.freeze([
+  "POST /api/remote/proof",
   "GET /api/remote/descriptor",
   "POST /api/remote/pair",
   "POST /api/remote/pair/code",
