@@ -41,3 +41,29 @@ test("stopProjectTerminals asks every session to stop and settles when a host ca
   ]);
   expect(warn).toHaveBeenCalledTimes(1);
 });
+
+test("a cancelled open cannot add a Project after a delayed SSH connection", async () => {
+  let finishConnection!: (connected: boolean) => void;
+  const connectHost = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishConnection = resolve;
+      }),
+  );
+  const addProject = vi.fn();
+  const store = createStore<IdeState>(
+    () => ({ hosts: {}, connectHost }) as unknown as IdeState,
+  );
+  store.setState({
+    ...createProjectLifecycleActions(store.setState, store.getState),
+    addProject,
+  });
+  const controller = new AbortController();
+  const opening = store
+    .getState()
+    .openProject("/work/app", { hostId: "remote", signal: controller.signal });
+  controller.abort();
+  finishConnection(true);
+  expect(await opening).toBe(false);
+  expect(addProject).not.toHaveBeenCalled();
+});

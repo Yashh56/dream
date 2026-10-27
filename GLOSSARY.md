@@ -10,6 +10,11 @@ model selection. `ProjectConfig` in `src/types/ide.ts`. A project is **open**
 (in the tab strip) or **closed** (kept in the closed list so it can be
 reopened with its chats intact).
 
+An **open-project attempt** is one request from the open-folder dialog to
+open a typed or selected directory on a chosen Host. Dismissing the dialog,
+changing the Host or path, or starting another attempt retires the old one;
+late results from it cannot open a Project.
+
 ## Project file traversal
 
 The recursive selection of a Project's regular files for file-name lookup,

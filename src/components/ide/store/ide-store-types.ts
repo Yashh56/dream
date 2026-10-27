@@ -223,7 +223,7 @@ export interface IdeState {
    */
   openProject: (
     path: string,
-    options?: { activate?: boolean; hostId?: string },
+    options?: { activate?: boolean; hostId?: string; signal?: AbortSignal },
   ) => Promise<boolean>;
   createWorktreeProject: (
     parentProjectId: string,

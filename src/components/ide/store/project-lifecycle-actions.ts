@@ -73,7 +73,7 @@ export const createProjectLifecycleActions = (
 
   openProject: async (path, options) => {
     const trimmed = path.trim();
-    if (!trimmed) return false;
+    if (!trimmed || options?.signal?.aborted) return false;
     // The local host is no host at all on a project.
     const hostId =
       options?.hostId === LOCAL_HOST_ID ? undefined : options?.hostId;
@@ -86,6 +86,7 @@ export const createProjectLifecycleActions = (
         if (!(await get().connectHost(hostId))) return false;
       }
     }
+    if (options?.signal?.aborted) return false;
     get().addProject(trimmed, { activate: options?.activate, hostId });
     return true;
   },

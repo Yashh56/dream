@@ -7,8 +7,7 @@
  */
 import { FolderOpen, PlugZap, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
-import { create } from "zustand";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -40,27 +39,13 @@ import {
 } from "../ssh/ssh-hosts-settings-section";
 import { HOME_FOLDER_INPUT } from "./folder-path";
 import { FolderPathField } from "./folder-path-field";
+import { createOpenProjectAttempt } from "./open-project-attempt";
+import { useOpenProjectDialog } from "./open-project-dialog-state";
 
 const NO_SSH_HOSTS: SshHostConfig[] = [];
 
 /** The Select value that opens the Add SSH host form instead of a host. */
 const ADD_SSH_HOST = "__add-ssh-host__";
-
-interface OpenProjectDialogState {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-}
-
-/** Whether the dialog is open; opened from the empty page or the shortcut. */
-export const useOpenProjectDialog = create<OpenProjectDialogState>((set) => ({
-  open: false,
-  setOpen: (open) => set({ open }),
-}));
-
-/** Opens the dialog; Settings closes once a project opens. */
-export const showOpenProjectDialog = () => {
-  useOpenProjectDialog.getState().setOpen(true);
-};
 
 export const OpenProjectDialog = () => {
   const open = useOpenProjectDialog((state) => state.open);
@@ -89,6 +74,35 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addingHost, setAddingHost] = useState(false);
+  const dependencies = useRef({ connectHost, desktop, openProject });
+  dependencies.current = { connectHost, desktop, openProject };
+  const [attempt] = useState(() =>
+    createOpenProjectAttempt({
+      connect: (id) => dependencies.current.connectHost(id),
+      resolveFolder: async (id, folder, signal) =>
+        (
+          await apiClient.hostDirectories(
+            { path: folder },
+            { hostId: id, signal },
+          )
+        ).path,
+      pickFolder: () =>
+        dependencies.current.desktop?.pickProjectDirectory() ??
+        Promise.resolve(null),
+      openProject: (id, folder, signal) =>
+        dependencies.current.openProject(folder, { hostId: id, signal }),
+    }),
+  );
+  useEffect(() => () => attempt.cancel(), [attempt]);
+
+  const cancelAttempt = () => {
+    attempt.cancel();
+    setOpening(false);
+  };
+  const close = () => {
+    cancelAttempt();
+    onClose();
+  };
 
   const home = hostId === LOCAL_HOST_ID;
   const sshHost = sshHosts.find((host) => host.id === hostId);
@@ -100,8 +114,12 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
 
   // A host removed while picked falls back to this computer.
   useEffect(() => {
-    if (!home && !sshHost) setHostId(LOCAL_HOST_ID);
-  }, [home, sshHost]);
+    if (!home && !sshHost) {
+      attempt.cancel();
+      setOpening(false);
+      setHostId(LOCAL_HOST_ID);
+    }
+  }, [attempt, home, sshHost]);
 
   // Picking an SSH host connects it; ssh's prompts appear in their own
   // dialog. A failed attempt waits for Connect rather than retrying.
@@ -114,6 +132,7 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
   }, [connectHost, hostId]);
 
   const pickHost = (next: string) => {
+    cancelAttempt();
     if (next === ADD_SSH_HOST) {
       setAddingHost(true);
       return;
@@ -123,33 +142,18 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
     setError(null);
   };
 
-  const finish = async (folder: string) => {
-    if (await openProject(folder, { hostId })) {
+  const handleAttempt = async (work: ReturnType<typeof attempt.typed>) => {
+    setOpening(true);
+    setError(null);
+    const result = await work;
+    if (result.status === "cancelled") return;
+    setOpening(false);
+    if (result.status === "failed") {
+      setError(getApiErrorMessage(result.error, sshT("foldersFailed")));
+    } else if (result.status === "opened") {
       setSettingsOpen(false);
       onClose();
     }
-  };
-
-  const handleOpen = async () => {
-    if (!path.trim()) return;
-    setOpening(true);
-    setError(null);
-    try {
-      if (!home && !(await connectHost(hostId))) return;
-      // The host resolves the path (`~`, relative to home) and says
-      // whether it is a folder before anything is added.
-      const folder = await apiClient.hostDirectories({ path }, { hostId });
-      await finish(folder.path);
-    } catch (failure) {
-      setError(getApiErrorMessage(failure, sshT("foldersFailed")));
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  const handleBrowse = async () => {
-    const selected = await desktop?.pickProjectDirectory();
-    if (selected) await finish(selected);
   };
 
   const busy =
@@ -183,7 +187,7 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
   return (
     <Dialog
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next) close();
       }}
       open
     >
@@ -195,7 +199,7 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
           className="grid gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            void handleOpen();
+            if (path.trim()) void handleAttempt(attempt.typed(hostId, path));
           }}
         >
           {sshHosts.length > 0 ? (
@@ -235,13 +239,14 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
               id="open-project-path"
               key={hostId}
               onChange={(next) => {
+                if (next !== path) cancelAttempt();
                 setPath(next);
                 setError(null);
               }}
               trailing={
                 desktop && home ? (
                   <Button
-                    onClick={() => void handleBrowse()}
+                    onClick={() => void handleAttempt(attempt.browse(hostId))}
                     type="button"
                     variant="outline"
                   >
@@ -260,7 +265,10 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
           <DialogFooter className="sm:justify-between">
             {desktop && sshHosts.length === 0 ? (
               <Button
-                onClick={() => setAddingHost(true)}
+                onClick={() => {
+                  cancelAttempt();
+                  setAddingHost(true);
+                }}
                 type="button"
                 variant="ghost"
               >
@@ -271,7 +279,7 @@ const OpenProjectForm = ({ onClose }: { onClose: () => void }) => {
               <span />
             )}
             <div className="flex gap-2">
-              <Button onClick={onClose} type="button" variant="ghost">
+              <Button onClick={close} type="button" variant="ghost">
                 {sshT("cancel")}
               </Button>
               <Button disabled={opening || !path.trim()} type="submit">
