@@ -100,6 +100,12 @@ export const DESKTOP_METHODS =
 
     // SSH hosts: connecting, their state, and ssh's prompts.
     connectHost: { channel: "hosts:connect", kind: "invoke" },
+    pairHost: { channel: "hosts:pair", kind: "invoke" },
+    forgetHostCredential: {
+      channel: "hosts:forget-credential",
+      kind: "invoke",
+      params: ["credentialId"],
+    },
     disconnectHost: {
       channel: "hosts:disconnect",
       kind: "invoke",

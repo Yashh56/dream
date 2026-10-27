@@ -154,7 +154,7 @@ test("process loss interrupts claimed work and holds remaining work until explic
   assert.equal((await scheduler.list("c")).runs[0].status, "interrupted");
 });
 
-test("Stop holds the queue while delayed interruption settles; cancelled work never starts", async () => {
+test("Stop holds the queue while the stopped turn settles; cancelled work never starts", async () => {
   const { catalog } = await setup();
   let calls = 0;
   let release;
@@ -185,17 +185,137 @@ test("Stop holds the queue while delayed interruption settles; cancelled work ne
     () => Promise.resolve(calls),
     (value) => value === 1,
   );
-  await scheduler.control({ chatId: "c", action: "pause" });
+  await scheduler.control({ chatId: "c", action: "stop" });
   assert.equal((await scheduler.list("c")).runs[0].status, "running");
   await scheduler.control({ chatId: "c", action: "cancel", id: "two" });
   release();
+  // Stopped on purpose: finished business, not an interruption to review.
   await until(
     () => scheduler.list("c"),
-    (queue) => queue.runs[0].status === "interrupted",
+    (queue) => queue.runs[0].status === "cancelled",
   );
   await scheduler.control({ chatId: "c", action: "resume" });
   assert.equal(calls, 1);
   assert.equal((await scheduler.list("c")).runs[1].status, "cancelled");
+});
+
+test("after Stop, the next message runs without an explicit resume", async () => {
+  const { catalog } = await setup();
+  let calls = 0;
+  const { scheduler, turns } = schedulerFor(
+    catalog,
+    async (_data, { signal }) => {
+      calls++;
+      if (calls > 1) return new Response("data: [DONE]\n\n");
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            signal.addEventListener("abort", () => controller.close(), {
+              once: true,
+            });
+          },
+        }),
+      );
+    },
+  );
+  await scheduler.submit(request("one"));
+  await until(
+    () => Promise.resolve(calls),
+    (value) => value === 1,
+  );
+  await scheduler.control({ chatId: "c", action: "stop" });
+  await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[0].status === "cancelled",
+  );
+  assert.equal(turns.isRunning("c"), false);
+  await scheduler.submit(request("two"));
+  const queue = await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[1]?.status === "completed",
+  );
+  assert.equal(queue.paused, false);
+  assert.equal(calls, 2);
+});
+
+test("after a failure, a new message resumes the queue and dismisses the failed run", async () => {
+  const { catalog } = await setup();
+  let calls = 0;
+  const { scheduler } = schedulerFor(catalog, async () => {
+    calls++;
+    if (calls === 1) throw new Error("Provider failed.");
+    return new Response("data: [DONE]\n\n");
+  });
+  await scheduler.submit(request("one"));
+  const failed = await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[0].status === "failed",
+  );
+  assert.equal(failed.paused, true);
+  await scheduler.submit(request("two"));
+  const queue = await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[1]?.status === "completed",
+  );
+  assert.equal(queue.paused, false);
+  assert.equal(queue.runs[0].status, "cancelled");
+});
+
+test("pause holds queued work but lets the live turn finish; resume does not wait for it", async () => {
+  const { catalog } = await setup();
+  let calls = 0;
+  let finish;
+  const { scheduler, turns } = schedulerFor(catalog, async () => {
+    calls++;
+    if (calls > 1) return new Response("data: [DONE]\n\n");
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          finish = () => controller.close();
+        },
+      }),
+    );
+  });
+  await scheduler.submit(request("one"));
+  await scheduler.submit(request("two"));
+  await until(
+    () => Promise.resolve(calls),
+    (value) => value === 1,
+  );
+  await scheduler.control({ chatId: "c", action: "pause" });
+  finish();
+  let queue = await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[0].status === "completed",
+  );
+  assert.equal(queue.paused, true);
+  assert.equal(queue.runs[1].status, "queued");
+  assert.equal(calls, 1);
+  await scheduler.control({ chatId: "c", action: "resume" });
+  queue = await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs[1].status === "completed",
+  );
+  assert.equal(calls, 2);
+
+  // Pausing and resuming during a live turn returns at once and the queue
+  // continues after it.
+  calls = 0;
+  await scheduler.submit(request("three"));
+  await scheduler.submit(request("four"));
+  await until(
+    () => Promise.resolve(calls),
+    (value) => value === 1,
+  );
+  await scheduler.control({ chatId: "c", action: "pause" });
+  await scheduler.control({ chatId: "c", action: "resume" });
+  assert.equal(turns.isRunning("c"), true);
+  finish();
+  await until(
+    () => scheduler.list("c"),
+    (queue) => queue.runs.every((run) => run.status === "completed"),
+  );
+  assert.equal(calls, 2);
 });
 
 test("a failed or interrupted run can be removed instead of retried; a running one cannot", async () => {
@@ -354,7 +474,7 @@ test("delegated tasks deduplicate, retain results across service restart, and en
     "Review complete.",
   );
   nextScope.close();
-  await scheduler.control({ chatId: "c", action: "pause" });
+  await scheduler.control({ chatId: "c", action: "stop" });
   assert.equal((await service.handle(mcpRequest())).status, 401);
   assert.equal(
     (await call("delegate_task", { ...input, key: "late" })).isError,
@@ -412,10 +532,10 @@ test("parent Stop reaches running descendants and cancels their queued work", as
       },
     ],
   });
-  await scheduler.control({ chatId: "c", action: "pause" });
+  await scheduler.control({ chatId: "c", action: "stop" });
   await until(
     () => scheduler.list(child.id),
-    (queue) => queue.runs[0].status === "interrupted",
+    (queue) => queue.runs[0].status === "cancelled",
   );
   const childQueue = await scheduler.list(child.id);
   assert.equal(childQueue.paused, true);

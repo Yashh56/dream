@@ -77,10 +77,17 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
 - `tasks/remote-connections.md` tracks CONN-01 to CONN-05 (host identity,
   pairing and device sessions, the shared connection runtime, the browser
   client and phone layout, Tailscale and direct access setup; implemented),
-  CONN-06 unattended hosting (in progress: storage ownership, service and
-  desktop attach implemented; native desktop walkthrough pending) and
-  proposes CONN-07 through CONN-11: multiple routes, Dream Connect, native
-  mobile, push notifications and a host-owned browser.
+  CONN-06 unattended hosting (all four slices implemented, including verified
+  runtime updates and recovery; macOS service and desktop walkthrough checked,
+  cross-platform and live-provider validation pending), CONN-07 multiple routes
+  (implemented: ordered route management, direct desktop pairing and remote-only
+  mode; live SSH/network and cross-platform walkthroughs remain), and CONN-08
+  Cloudflare Tunnel integration (implemented, validation pending: private
+  runtime/token management, host-owned lifecycle, desktop/headless controls;
+  the real-tunnel completion criteria and native Windows/Linux walkthroughs are
+  unmet).
+  CONN-09/10 are reserved for a separate, unscheduled mobile project and its
+  push notifications; CONN-11 is an independent future host-browser project.
 
 Module names and current ownership live in ../../GLOSSARY.md.
 
@@ -92,5 +99,8 @@ Module names and current ownership live in ../../GLOSSARY.md.
 - `tasks/open-project-flow.md` tracks OPEN-01 from the T3 Code comparison:
   one open-project dialog with path completion on any host, connecting SSH
   hosts before opening, and one Connections section in Settings.
+- `tasks/review-20261026.md` tracks D26-01 through D26-03: Host-bound
+  Generated git text, Terminal session command observation, and Project-opening
+  attempt lifetime.
 - `tasks/antigravity-provider.md` tracks AGY-01: Google Antigravity CLI as a
   first-class AI coding-agent provider in Dream.

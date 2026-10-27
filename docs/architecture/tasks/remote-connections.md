@@ -3,13 +3,20 @@
 Build remote access around the existing Host, Host catalog and Chat run owners.
 The first release should let a phone browser pair with a Dream host over
 Tailscale, read chats, submit work, answer approvals and recover after suspension.
-Then add unattended hosting, multiple routes, managed cloud access, native mobile
-clients and a browser that runs on the host.
+Then add unattended hosting, multiple routes and Cloudflare Tunnel support.
+This connection effort covers the existing desktop and browser clients. A native
+mobile application requires a separate project with its own scope, architecture,
+estimates and release work; it is not a delivery milestone of this plan.
 
-Status: CONN-01 to CONN-05 implemented; CONN-06 in progress (slices 1-3 of 4;
-native desktop walkthrough pending);
-CONN-07 through CONN-11 proposed. Task numbers
-below resolve to CONN-01 through CONN-11.
+Status: CONN-01 to CONN-06 implemented; CONN-06's native Windows/Linux update,
+login/reboot and live-provider walkthroughs remain unverified;
+CONN-07 implemented (physical-network and cross-platform walkthroughs pending);
+CONN-08 implemented, validation pending: the real-tunnel completion criteria
+and native Windows/Linux walkthroughs are unmet.
+CONN-09 and CONN-10
+are reserved references for a separate, unscheduled mobile project. CONN-11 is
+an independent future browser project. Current connection work ends at CONN-08.
+Task numbers below retain their stable CONN-01 through CONN-11 references.
 
 ## Delivery order
 
@@ -17,16 +24,20 @@ below resolve to CONN-01 through CONN-11.
 | --- | --- | --- |
 | 1 Phone browser over Tailscale | 01–05 | Pair from a QR code, work from a phone, reconnect and revoke that phone |
 | 2 Reliable unattended access | 06–07 | Keep the host running without its desktop window; reach one host through several routes |
-| 3 Dream Connect | 08 | Sign in and reach linked hosts without installing a VPN |
-| 4 Native mobile | 09–10 | Install a mobile app and receive notifications while it is suspended |
-| 5 Remote browser parity | 11 | Use and observe the host's browser from any client, including while desktop is closed |
+| 3 Cloudflare Tunnel support | 08 | Reach the host from existing desktop and browser clients through a stable HTTPS tunnel |
 
 Dependency order: 01 → 02 → 03 → 04 → 05. Task 06 follows 03 and 04;
-07 follows 05; 08 follows 06 and 07; 09 follows 07; 10 follows 08 and 09;
-11 follows 02, 03 and 06. Native mobile UI and the host browser can be developed
-independently of the cloud service once their prerequisites are complete.
+07 follows 05; 08 follows 06 and 07. CONN-11 may reuse 02, 03 and 06 but is not
+required to complete this effort. Mobile and push dependencies will be defined
+when the separate mobile project is scoped; they do not gate CONN-08.
 
-Ship milestone 1 before taking on cloud operations. It requires no Dream account
+Scope decision (2026-10-26): replace the proposed Dream Connect account,
+discovery and authorization service with Cloudflare Tunnel integration. Exclude
+native mobile development and mobile push delivery from this work. Existing
+phone-browser support remains part of the web client already implemented; it
+does not imply a native app, a selected mobile framework, or a mobile schedule.
+
+Ship milestone 1 before adding tunnel management. It requires no Dream account
 or cloud backend. Initially the desktop-hosted machine must keep Dream running;
 an existing standalone daemon can also serve the client. Its current idle timeout
 must be disabled explicitly for unattended use until task 06 owns that policy.
@@ -786,8 +797,9 @@ public managed tunnels are CONN-08.
 
 ## CONN-06: Host lifecycle independent of the desktop
 
-Status: in progress: slices 1-3 of 4 (storage ownership, the service and desktop
-attach) implemented; native desktop walkthrough and runtime updates remain
+Status: all four implementation slices complete. Native macOS service updates,
+recovery and desktop quit/reopen verified. Native Windows/Linux runtime-update,
+login/reboot and live-provider walkthroughs remain unmet validation criteria.
 
 Problem and trigger: local host work ends when Electron quits; the existing SSH
 daemon is detached but is not an installed startup service.
@@ -819,8 +831,8 @@ Completion criteria:
   return to a compatible previous binary without reversing incompatible data
   migrations. Compatibility requirements are checked before replacement.
 
-Validation: pending; exercise install, desktop attach, quit, restart, update and
-uninstall on each supported OS using copies of existing desktop data.
+Validation: per-slice evidence below. The full install/attach/quit/restart/update/
+uninstall walkthrough on each supported OS is not yet established.
 
 Agreed scope: four slices, in dependency order.
 1. Storage ownership (implemented below).
@@ -830,6 +842,21 @@ Agreed scope: four slices, in dependency order.
 3. Desktop modes: desktop-owned or service-owned, with the desktop attaching
    to a service host (an edge proxy for its SSH hosts and the browser relay).
 4. Staged, verified, recoverable runtime updates.
+
+Slice 4, agreed implementation scope (2026-10-26; implemented):
+- `dream-host service update <version>` stages the published platform archive,
+  verifies its SHA256 and runtime contract, and keeps the existing service's
+  data paths and captured environment. Offline archives require an explicit
+  SHA256. The previous runtime is retained outside SSH's version pruning.
+- Check protocol, capabilities, platform and database migrations before stopping
+  the service. Automatic replacement requires the same migration history, so
+  rollback never reverses or guesses compatibility with schema changes.
+- Journal the handoff before stopping. Verify readiness, database ownership and
+  host identity after replacement; restore the previous compatible runtime on
+  failure. Expose recovery for interrupted updates and serialize service writes.
+- Validate with isolated runtimes/data and the available native service manager;
+  preserve the no-new-tests and no-dev-server constraints. Record native or
+  cross-platform walkthroughs that cannot be completed as unmet criteria.
 
 Slice 3, agreed implementation scope (2026-10-21; implemented, native walkthrough pending):
 - Explicit desktop-owned (default) and service-owned desktop startup modes.
@@ -1058,15 +1085,85 @@ were added. Scratch programs outside the checkout exercised:
 - Terminal restoration: local project matching, output retention, repeated
   restoration, runner sessions, and refusal to adopt SSH/unknown projects.
 
-Not yet inspected: the native Electron desktop attaching, quitting and reopening
-with real provider turns, real webviews or SSH machines; platform service
-handoff on macOS/Windows/Linux. `pnpm inspect:dev --json` found no renderer for
-this checkout. Native service installation was not changed. These remain unmet
-manual validation criteria. Runtime update delivery is slice 4.
+At the slice-3 checkpoint, native Electron attach/quit/reopen and platform service
+handoff were not inspected. The slice-4 macOS walkthrough below now covers native
+attachment and terminal survival. Real provider turns, real webviews and SSH
+machines, and native Windows/Linux desktop handoff remain unverified.
+
+Slice 4, runtime updates (implemented, 2026-10-26):
+- `runtime-contract.js` adds platform, architecture, protocol, capabilities,
+  storage-format version and exact migration hashes to `dream-host version`.
+  The storage-format version must change for incompatible persisted JSON,
+  queue or provider-session semantics, even without a SQL change.
+- `service/runtime.js` stages the official release archive plus SHA256SUMS, or
+  an offline archive with explicit SHA256; checks a private archive copy;
+  rejects traversal, links and special files; and runs the candidate contract.
+  Packaged installation retains its runtime immediately. Update candidates and
+  previous runtimes live under `service-runtimes`, outside SSH version pruning.
+- `service/update.js` preserves the installed launch environment and absolute
+  data paths. It checks compatibility before shutdown, journals the handoff,
+  suspends service-manager restarts, and waits for the old database owner to
+  exit. Readiness requires the expected version and identity, the database lock,
+  successful catalog reads, matching migrations and a stable process.
+- Failed startup restores the retained previous runtime only after rechecking
+  its contract, identity and database migrations. Database contents are never
+  rolled back. Schema/protocol/storage-format changes that cannot safely return
+  to the previous binary are refused before stopping the host.
+- `service update <version> [--archive file --sha256 hex]` and `service recover`
+  expose the operation. Status shows pending recovery, the last outcome and
+  runtime location without captured environment values. Private atomic records
+  survive interruption. A PID-owned operation lock serializes service commands
+  and automatic client starts; stale owners can be recovered.
+- `service.json` now keeps the installed launch settings. Earlier installations
+  without those settings need one reinstall using the same data directory and
+  explicit environment options. Checkout-based installs remain supported but
+  need a packaged runtime before automatic updates. See
+  [the operator guide](../../host-service.md).
+- Release packaging now includes Windows x64 host archives. The existing
+  runtime smoke workflow uses the shipped Node on every platform and verifies
+  the update contract, catalog access and native terminal startup.
+
+Validation, slice 4 (2026-10-26):
+- `pnpm check`: scratch hygiene, lint, typecheck and 1,244 tests across 181 files
+  passed. `pnpm vite:build` passed with the existing large-chunk warning.
+  The complete macOS arm64 runtime and archive built successfully. No tests
+  were added to the repository; diagnostics stayed in the allocated scratch
+  directory outside the checkout.
+- A real, isolated macOS LaunchAgent exercised installation, verified update,
+  checksum rejection and incompatible-migration rejection before shutdown,
+  failed-startup rollback, interrupted handoff followed by CLI recovery,
+  refusal to roll back an incompatible database, and concurrent mutation refusal.
+  The host retained its identity and catalog through update and recovery.
+- A final packaged-runtime check upgraded a fixture version from 0.30.0 to
+  0.30.1, preserved a custom database path and captured environment despite
+  different values in the updating shell, verified credential-free status,
+  and uninstalled while retaining data and identity. These versioned fixtures
+  were local archives, not published releases.
+- An isolated native Electron production renderer loaded in service mode,
+  quit, reopened and quit again. The same service PID and identity remained;
+  its native PTY terminal remained running and discoverable after both quits.
+  The temporary desktop service was uninstalled and its data retained. The
+  user's development app was not restarted and no dev server was started.
+- Platform-adapter diagnostics cover generated Linux and Windows replacement
+  commands; these do not establish native runtime-update behavior on those OSes.
+
+Remaining validation: native Windows/Linux updates and recovery, actual OS
+login/reboot, desktop handoff with real provider turns/webviews/SSH, and release
+download against a published archive containing the new contract. These are
+unmet criteria, not inferred passes from macOS or fake service-manager output.
 
 ## CONN-07: Multiple routes and unified connection management
 
-Status: proposed
+Status: implemented; all three slices complete. Live SSH/network and
+cross-platform validation remains as listed below.
+
+Finish scope (2026-10-26): implement both remaining slices, including a single
+host list, ordered route editing/removal, authenticated duplicate merging,
+HTTPS link pairing with encrypted desktop credentials, proof on each new TLS
+connection before attaching credentials, mixed-route recovery, and
+`DREAM_HOST_MODE=remote` without a local execution host. Keep existing workspace
+ownership and do not add repository tests. Record unavailable physical-network
+and platform walkthroughs separately from automated validation.
 
 Problem and trigger: one host should remain the same host when a client changes
 network or switches between SSH, Tailscale, LAN and managed access.
@@ -1075,6 +1172,23 @@ Scope: extend the shared supervisor with ordered routes, bounded attempts,
 backoff and cancellation. Move desktop SSH forwarding behind its platform
 adapter, reusing `electron/ssh/` installation, prompts and reconnection code.
 Keep process ownership separate from connection ownership.
+
+Implementation slices (2026-10-26; the original completion criteria below remain
+the full scope):
+1. Shared ordered-route supervisor, bounded attempts, cancellation, cooldowns,
+   verified preferred-route replacement, and desktop SSH transport adapter.
+   Preserve legacy single-route connections and the existing SSH prompts,
+   runtime installation and port forwards. Expose route status through the
+   existing bridge; do not replay writes during route replacement.
+2. Verified route merging and editing in one Connections UI, with existing
+   workspace/project ownership retained when routes are added or removed.
+3. Direct HTTPS desktop pairing, private device credentials and nonce-bound
+   host-key proof before credentials are attached; route loss/recovery across
+   transport kinds and a desktop with no local execution host.
+
+All three slices are implemented. Stored metadata alone never authorizes a new
+credential destination: each HTTPS route references a private device credential
+bound to that host and origin.
 
 Completion criteria:
 
@@ -1091,118 +1205,301 @@ Completion criteria:
 - Removing an SSH route stops its forward, without stopping a shared service.
   Desktop can run with only remote hosts and no local execution host.
 
-Validation: pending; inspect route loss/recovery, a reassigned LAN address,
-revocation on a fallback route and SSH authentication cancellation.
+Slice 1 implementation (2026-10-26):
+- `electron/shared/route-supervisor.js` selects a verified ready handle from
+  ordered routes. Attempts time out after five minutes, transient failures use
+  capped, jittered 2-60 second backoff, and a healthy fallback keeps serving
+  during a preferred probe after a 30-second cooldown. Late attempts cannot
+  publish after replacement or cancellation. Fatal routes remain blocked until
+  explicit reconnection, which waits for any running recovery and then retries
+  every route; cancelling an SSH prompt ends the whole connect operation.
+- `electron/connections/desktop-connections.js` adapts the existing SSH manager
+  to that supervisor. SSH authenticates and checks the saved identity before
+  catalog readiness; mismatched catalogs and incompatible protocols are refused.
+  Only probes made while another route serves are silent: BatchMode, strict
+  host-key checking and an askpass helper without its secret. Recovering a
+  connection with no serving route may prompt, as single-route reconnects did.
+  Short per-connection ControlMaster names (16 hex characters, within socket
+  path limits) prevent two aliases for one machine from borrowing or closing
+  each other's master. Concurrent forwards of one port share one SSH forward.
+- Main now routes host proxies through that adapter. A bounded optional
+  `sshRoutes` bridge payload supplies ordered routes; legacy payloads remain
+  valid. Saved SSH routes are resolved against Settings by the store. Route
+  status contains ids, errors and retry times, never launch credentials.
+- Local TCP relays keep forwarded site URLs stable across route replacement.
+  A route switch closes old connections; new traffic uses the selected route.
+  Disconnect kills pending SSH work and forwards, leaving the daemon running.
+- Route changes invalidate renderer sockets/catalog reads before chat observers
+  reattach through Connection recovery. No request writes are resubmitted.
+
+Validation, slice 1 (2026-10-26): `pnpm check` passed scratch hygiene, lint,
+typecheck and 1,256 tests across 184 files. `pnpm vite:build` passed with the
+existing large-chunk warning. No tests were added to the repository.
+- Scratch diagnostics outside the checkout exercised ordered fallback,
+  cooldowns, delayed preferred readiness, dropped routes, copied ids with wrong
+  keys, terminal refusal, prompt cancellation, timeouts, late completion after
+  disconnect and a replacement attempt, upgrading a legacy pin with its first
+  verified key before fallback, and credential-free route status.
+- The desktop adapter preserved one local forwarded URL across fallback →
+  preferred → fallback using real HTTP/TCP traffic and controlled transports.
+- The production SSH manager connected to a real isolated daemon through the
+  existing scripted SSH stand-in and real TCP forwards. Losing the preferred
+  forward switched routes, retained host identity and the forwarded site's URL,
+  and left the daemon running after disconnect. The isolated daemon was stopped
+  explicitly at diagnostic cleanup.
+- A separate diagnostic checked distinct ControlMaster paths for two routes
+  to the same target and for two independent managers.
+- An askpass diagnostic kept a foreground password prompt pending while a
+  background probe ran; the prompt stayed assigned to the foreground host,
+  and declining it cancelled that host's attempt.
+
+Slices 2-3 implementation (2026-10-26):
+- Connections groups verified SSH and HTTPS routes by persistent host, shows
+  their preference, active route and failures, and supports adding, editing,
+  reordering and removing routes. Authenticated duplicate additions merge before
+  catalog application. Workspace document operations preserve project/chat IDs,
+  tabs and drafts. Route removal updates the running supervisor and closes only
+  removed transports. A local home host retains its local route.
+- Direct pairing exchanges HTTPS fragment links in main and stores device
+  grants with OS-backed safeStorage encryption outside workspace exports.
+  Credentials are pinned to both installation key and origin; plaintext Linux
+  storage is refused. `/api/remote/proof` signs a fresh nonce, audience and host
+  identity. The HTTPS adapter verifies that proof on every newly opened TLS
+  socket before handing the same socket to HTTP or WebSocket requests. TLS
+  certificate validation, bounded proof framing and redirect refusal remain
+  mandatory. The proxy does not forward browser cookies or the local launch token
+  to HTTPS routes. Authorization failures block routes; polling renews sessions
+  and detects idle route loss. No write is automatically replayed.
+- `DREAM_HOST_MODE=remote` runs the desktop workspace and edge without creating
+  a local execution host. Home catalog loads/watchers and local remote-access
+  controls are omitted. Saved remote snapshots survive hydration. Authenticated
+  former home hosts can become remote connections without changing project IDs.
+  See [Desktop connections](../../desktop-connections.md).
+
+Validation, slices 2-3 (2026-10-26):
+- `pnpm check` passed scratch hygiene, lint, typecheck and all 1,256 tests
+  across 184 files. `pnpm vite:build` passed with the existing large-chunk
+  warning. Existing bridge/action/recovery fixtures were updated; no new
+  repository tests were added.
+- Scratch HTTPS diagnostics used real TLS traffic to check proof on the same
+  socket, re-verification on new sockets, copied-key and nonce refusal, pinned
+  known-host refusal before pairing, HTTPS downgrade refusal, readiness and fatal
+  grant revocation. A controlled mixed SSH/HTTPS supervisor check retained the
+  healthy fallback during preferred readiness, switched only after success, and
+  detached a removed SSH route without changing the pinned host.
+- A real isolated host paired through an HTTPS reverse proxy and a remote-only
+  desktop edge. Catalogs and session-bound socket tickets worked; revoking the
+  grant closed the live socket and blocked the route. Disconnect left the host
+  running. The edge refused local execution API requests.
+- An isolated native Electron production renderer booted in remote-only mode
+  without a host database lock, paired through the real IPC and OS encrypted
+  credential store, opened a remote project, and re-paired the same origin while
+  retaining its connection/project/chat IDs. Automatic HTTPS route failover
+  retained the composer draft; route reordering/removal retained the project,
+  and a previously local identity became a remote connection after pairing.
+  Fresh workspace startup also exposed and fixed a missing crypto import for
+  install IDs in Electron. Connection and pairing UI inspected in native
+  screenshots; local remote-access controls are hidden in remote-only mode.
+
+Remaining validation: live remote SSH with real VPN/Wi-Fi/cellular changes,
+live-provider turn recovery, native Windows/Linux secure stores, and a real
+Tailscale Serve pairing walkthrough. Controlled TLS/transport checks do not
+establish those physical-network or platform results. No dev server was started
+and the user's existing app was not restarted.
 
 Remaining/deferred: the managed route provider arrives in CONN-08.
 
-## CONN-08: Dream Connect cloud discovery and managed tunnels
+## CONN-08: Cloudflare Tunnel integration
 
-Status: proposed
+Status: implemented; validation pending. The first and third completion
+criteria (a real Cloudflare hostname end to end; recovery through that edge)
+and native Windows/Linux operation are unmet, so the task is not complete.
+Scope revised 2026-10-26.
 
-Problem and trigger: VPN-free access requires account discovery and a managed
-reachable endpoint, plus a lifecycle for linking and unlinking hosts.
+Implementation scope: complete the user-owned token/hostname integration,
+private connector runtime installation/detection, host-owned process lifecycle,
+bounded recovery, external-connector mode, desktop controls and headless CLI.
+Reuse the existing HTTPS identity/session and remote listener boundaries. Mobile,
+push and Dream-operated account/discovery infrastructure remain out of scope.
+No new repository tests or dev server; validate new scenarios in scratch programs
+and record real-tunnel/platform checks that cannot run separately.
 
-Scope: introduce a separately deployed Connect control service and
-`electron/host/connect/` connector. Use account authentication, a device-code
-CLI flow, user-to-host links, host signing identity and tunnel allocations.
-Provision managed HTTPS tunnels through a provider adapter. Cloudflare is a
-candidate matching the earlier T3 comparison; select the provider and identity
-vendor after checking operational constraints and current pricing.
+Problem and trigger: reach the host from the existing desktop or browser client
+without requiring both devices to join a VPN. A Dream-operated account,
+discovery or authorization service is outside this effort.
 
-The control service discovers hosts and brokers short-lived, one-time bootstrap
-credentials bound to a client proof key. The host exchanges them for its own
-session. Sign and nonce-bind host/broker exchanges, including the host identity,
-user, requested scopes and client proof key. Keep host session credentials out
-of the broker. The broker remains a trusted minting authority; this is not an
-end-to-end encryption claim. Application traffic uses the tunnel endpoint.
+Scope: integrate a persistent Cloudflare Tunnel with the existing remote-access
+owner and HTTPS route/session contracts. The initial setup uses a user-owned
+Cloudflare account, configured tunnel token and stable public hostname. Manage
+the local `cloudflared` connector alongside the host service, with private
+credential storage, setup/status controls and headless recovery commands.
+Retain support for an externally managed connector without taking ownership of
+its process or deleting its tunnel.
 
-Completion criteria:
-
-- Sign in on host and phone, link the host, then connect from a network without
-  Tailscale. A signed-in account without an active host link cannot obtain access.
-- Expired/replayed bootstrap proofs, wrong-host responses, malicious endpoint
-  hints and redirects cannot mint a usable session or turn the broker into an
-  arbitrary HTTP proxy.
-- Unlink revokes cloud-derived authorization before external cleanup. Directly
-  paired sessions remain independently manageable. Logout does not delete host data.
-- Provisioning is idempotent and records partial progress. Shutdown, sleep,
-  restart and concurrent unlink cannot delete a newer tunnel allocation.
-- Quotas, bounded retries, allocation reconciliation, rate limits, redacted
-  diagnostics and tunnel failure alerts exist before public rollout.
-- Pilot records tunnel usage and operating cost; it can disable managed exposure
-  while retaining local/SSH/Tailscale access. Recovery instructions are usable
-  from a headless host.
-
-Validation: pending; use an isolated deployment for link/unlink, account changes,
-tunnel loss and recovery, proof replay and provisioning failure scenarios.
-
-Remaining/deferred: team sharing, billing and automation webhook buffering are
-separate products; they are not prerequisites for connection parity.
-
-## CONN-09: Native mobile clients
-
-Status: proposed
-
-Problem and trigger: a responsive browser supplies early access, but native
-pairing, credential storage, lifecycle and phone interaction need platform UI.
-
-Scope: add a mobile application, with React Native/Expo as the initial candidate.
-Share connection contracts, runtime, transcript/domain logic and authorization;
-implement native screens instead of assuming React DOM components are portable.
-Prove streaming, secure storage and lifecycle support in a small vertical slice
-before committing to the framework. Add QR/deep-link pairing, host switching,
-chat and queue controls, approvals, attachments, files/diffs and terminal access.
+Expose only the remote-facing listener, with its existing pairing, host-key
+proof, device sessions, scopes and revocation. Cloudflare supplies reachability;
+the Dream host continues to authorize devices. A tunnel becomes an ordinary
+HTTPS route in CONN-07, rather than another host or execution model. Keep QR
+optional and reuse one-time links/device approval for initial authorization;
+normal reconnection does not need another pairing.
 
 Completion criteria:
 
-- iOS and Android pair directly or sign into Connect and load the same catalog.
-  Direct pairing remains usable without a cloud account.
-- Credentials use platform secure storage. Deep links validate their destination
-  and never transmit pairing secrets to an unrelated origin.
-- Background/foreground and network changes recover current state and drafts;
-  no persistent background socket is required for correctness.
-- Core tasks work with touch, keyboard, screen readers and large text. A terminal
-  input action is never duplicated after reconnect.
-- Install, upgrade and signed release delivery are documented for both platforms.
+- A configured stable hostname reaches the same host/catalog from the desktop
+  and browser clients on a network without Tailscale. Streaming chat, socket
+  channels, approvals, files and terminals work through the real tunnel.
+- Connector installation/detection, private token storage, start/stop, health,
+  bounded restart/backoff and useful errors work in the UI and headless service.
+  A desktop window is not required to keep the service's tunnel running.
+- Tunnel loss, host restart and sleep/resume recover through the existing
+  connection runtime without losing drafts or replaying writes.
+- Device authorization, identity proof, HTTPS requirements and revocation remain
+  enforced. The local launch token and local-only routes are never exposed.
+- Disabling tunnel exposure stops only a connector Dream owns. It preserves host
+  data, device records and other SSH/Tailscale/direct routes. An externally
+  managed connector is left running, with instructions to disable it separately.
+- Validate proxy Host/Origin handling, cache behavior, SSE and WebSocket
+  continuity, and token rotation against the configured Cloudflare hostname.
+  Quick Tunnels are not the supported production route.
 
-Validation: pending; complete the milestone-1 workflow on physical iOS and
-Android devices, then exercise long suspension and app termination.
+Implementation (2026-10-26):
+- `host/remote-access/cloudflared-runtime.js` detects a supported installed
+  binary or downloads the official OS/CPU release, checks the release SHA256
+  digest and executable version, and atomically publishes a private runtime.
+  It rejects unexpected assets/archive entries and preserves the prior runtime
+  on failure. Installation/update is explicit, including in headless mode.
+- `host/remote-access/cloudflare.js` owns the connector, its private token file,
+  loopback readiness checks, bounded restart/backoff and token rotation. Tokens
+  use `--token-file`, never process arguments, environment, settings or status.
+  Raw connector logs remain inside the owner; errors exposed to users are
+  sanitized. The bundled Node watchdog reaps its connector if the host dies.
+- Remote access adds a Cloudflare mode with a stable public origin and optional
+  external connector ownership. Managed readiness requires both a healthy
+  connector and a fresh signed host-key proof through HTTPS. Background checks
+  belong to the host and continue without an open desktop or Settings view.
+  Rechecking a healthy configuration keeps its listener and observers alive.
+- Settings > Connections adds hostname/token configuration, explicit runtime
+  installation/update, managed/external controls, status and setup guidance.
+  Token drafts clear after saving. The local-only management API never
+  registers on the remote listener. Existing device pairing, scopes, encrypted
+  desktop credentials, route recovery and revocation continue unchanged.
+- Headless commands add `remote install-cloudflared`, `remote on --cloudflare
+  --origin ... --token-file ...`, `--external`, and `remote restart`.
+  Disabling closes the listener and only the owned child; saved host, device
+  and credential data remain. See [setup and operations](../../cloudflare-tunnel.md).
 
-Remaining/deferred: notifications are CONN-10; host browser control is CONN-11.
+Validation (2026-10-26):
+- `pnpm check` passed scratch hygiene, lint, typecheck and all 1,259 tests
+  across 184 files. `pnpm vite:build` passed with the existing chunk-size
+  warning. The complete macOS arm64 host runtime built with the connector
+  watchdog. No repository tests or dev server were added/started.
+- Scratch diagnostics downloaded, checksum-verified and executed the official
+  cloudflared 2026.10.4 macOS arm64 release. A real invalid-token invocation
+  produced only a sanitized failure in Dream status. Private token mode 0600,
+  process arguments, environment/status boundaries, rotation, child crash
+  recovery, disable and parent SIGKILL cleanup passed with real child processes.
+  Controlled clock/process checks passed exponential retry limits, explicit
+  recovery, unhealthy-child replacement, cancelling pending restart and runtime
+  update replacement. Mocked release adapters verified Windows/Linux asset
+  selection and checksum rejection preserving the prior runtime; these are
+  not native-platform execution results.
+- A real host behind an isolated HTTPS reverse proxy passed signed public
+  readiness, device pairing/catalog, streaming and observer detach/replay,
+  native PTY start/stop, file API access, session-bound WebSocket revocation,
+  local-only API refusal and secret-free settings/status. External mode stopped
+  only the owned connector, left the external proxy running, and retained
+  identity/token/configuration through a full host restart. The connector was
+  a controlled stand-in; the proxy was not Cloudflare's edge.
+- An isolated native production Electron window passed the installer UI,
+  password field/empty-token guard, Quick Tunnel refusal with its unsaved token
+  draft preserved, token save/draft clearing, sanitized
+  rejected-token error, external controls and disable. Light and dark screenshots
+  were inspected. The user's app and data were not restarted or changed.
+- The final packaged runtime ran as a real isolated macOS LaunchAgent without
+  a desktop window. It detected the verified official runtime, reported the
+  invalid token without secrets, restarted with the same host identity and saved
+  token/configuration, and switched to external ownership before disabling.
+  The temporary service was uninstalled afterward; no diagnostic host or
+  connector process remains running.
 
-## CONN-10: Host notifications and mobile push
+Review fixes (2026-10-26):
+- Recovery no longer ends in a permanent failure. Exits and unhealthy
+  connectors are replaced with exponential backoff capped at one minute, and
+  retries continue while the tunnel is on. Only a rejected or missing token or
+  a missing runtime stops retries until the operator acts. A connector is
+  replaced after two minutes unhealthy since it started or was last connected,
+  so a long-running connector is not killed on its first failed poll.
+- The background check runs only for a started Cloudflare listener, so a
+  failed apply (a busy port, for example) keeps its own problem.
+- The host detects an installed cloudflared at startup, so Settings no longer
+  offers to install a copy already on PATH.
+- A successful runtime install removes earlier private runtimes; a failed one
+  removes its stage. The managed binary's digest is cached by size and mtime.
+- `remote restart` restarts the managed connector
+  (`/api/remote/access/cloudflare/restart`); it no longer aliases check.
+  A new Cloudflare route prefers loopback port 5410 when free (host-owned;
+  status reports it). A runtime download no longer blocks other Settings
+  controls. Labels no longer name the product; status no longer reports the
+  watchdog's pid.
+- Validation: lint, typecheck and all 1,259 tests passed. A scratch program
+  with a controlled clock and fake child processes passed unbounded capped
+  retries over 13 exits, no kill on the first failed poll after five minutes
+  connected, replacement after two minutes unhealthy, token-rejection blocking
+  and unblocking by a new token, restart, missing-token blocking, a busy-port
+  problem surviving the monitor, runtime stage cleanup on update and failure,
+  the cached digest path and the minimum version boundary. The Settings change
+  was not inspected in a running window.
 
-Status: proposed
+Remaining validation: an isolated user-owned Cloudflare tunnel/hostname was not
+configured in this session. Real edge Host/Origin/cache behavior, browser and
+desktop pairing, streaming/socket continuity, approvals/live-provider work,
+token rotation and sleep/network recovery through that edge remain unverified.
+Native Windows/Linux connector installation/service operation and OS
+login/reboot also remain unverified. These are unmet walkthrough criteria,
+not inferred passes from a controlled HTTPS proxy or macOS execution.
 
-Problem and trigger: current desktop activity notifications depend on a live
-renderer; suspended mobile clients need host-originated delivery.
+Out of scope: Dream accounts, host discovery/registry, a cloud authorization
+broker, centrally provisioned tunnel fleets, cloud billing/quotas, native mobile
+applications and mobile push. Automated Cloudflare account/DNS provisioning can
+be considered separately from the initial token-and-hostname integration.
 
-Scope: publish finished/failed/waiting events from host run and approval owners
-into a durable outbox. Add registered device destinations and an authenticated
-push delivery service, reusing Connect infrastructure. Deliver through platform
-push services or a selected provider; deduplicate by host, event and destination.
+Implementation references: [Cloudflare Tunnel setup](https://developers.cloudflare.com/tunnel/get-started/),
+[tunnel tokens](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/),
+and [Quick Tunnel limitations](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations).
+A stable tunnel is required: Quick Tunnels change hostname and do not support
+SSE. Provider behavior and current token-file/runtime parameters were checked
+against the official documentation during implementation.
 
-Completion criteria:
+## CONN-09: Native mobile project (outside this effort)
 
-- A suspended app receives completion and approval notifications; tapping one
-  opens the correct host/chat and checks current state before showing an action.
-- Retry, host restart and duplicate delivery do not produce duplicate logical
-  events. Revoked devices/account links receive no new notifications.
-- Push payloads omit prompts, secrets and file contents by default. Preferences,
-  invalid push tokens and retention are handled explicitly.
-- A notification cannot authorize an approval by itself; the app obtains a valid
-  host session and verifies the approval is still pending.
+Status: deferred to a separate, unscheduled project; not a remaining connection
+implementation item.
 
-Validation: pending; inspect physical-device delivery while suspended, stale
-approval taps, offline host recovery and device revocation.
+A native app is a substantial new product/client project. It needs its own
+project setup, platform and framework evaluation, UX and feature scope, secure
+storage and lifecycle integration, testing on physical devices, signing,
+distribution and release plan. No framework, repository location, delivery
+estimate or implementation commitment is selected by this connection plan.
 
-Remaining/deferred: browser Web Push can reuse this event pipeline; native push
-is the completion target for this candidate.
+The future project can reuse the host API, identity, device sessions and HTTPS
+routes delivered here. Those reusable contracts do not make mobile a small
+follow-up or part of CONN-08 acceptance. Retain this ID only for references from
+earlier plans; create the mobile project's own specification before starting it.
+
+## CONN-10: Mobile push (outside this effort)
+
+Status: deferred with the separate mobile project; not a remaining connection
+implementation item.
+
+Decide notification scope, background delivery, platform push services and any
+required sender/relay infrastructure within that project. No push service or
+native notification delivery is required to finish Cloudflare Tunnel support,
+and there is no dependency on the removed Dream Connect service.
 
 ## CONN-11: Host browser and remote control
 
-Status: proposed
+Status: proposed as an independent future project; not required to finish
+connection support through CONN-08.
 
 Problem and trigger: Dream currently lends the desktop window's browser to a
 remote host. Phone-only agents need a browser owned by the execution host.
@@ -1244,10 +1541,10 @@ checks that cannot run must remain explicit unmet criteria, not assumed passes.
 
 The largest uncertainty in milestone 1 is removing desktop assumptions from
 every request and persistence path. The largest later migrations are shared
-database ownership in CONN-06 and browser ownership in CONN-11. CONN-08 adds an
-operated service, while CONN-09 adds two release platforms. Estimate calendar
-delivery after the first identity/auth/runtime slice; these are separate release
-milestones rather than one feature-sized patch.
+database ownership in CONN-06 and browser ownership in the independent CONN-11
+project. CONN-08 adds a local Cloudflare connector integration, not a
+Dream-operated service. Native mobile and push require a separate project and
+estimate; they are excluded from this effort's scope and schedule.
 
 First implementation slice: CONN-01, followed by CONN-02. Establish identity and
 authorization while the application remains desktop-compatible, then use those
@@ -1255,8 +1552,11 @@ contracts for the browser client. Keep each candidate independently reviewable.
 
 Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
-pending). CONN-06 in progress: slices 1 (storage ownership), 2 (the service)
-and 3 (desktop attach) implemented; native desktop walkthrough pending.
-Next implementation is slice 4, runtime updates. CONN-07 through CONN-11 proposed. Preserve
+pending). CONN-06's four slices implemented; macOS service/update/recovery and
+native desktop quit/reopen checked. Cross-platform, reboot/login and live-provider
+validation remains as listed above. CONN-07's three slices are implemented;
+remaining validation is recorded beside the task. Remaining implementation in
+this effort is CONN-08 Cloudflare Tunnel integration. CONN-09/10 belong to a
+separate, unscheduled mobile project; CONN-11 is an independent future project. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.

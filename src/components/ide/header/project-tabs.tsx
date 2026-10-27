@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { DetectedEditor, ProjectIconInfo } from "@/types/ide";
 import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
 import { useIdeStore } from "../ide-store";
+import { useHostChoices } from "../ssh/use-host-choices";
 import {
   moveTabItem,
   type StandardTabItem,
@@ -167,7 +168,7 @@ export const ProjectTabs = () => {
   const updateProject = useIdeStore((s) => s.updateProject);
   const chats = useIdeStore((s) => s.chats);
   const hosts = useIdeStore((s) => s.hosts);
-  const sshHosts = useIdeStore((s) => s.settings.sshHosts);
+  const sshHosts = useHostChoices();
   const hostLabels = useMemo(
     () => new Map(sshHosts.map((host) => [host.id, host.label])),
     [sshHosts],
@@ -256,12 +257,13 @@ export const ProjectTabs = () => {
       }
 
       void desktopApi.openInEditor({
+        hostId: projects.find((item) => item.id === project.id)?.hostId,
         editorId,
         projectPath: project.path,
         sshTarget: sshTargetOf(project.id) ?? undefined,
       });
     },
-    [desktopApi, sshTargetOf],
+    [desktopApi, sshTargetOf, projects],
   );
 
   const closeEditDialog = useCallback(() => {

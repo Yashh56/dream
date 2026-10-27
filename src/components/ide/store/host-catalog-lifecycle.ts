@@ -11,6 +11,7 @@ import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import {
   acceptHostDescriptor,
   findCatalogIdCollisions,
+  listHostChoices,
 } from "../../../../electron/shared/host-connections.js";
 import { getProjectHostId } from "../../../../electron/shared/persisted-state-codec.js";
 import { isHostLoaded, loadCatalog } from "./ide-store-persistence";
@@ -69,8 +70,9 @@ function createLifecycle(set: IdeStoreSet, get: IdeStoreGet) {
   const labelOf = (connectionId: string) =>
     connectionId === LOCAL_HOST_ID
       ? getClientPlatform().homeLabel
-      : (get().settings.sshHosts.find((host) => host.id === connectionId)
-          ?.label ?? connectionId);
+      : (listHostChoices(get().hostConnections, get().settings.sshHosts).find(
+          (host) => host.id === connectionId,
+        )?.label ?? connectionId);
 
   /**
    * Checks whose catalog this is before anything of it is applied, and

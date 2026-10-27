@@ -1,6 +1,6 @@
 import { useChatSearchStore } from "../chat-search";
 import { useIdeStore } from "../ide-store";
-import { showOpenProjectDialog } from "../open-project/open-project-dialog";
+import { showOpenProjectDialog } from "../open-project/open-project-dialog-state";
 import { useShortcut, useShortcutDispatcher } from "./shortcuts";
 
 const cycleProject = (step: 1 | -1) => {

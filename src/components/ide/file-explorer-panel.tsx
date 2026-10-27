@@ -669,6 +669,7 @@ const FileExplorerPanelImpl = ({
       (project) => project.id === projectId,
     )?.hostId;
     await getDesktopApi()?.openInEditor({
+      hostId,
       editorId: "file-explorer",
       projectPath,
       sshTarget: hostId

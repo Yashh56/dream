@@ -10,6 +10,11 @@ model selection. `ProjectConfig` in `src/types/ide.ts`. A project is **open**
 (in the tab strip) or **closed** (kept in the closed list so it can be
 reopened with its chats intact).
 
+An **open-project attempt** is one request from the open-folder dialog to
+open a typed or selected directory on a chosen Host. Dismissing the dialog,
+changing the Host or path, or starting another attempt retires the old one;
+late results from it cannot open a Project.
+
 ## Project file traversal
 
 The recursive selection of a Project's regular files for file-name lookup,
@@ -158,13 +163,14 @@ vouch for it verifies the key instead.
 One client's record that a **client connection ID** reaches a persistent
 host, and by which **routes** (`electron/shared/host-connections.js`,
 `hostConnections` in persisted state). The connection ID is what that
-client's projects, workspace rows and requests name a host by: `local`, or
-an SSH host's id in Settings. A **route ID** names one way of reaching the
-host (the local route, an SSH host). The record is saved on the route's
+client's projects, workspace rows and requests name a host by: `local`, a
+legacy SSH id, or a remote connection id. A **route ID** names one way of
+reaching the host (local, SSH, or paired HTTPS). The record is saved on the route's
 first verified catalog load; until then a connection routes by its ID
 alone. After that, a route that reaches another host is refused. A second
-connection that reaches an already saved host is also refused, and so is a
-catalog whose project or chat IDs collide with another host's. The local
+connection that authenticates the same host merges its routes into the
+existing connection. A catalog whose project or chat IDs collide with another
+host's is refused. The local
 route is never refused. Device and session IDs belong to remote
 authorization, which is a separate concern.
 
@@ -176,6 +182,8 @@ host inside the app, or its installed service with `DREAM_HOST_MODE=service`
 the existing host identity before forwarding requests. In a browser it is the
 paired host serving the page (route `origin`), pinned like any address.
 Projects without a `hostId` live on the home host.
+A desktop in remote-only mode has no home execution host; its workspace stays
+on that desktop and it connects to remote hosts.
 
 ## Connection runtime
 
@@ -189,6 +197,15 @@ supervisor** keeps each host's connection state (`connecting`, `ready`,
 `reconnecting`, `unauthorized`, `incompatible`, `offline`), apart from
 catalog readiness, and turns lifecycle signals into resumes: sockets
 replaced, catalogs refetched, running turns followed again.
+
+A connection's **selected route** is the verified route currently carrying its
+requests; a **fallback route** carries them while a more preferred route is
+unavailable. Its **route supervisor** (`electron/shared/route-supervisor.js`)
+owns that selection, and the **desktop connection adapter**
+(`electron/connections/desktop-connections.js`) owns its SSH endpoints and
+paired HTTPS transports and stable local port forwards, independently of the
+host's process lifetime. A native **device credential** is a private grant for
+one verified host and HTTPS origin, separate from exported connection metadata.
 
 **Connection recovery** coordinates those resumes per host. Refused hosts
 remain quiet until their credential or route changes. Replacing a connection
@@ -221,9 +238,16 @@ The host installed to run without the desktop (`electron/host/service/`):
 its own `serve`, supervised by the platform's service manager (a
 `systemd --user` unit, a LaunchAgent, or a Task Scheduler logon task) and
 restarted if it fails. `dream-host service` installs, starts, stops,
-restarts, reports and uninstalls it; `<home>/service.json` names the service
+restarts, updates, recovers, reports and uninstalls it; `<home>/service.json` names the service
 of a host home, which `ensure` starts instead of spawning a second host.
 Uninstalling keeps the host's data and identity.
+
+A **service runtime update** (`electron/host/service/update.js`) verifies and
+stages a packaged runtime, then replaces the service while preserving its
+captured environment, database and identity. Service runtimes are retained under
+`<home>/service-runtimes`, outside SSH's pruning. The private update journal
+survives interruption; recovery starts the previous binary only if its storage
+format and exact migration history remain compatible. No data is rolled back.
 
 In service mode the desktop's **edge listener** (`electron/desktop-host.js`)
 forwards its home host's HTTP/streams and socket, replacing the desktop token
@@ -235,11 +259,15 @@ running. A fresh desktop discovers surviving terminals for its known projects.
 
 Whether a host serves paired devices, and how (`electron/host/remote-access/`).
 It is the host's setting, saved beside its state database: on or off; through
-**Tailscale Serve** (HTTPS on the tailnet) or the user's own HTTPS reverse
-proxy; and a stable loopback port for the remote listener. An address is
-**ready** only once a request through it reached this host. Dream changes
-only the Serve entry it created (`servedBy`). Configured in Settings > Remote
-access on the desktop, or with `dream-host remote` on a headless machine.
+**Tailscale Serve** (HTTPS on the tailnet), **Cloudflare Tunnel**, or the user's
+own HTTPS reverse proxy; and a stable loopback port for the remote listener.
+An address is **ready** only once a request through it reached this host;
+Cloudflare also requires proof of the host's installation key. A **managed
+connector** is the cloudflared process owned by this host; an **external
+connector** is operated independently and left running when access is disabled.
+Dream changes only its own connector and the Serve entry it created (`servedBy`).
+Configured in Settings > Connections on the desktop, or with `dream-host remote`
+on a headless machine.
 
 ## Remote access state
 
@@ -334,6 +362,10 @@ volatile read; remembered facts catch up when they expire.
 
 A shell process attached to a project (`__project_terminal__:<projectId>:…`)
 or to the browser panel. Not related to a chat's provider session.
+The client tracks a typed command until its output goes quiet, then refreshes
+the Project's Git and Files panels. This observation follows the Terminal
+session when its view is hidden; closing the terminal settles a pending
+refresh, while removing its Project cancels it.
 
 ## Project resources
 
@@ -387,10 +419,12 @@ may not run (an agent is still writing).
 
 Commit messages and pull request details a model writes
 (`src/components/ide/git-generated-text.ts`), cached by what they are
-written from: the changes as `electron/shared/git-changes.js` names them
+written from: the Project's Host, the changes as `electron/shared/git-changes.js` names them
 (the same key the main process caches by), the model settings, and for pull
 requests the branches, next step and git version. A failure reaches the
-caller and is never cached.
+caller and is never cached. A pending or cached answer belongs to its Host,
+even when another Host has a Project at the same path; background warming
+reads and generates on the same captured Host.
 
 ## Changes view
 
@@ -446,8 +480,11 @@ A **chat run** is the durable submission around a turn: its request ID,
 queue position, captured input/model/permissions, and lifecycle state.
 `electron/host/run-store.js` owns its rows; `electron/api/chat/run-scheduler.js`
 dispatches one run per chat, after the preceding transcript has settled.
-Stop pauses pending work, and a host restart marks active work interrupted
-and pauses queues. An interrupted run retries only by explicit action.
+Stop ends the live turn as cancelled and holds queued work; Pause holds queued
+work and lets the live turn finish. A failure or a host restart marks the run
+failed or interrupted and pauses the queue. A failed or interrupted run
+retries only by explicit action; sending a new message instead dismisses it
+and resumes the queue.
 
 ## Delegated task
 

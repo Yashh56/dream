@@ -17,6 +17,7 @@ import {
   generateKeyPairSync,
   randomBytes,
   randomUUID,
+  sign,
 } from "node:crypto";
 import {
   closeSync,
@@ -30,6 +31,7 @@ import {
   writeSync,
 } from "node:fs";
 import path from "node:path";
+import { hostProofMessage } from "../shared/host-proof.js";
 
 export const HOST_IDENTITY_FILE = "host-identity.json";
 const IDENTITY_FORMAT = 1;
@@ -193,4 +195,29 @@ export function loadHostIdentity(dataDirectory) {
   publishOnce(file, `${JSON.stringify(record)}\n`);
   // Whoever won, the file is the identity.
   return readPublished(file);
+}
+
+/** Capture the validated private key once; it never leaves the host process. */
+export function createHostProofSigner(dataDirectory) {
+  const file = path.join(path.resolve(dataDirectory), HOST_IDENTITY_FILE);
+  const text = readFileSync(file, "utf8");
+  const identity = parseIdentity(file, text);
+  const { privateKey } = JSON.parse(text);
+  return ({ nonce, audience, host }) => {
+    if (
+      host.hostId !== identity.hostId ||
+      host.fingerprint !== identity.fingerprint
+    )
+      throw new Error("The host identity changed before signing.");
+    return {
+      nonce,
+      audience,
+      host,
+      signature: sign(
+        null,
+        Buffer.from(hostProofMessage({ nonce, audience, host })),
+        privateKey,
+      ).toString("base64"),
+    };
+  };
 }

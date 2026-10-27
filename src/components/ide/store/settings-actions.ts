@@ -93,177 +93,218 @@ export const createSettingsActions = (
   | "setProviderModels"
   | "checkCliUpdates"
   | "upgradeCli"
-> => ({
-  setSettings: (updater) => {
-    set((state) =>
-      settleSettings(
-        state,
-        typeof updater === "function" ? updater(state.settings) : updater,
-      ),
-    );
-  },
+> => {
+  // The newest model fetch started for each provider. Fetches overlap (an
+  // all-provider refresh still running when an upgrade re-reads one CLI), and
+  // one that started earlier can finish later; only the newest may write a
+  // provider's state, so an old answer never replaces a newer one.
+  let lastProviderModelsRequest = 0;
+  const newestProviderModelsRequest = new Map<AiProvider, number>();
 
-  setSettingsOpen: (open) => set({ settingsOpen: open }),
-  setSettingsSection: (section) => set({ settingsSection: section }),
-  setModelSearchQuery: (query) => set({ modelSearchQuery: query }),
+  return {
+    setSettings: (updater) => {
+      set((state) =>
+        settleSettings(
+          state,
+          typeof updater === "function" ? updater(state.settings) : updater,
+        ),
+      );
+    },
 
-  toggleProviderModel: (provider, model, enabled) => {
-    set((state) =>
-      settleSettings(
-        state,
-        toggleProviderModelInSettings(state.settings, provider, model, enabled),
-      ),
-    );
-  },
+    setSettingsOpen: (open) => set({ settingsOpen: open }),
+    setSettingsSection: (section) => set({ settingsSection: section }),
+    setModelSearchQuery: (query) => set({ modelSearchQuery: query }),
 
-  refreshProviderModels: async ({ force = false, provider } = {}) => {
-    if (!force && hasFreshProviderModels(get().providerModels)) {
-      return;
-    }
-
-    const refreshKey = provider ?? "all";
-    const existingRefreshPromise =
-      providerModelsRefreshPromises.get(refreshKey);
-    if (existingRefreshPromise) {
-      return existingRefreshPromise;
-    }
-
-    const refreshPromise = (async () => {
-      if (force || !get().providerModels.fetchedAt) {
-        set((state) => ({
-          providerModels: markProviderModelsLoading(
-            state.providerModels,
+    toggleProviderModel: (provider, model, enabled) => {
+      set((state) =>
+        settleSettings(
+          state,
+          toggleProviderModelInSettings(
+            state.settings,
             provider,
+            model,
+            enabled,
           ),
-        }));
+        ),
+      );
+    },
+
+    refreshProviderModels: async ({ force = false, provider } = {}) => {
+      if (!force && hasFreshProviderModels(get().providerModels)) {
+        return;
       }
 
-      try {
-        const payload = await api.providerModels({ force, provider });
-        const providerModels = getProviderModelsFromResponse(
-          payload,
-          get().providerModels,
+      const refreshKey = provider ?? "all";
+      const existingRefreshPromise =
+        providerModelsRefreshPromises.get(refreshKey);
+      if (existingRefreshPromise) {
+        return existingRefreshPromise;
+      }
+
+      const requested = provider ? [provider] : ALL_PROVIDERS;
+      lastProviderModelsRequest += 1;
+      const request = lastProviderModelsRequest;
+      for (const item of requested) {
+        newestProviderModelsRequest.set(item, request);
+      }
+      /** The requested providers no newer fetch has started for. */
+      const stillNewest = () =>
+        requested.filter(
+          (item) => newestProviderModelsRequest.get(item) === request,
         );
 
-        set({ providerModels });
-        writeCachedProviderModels(providerModels);
-
-        // Reconcile selected models
-        set((state) => {
-          const nextSettings = reconcileSettingsWithProviderModels(
-            state.settings,
-            providerModels,
-          );
-
-          if (areModelSettingsEqual(nextSettings, state.settings)) {
-            return state;
-          }
-
-          return settleSettings(state, nextSettings);
-        });
-
-        void get().checkCliUpdates({ force, provider });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        set((state) => ({
-          providerModels: getProviderModelsErrorState(
-            state.providerModels,
-            message,
-            provider,
-          ),
-        }));
-      } finally {
-        providerModelsRefreshPromises.delete(refreshKey);
-      }
-    })();
-
-    providerModelsRefreshPromises.set(refreshKey, refreshPromise);
-
-    return refreshPromise;
-  },
-
-  setProviderModels: (updater) => {
-    set((state) => ({
-      providerModels:
-        typeof updater === "function" ? updater(state.providerModels) : updater,
-    }));
-  },
-
-  // The server caches release lookups, so this is cheap to call often.
-  checkCliUpdates: async ({ force = false, provider } = {}) => {
-    const { providerModels, settings } = get();
-    const providers = (provider ? [provider] : ALL_PROVIDERS).filter(
-      (candidate) =>
-        providerModels[candidate].installed &&
-        isProviderEnabled(candidate, settings),
-    );
-    if (providers.length === 0) {
-      return;
-    }
-
-    const checkKey = provider ?? "all";
-    const existingCheckPromise = cliUpdateCheckPromises.get(checkKey);
-    if (existingCheckPromise) {
-      return existingCheckPromise;
-    }
-
-    const checkPromise = (async () => {
-      try {
-        const payload = await api.cliUpdates({ force, providers });
-        set((state) => ({
-          cliLatestVersions: { ...state.cliLatestVersions, ...payload.latest },
-        }));
-      } catch {
-        // Update hints are best effort; the providers keep working without.
-      } finally {
-        cliUpdateCheckPromises.delete(checkKey);
-      }
-    })();
-
-    cliUpdateCheckPromises.set(checkKey, checkPromise);
-    return checkPromise;
-  },
-
-  upgradeCli: (provider) => {
-    const existingUpgradePromise = cliUpgradePromises.get(provider);
-    if (existingUpgradePromise) {
-      return existingUpgradePromise;
-    }
-
-    const upgradePromise = (async (): Promise<CliUpgradeResult> => {
-      setCliUpgradeRunning(set, provider, true);
-      try {
-        const result = await api.cliUpgrade({ provider });
-        if (!result.ok) {
-          return { error: result.error, status: "failed" };
+      const refreshPromise = (async () => {
+        if (force || !get().providerModels.fetchedAt) {
+          set((state) => ({
+            providerModels: markProviderModelsLoading(
+              state.providerModels,
+              provider,
+            ),
+          }));
         }
 
-        // Re-read the installed version so the card (and this result) reflect
-        // what the updater actually did.
-        await get().refreshProviderModels({ force: true, provider });
-        const { cliLatestVersions, providerModels } = get();
-        const installedVersion = providerModels[provider].version;
-        return {
-          status: isCliUpdateAvailable(
-            installedVersion,
-            cliLatestVersions[provider],
-          )
-            ? "unchanged"
-            : "updated",
-          version: extractCliVersion(installedVersion),
-        };
-      } catch (error) {
-        return {
-          error: error instanceof Error ? error.message : String(error),
-          status: "failed",
-        };
-      } finally {
-        setCliUpgradeRunning(set, provider, false);
-        cliUpgradePromises.delete(provider);
-      }
-    })();
+        try {
+          const payload = await api.providerModels({ force, provider });
+          const current = stillNewest();
+          if (current.length === 0) {
+            return;
+          }
+          const providerModels = getProviderModelsFromResponse(
+            {
+              ...Object.fromEntries(
+                current.map((item) => [item, payload[item]]),
+              ),
+              fetchedAt: payload.fetchedAt,
+            },
+            get().providerModels,
+          );
 
-    cliUpgradePromises.set(provider, upgradePromise);
-    return upgradePromise;
-  },
-});
+          set({ providerModels });
+          writeCachedProviderModels(providerModels);
+
+          // Reconcile selected models
+          set((state) => {
+            const nextSettings = reconcileSettingsWithProviderModels(
+              state.settings,
+              providerModels,
+            );
+
+            if (areModelSettingsEqual(nextSettings, state.settings)) {
+              return state;
+            }
+
+            return settleSettings(state, nextSettings);
+          });
+
+          void get().checkCliUpdates({ force, provider });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          set((state) => ({
+            providerModels: stillNewest().reduce(
+              (providerModels, item) =>
+                getProviderModelsErrorState(providerModels, message, item),
+              state.providerModels,
+            ),
+          }));
+        } finally {
+          providerModelsRefreshPromises.delete(refreshKey);
+        }
+      })();
+
+      providerModelsRefreshPromises.set(refreshKey, refreshPromise);
+
+      return refreshPromise;
+    },
+
+    setProviderModels: (updater) => {
+      set((state) => ({
+        providerModels:
+          typeof updater === "function"
+            ? updater(state.providerModels)
+            : updater,
+      }));
+    },
+
+    // The server caches release lookups, so this is cheap to call often.
+    checkCliUpdates: async ({ force = false, provider } = {}) => {
+      const { providerModels, settings } = get();
+      const providers = (provider ? [provider] : ALL_PROVIDERS).filter(
+        (candidate) =>
+          providerModels[candidate].installed &&
+          isProviderEnabled(candidate, settings),
+      );
+      if (providers.length === 0) {
+        return;
+      }
+
+      const checkKey = provider ?? "all";
+      const existingCheckPromise = cliUpdateCheckPromises.get(checkKey);
+      if (existingCheckPromise) {
+        return existingCheckPromise;
+      }
+
+      const checkPromise = (async () => {
+        try {
+          const payload = await api.cliUpdates({ force, providers });
+          set((state) => ({
+            cliLatestVersions: {
+              ...state.cliLatestVersions,
+              ...payload.latest,
+            },
+          }));
+        } catch {
+          // Update hints are best effort; the providers keep working without.
+        } finally {
+          cliUpdateCheckPromises.delete(checkKey);
+        }
+      })();
+
+      cliUpdateCheckPromises.set(checkKey, checkPromise);
+      return checkPromise;
+    },
+
+    upgradeCli: (provider) => {
+      const existingUpgradePromise = cliUpgradePromises.get(provider);
+      if (existingUpgradePromise) {
+        return existingUpgradePromise;
+      }
+
+      const upgradePromise = (async (): Promise<CliUpgradeResult> => {
+        setCliUpgradeRunning(set, provider, true);
+        try {
+          const result = await api.cliUpgrade({ provider });
+          if (!result.ok) {
+            return { error: result.error, status: "failed" };
+          }
+
+          // Re-read the installed version so the card (and this result) reflect
+          // what the updater actually did.
+          await get().refreshProviderModels({ force: true, provider });
+          const { cliLatestVersions, providerModels } = get();
+          const installedVersion = providerModels[provider].version;
+          return {
+            status: isCliUpdateAvailable(
+              installedVersion,
+              cliLatestVersions[provider],
+            )
+              ? "unchanged"
+              : "updated",
+            version: extractCliVersion(installedVersion),
+          };
+        } catch (error) {
+          return {
+            error: error instanceof Error ? error.message : String(error),
+            status: "failed",
+          };
+        } finally {
+          setCliUpgradeRunning(set, provider, false);
+          cliUpgradePromises.delete(provider);
+        }
+      })();
+
+      cliUpgradePromises.set(provider, upgradePromise);
+      return upgradePromise;
+    },
+  };
+};

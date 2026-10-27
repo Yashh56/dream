@@ -11,6 +11,7 @@
  * are kept; a failure reaches the caller and is never cached.
  */
 import { apiClient } from "@/lib/api-client";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type {
   AiProvider,
   ModelSpeed,
@@ -39,6 +40,7 @@ export interface CommitMessageRequest extends GitGenerationSettings {
   /** The changes the commit takes (see `selectCommitChanges`). */
   changes: readonly ProjectGitStatusEntry[];
   includeUnstaged: boolean;
+  hostId: string;
   projectPath: string;
 }
 
@@ -94,6 +96,7 @@ const generate = <T>(
 
 const commitMessageKey = ({
   changes,
+  hostId,
   includeUnstaged,
   model,
   modelSpeed,
@@ -103,6 +106,7 @@ const commitMessageKey = ({
 }: CommitMessageRequest) =>
   `commit\0${gitChangesKey(changes, {
     includeUnstaged,
+    hostId,
     model,
     modelSpeed,
     projectPath,
@@ -115,6 +119,7 @@ const pullRequestDetailsKey = (request: PullRequestDetailsRequest) =>
     baseBranch: request.baseBranch,
     branch: request.branch,
     includeUnstaged: request.includeUnstaged,
+    hostId: request.hostId,
     model: request.model,
     modelSpeed: request.modelSpeed,
     nextStep: request.nextStep,
@@ -134,14 +139,17 @@ export const generateCommitMessage = (request: CommitMessageRequest) =>
     commitMessageKey(request),
     async () =>
       (
-        await apiClient.gitCommitMessage({
-          includeUnstaged: request.includeUnstaged,
-          model: request.model,
-          modelSpeed: request.modelSpeed,
-          projectPath: request.projectPath,
-          provider: request.provider,
-          reasoningEffort: request.reasoningEffort,
-        })
+        await apiClient.gitCommitMessage(
+          {
+            includeUnstaged: request.includeUnstaged,
+            model: request.model,
+            modelSpeed: request.modelSpeed,
+            projectPath: request.projectPath,
+            provider: request.provider,
+            reasoningEffort: request.reasoningEffort,
+          },
+          { hostId: request.hostId },
+        )
       ).commitMessage.trim(),
     (message) => message.length > 0,
   );
@@ -159,16 +167,19 @@ export const generatePullRequestDetails = (
   generate(
     pullRequestDetailsKey(request),
     () =>
-      apiClient.gitPullRequestDetails({
-        baseBranch: request.baseBranch,
-        includeUnstaged: request.includeUnstaged,
-        model: request.model,
-        modelSpeed: request.modelSpeed,
-        nextStep: request.nextStep,
-        projectPath: request.projectPath,
-        provider: request.provider,
-        reasoningEffort: request.reasoningEffort,
-      }),
+      apiClient.gitPullRequestDetails(
+        {
+          baseBranch: request.baseBranch,
+          includeUnstaged: request.includeUnstaged,
+          model: request.model,
+          modelSpeed: request.modelSpeed,
+          nextStep: request.nextStep,
+          projectPath: request.projectPath,
+          provider: request.provider,
+          reasoningEffort: request.reasoningEffort,
+        },
+        { hostId: request.hostId },
+      ),
     (details) => Boolean(details.title || details.description),
   );
 
@@ -187,12 +198,16 @@ export const warmProjectCommitMessage = async ({
   includeUnstaged?: boolean;
   projectPath: string;
 }) => {
+  const targetHostId = hostId ?? LOCAL_HOST_ID;
   try {
+    // Read now: the turn that just ended may have changed files after the
+    // last status read, and a delayed panel refresh may not have run yet.
     const status = await readProjectResource(
       projectResourceKey("gitStatus", projectPath, {
-        hostId,
+        hostId: targetHostId,
         params: { detail: "full" },
       }),
+      { force: true },
     );
     const changes = selectCommitChanges(status.changes, includeUnstaged);
     if (changes.length === 0) return "";
@@ -200,6 +215,7 @@ export const warmProjectCommitMessage = async ({
       ...settings,
       changes,
       includeUnstaged,
+      hostId: targetHostId,
       projectPath,
     });
   } catch {

@@ -30,17 +30,30 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createDaemonEnvironment } from "../daemon-environment.js";
+import { acquireServiceOperation, writeServiceJson } from "./operation.js";
 
 export const DEFAULT_SERVICE_NAME = "dream-host";
 
 /** Which service runs the host of a home: `<home>/service.json`. */
 const SERVICE_RECORD = "service.json";
+
+export const readServiceRecord = (home) => {
+  try {
+    return JSON.parse(readFileSync(path.join(home, SERVICE_RECORD), "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw new Error(
+      "The service record is unreadable. Restore service.json before changing the service.",
+    );
+  }
+};
 
 /** The name of the service installed for `home`, or null. */
 export const readInstalledServiceName = (home) => {
@@ -146,12 +159,21 @@ export const describeService = ({
   for (const name of keepEnv) {
     if (typeof clean[name] === "string") environment[name] = clean[name];
   }
+  if (
+    environment.DREAM_DB_PATH &&
+    !path.isAbsolute(environment.DREAM_DB_PATH)
+  ) {
+    throw new ServiceError(
+      "DREAM_DB_PATH must be absolute when installing a service.",
+    );
+  }
   const args = [
     entry,
     "serve",
     "--home",
     home,
-    ...(dataDirectory ? ["--data-dir", dataDirectory] : []),
+    "--data-dir",
+    path.resolve(dataDirectory ?? path.join(home, "data")),
     "--idle-timeout",
     "0",
   ];
@@ -216,6 +238,8 @@ const linuxAdapter = ({ name, run, homeDirectory, username }) => {
     },
     start: () => systemctl(["start", unit], "Starting the service"),
     stop: () => systemctl(["stop", unit], "Stopping the service"),
+    suspend: () =>
+      systemctl(["stop", unit], "Stopping the service for replacement"),
     restart: () => systemctl(["restart", unit], "Restarting the service"),
     async status() {
       const shown = await run("systemctl", [
@@ -337,6 +361,16 @@ const macAdapter = ({ name, run, homeDirectory, uid }) => {
         ["kill", "SIGTERM", target],
         "Stopping the service",
       ),
+    suspend: async () => {
+      const loaded = await run("launchctl", ["print", target]);
+      if (loaded.code === 0)
+        await must(
+          run,
+          "launchctl",
+          ["bootout", target],
+          "Unloading the service for replacement",
+        );
+    },
     restart: () =>
       must(
         run,
@@ -488,6 +522,15 @@ const windowsAdapter = ({ name, run, home, userId }) => {
     // The host is stopped through its own record (it flushes its writes);
     // ending the task then stops the launcher.
     stop: () => run("schtasks", ["/End", "/TN", taskName]),
+    suspend: async () => {
+      await must(
+        run,
+        "schtasks",
+        ["/Change", "/TN", taskName, "/Disable"],
+        "Disabling service restarts",
+      );
+      await run("schtasks", ["/End", "/TN", taskName]);
+    },
     restart: null,
     async status() {
       const queried = await run("schtasks", [
@@ -586,6 +629,15 @@ export function createServiceManager({
 
     /** Whether the installed definition runs the host of `hostHome`. */
     servesHome(hostHome) {
+      const record = readServiceRecord(home);
+      const launch = record?.launch;
+      if (launch) {
+        return (
+          record.definition === adapter.file &&
+          realpathSync(launch.args[launch.args.indexOf("--home") + 1]) ===
+            realpathSync(hostHome)
+        );
+      }
       try {
         return readFileSync(adapter.file, "utf8").includes(hostHome);
       } catch {
@@ -602,11 +654,12 @@ export function createServiceManager({
       mkdirSync(path.dirname(definition.logPath), { recursive: true });
       writeFileSync(adapter.file, adapter.write(definition), { mode: 0o600 });
       if (platform !== "win32") chmodSync(adapter.file, 0o600);
-      writeFileSync(
-        path.join(home, SERVICE_RECORD),
-        `${JSON.stringify({ definition: adapter.file, manager: adapter.manager, name }, null, 2)}\n`,
-        { mode: 0o600 },
-      );
+      writeServiceJson(path.join(home, SERVICE_RECORD), {
+        definition: adapter.file,
+        launch: definition,
+        manager: adapter.manager,
+        name,
+      });
       await adapter.install();
       return adapter.file;
     },
@@ -617,8 +670,21 @@ export function createServiceManager({
       rmSync(path.join(home, SERVICE_RECORD), { force: true });
     },
 
-    start: () => adapter.start(),
+    async start({ locked = false } = {}) {
+      const release = locked ? null : acquireServiceOperation(home);
+      try {
+        if (existsSync(path.join(home, "service-update.json"))) {
+          throw new ServiceError(
+            "A service update needs recovery. Run `dream-host service recover` first.",
+          );
+        }
+        return await adapter.start();
+      } finally {
+        release?.();
+      }
+    },
     stop: () => adapter.stop(),
+    suspend: () => adapter.suspend(),
     /** null where restarting is stop then start (Windows). */
     restart: adapter.restart ? () => adapter.restart() : null,
 

@@ -149,7 +149,7 @@ export const ProjectBranchFooter = ({
         <div className="mx-auto flex h-8 w-full max-w-[700px] items-center justify-between gap-2">
           <ProjectHostLabel className="-ml-2" project={project} />
           {!showBranch ? null : (
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center">
               {project.worktree ? (
                 <div
                   className="flex h-7 min-w-0 max-w-[280px] items-center gap-1.5 px-2 text-xs text-muted-foreground"

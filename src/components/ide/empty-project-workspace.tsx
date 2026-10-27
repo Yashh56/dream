@@ -38,7 +38,8 @@ import type { ProjectConfig } from "@/types/ide";
 import { ProjectTabIcon } from "./header/project-tab-icon";
 import { useIdeStore } from "./ide-store";
 import { ALL_PROVIDERS, getProviderLabel } from "./ide-types";
-import { showOpenProjectDialog } from "./open-project/open-project-dialog";
+import { showOpenProjectDialog } from "./open-project/open-project-dialog-state";
+import { useHostChoices } from "./ssh/use-host-choices";
 
 const RECENT_PROJECT_LIMIT = 50;
 const RECENT_PROJECT_VISIBLE_COUNT = 10;
@@ -124,7 +125,7 @@ export const EmptyProjectWorkspace = () => {
   const chats = useIdeStore((s) => s.chats);
   const settings = useIdeStore((s) => s.settings);
   const openProject = useIdeStore((s) => s.openProject);
-  const sshHosts = useIdeStore((s) => s.settings.sshHosts);
+  const sshHosts = useHostChoices();
   const setSettingsOpen = useIdeStore((s) => s.setSettingsOpen);
   const setSettingsSection = useIdeStore((s) => s.setSettingsSection);
   const [recentProjectQuery, setRecentProjectQuery] = useState("");

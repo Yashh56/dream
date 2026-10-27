@@ -49,6 +49,14 @@ export const createTerminalCommandRefresh = ({
       }
       schedule();
     },
+    /** Settle a pending command when its terminal closes. */
+    flush: () => {
+      if (timer === null) return;
+      clearTimer(timer);
+      timer = null;
+      enteredAt = null;
+      onSettled();
+    },
     dispose: () => {
       if (timer !== null) clearTimer(timer);
       timer = null;
