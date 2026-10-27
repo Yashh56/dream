@@ -128,7 +128,8 @@ export const resolveAntigravityCliLaunch = async () => {
 
   return {
     argsPrefix: [],
-    command,
+    // spawn() with shell: true does not quote; cmd.exe /s strips only the outer quotes.
+    command: isBatchFile && /\s/.test(command) ? `"${command}"` : command,
     shell: isBatchFile,
   };
 };

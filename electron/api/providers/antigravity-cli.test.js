@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as cli from "../shared/cli.js";
 import {
   assertSafeAntigravityArg,
   getAntigravityCliSpawnErrorMessage,
   getAntigravityCliUnavailableMessage,
+  resolveAntigravityCliLaunch,
   resolveAntigravityEffort,
 } from "./antigravity-cli.js";
 
@@ -81,5 +83,72 @@ describe("antigravity-cli helpers", () => {
     expect(() =>
       assertSafeAntigravityArg(directLaunch, "gemini & calc.exe", "model"),
     ).not.toThrow();
+  });
+
+  describe("resolveAntigravityCliLaunch", () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, "platform", {
+        configurable: true,
+        value: originalPlatform,
+      });
+      vi.restoreAllMocks();
+    });
+
+    it("quotes batch file path with spaces on Windows and sets shell: true", async () => {
+      Object.defineProperty(process, "platform", {
+        configurable: true,
+        value: "win32",
+      });
+      vi.spyOn(cli.cliCatalog, "derived").mockResolvedValue("agy");
+      vi.spyOn(cli.cliCatalog, "path").mockResolvedValue(
+        "C:\\Users\\Jane Doe\\.gemini\\antigravity-cli\\bin\\agy.bat",
+      );
+
+      const launch = await resolveAntigravityCliLaunch();
+      expect(launch).toEqual({
+        argsPrefix: [],
+        command:
+          '"C:\\Users\\Jane Doe\\.gemini\\antigravity-cli\\bin\\agy.bat"',
+        shell: true,
+      });
+    });
+
+    it("does not quote batch file path without spaces on Windows and sets shell: true", async () => {
+      Object.defineProperty(process, "platform", {
+        configurable: true,
+        value: "win32",
+      });
+      vi.spyOn(cli.cliCatalog, "derived").mockResolvedValue("agy");
+      vi.spyOn(cli.cliCatalog, "path").mockResolvedValue(
+        "C:\\agy\\bin\\agy.cmd",
+      );
+
+      const launch = await resolveAntigravityCliLaunch();
+      expect(launch).toEqual({
+        argsPrefix: [],
+        command: "C:\\agy\\bin\\agy.cmd",
+        shell: true,
+      });
+    });
+
+    it("does not quote non-batch file path and sets shell: false", async () => {
+      Object.defineProperty(process, "platform", {
+        configurable: true,
+        value: "win32",
+      });
+      vi.spyOn(cli.cliCatalog, "derived").mockResolvedValue("agy");
+      vi.spyOn(cli.cliCatalog, "path").mockResolvedValue(
+        "C:\\Program Files\\agy\\bin\\agy.exe",
+      );
+
+      const launch = await resolveAntigravityCliLaunch();
+      expect(launch).toEqual({
+        argsPrefix: [],
+        command: "C:\\Program Files\\agy\\bin\\agy.exe",
+        shell: false,
+      });
+    });
   });
 });
