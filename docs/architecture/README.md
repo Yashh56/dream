@@ -93,3 +93,6 @@ Module names and current ownership live in ../../GLOSSARY.md.
 - `tasks/open-project-flow.md` tracks OPEN-01 from the T3 Code comparison:
   one open-project dialog with path completion on any host, connecting SSH
   hosts before opening, and one Connections section in Settings.
+- `tasks/review-20261026.md` tracks D26-01 through D26-03: Host-bound
+  Generated git text, Terminal session command observation, and Project-opening
+  attempt lifetime.

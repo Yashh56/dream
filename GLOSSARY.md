@@ -394,10 +394,12 @@ may not run (an agent is still writing).
 
 Commit messages and pull request details a model writes
 (`src/components/ide/git-generated-text.ts`), cached by what they are
-written from: the changes as `electron/shared/git-changes.js` names them
+written from: the Project's Host, the changes as `electron/shared/git-changes.js` names them
 (the same key the main process caches by), the model settings, and for pull
 requests the branches, next step and git version. A failure reaches the
-caller and is never cached.
+caller and is never cached. A pending or cached answer belongs to its Host,
+even when another Host has a Project at the same path; background warming
+reads and generates on the same captured Host.
 
 ## Changes view
 

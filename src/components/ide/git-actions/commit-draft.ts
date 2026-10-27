@@ -13,6 +13,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getApiErrorMessage } from "@/lib/api-client";
+import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import type {
   ProjectGitStatusEntry,
   ProjectGitStatusResponse,
@@ -31,6 +32,7 @@ import { hasPushDestination } from "./utils";
 export type CommitAction = "commit" | "commit-push";
 
 export interface CommitDraftInputs extends GitGenerationSettings {
+  hostId: string;
   projectPath: string;
   /** A full status read of the project (or worktree) being committed. */
   status: ProjectGitStatusResponse | null;
@@ -216,6 +218,7 @@ export class CommitDraft {
     const request: CommitMessageRequest = {
       changes,
       includeUnstaged,
+      hostId: inputs.hostId,
       model: inputs.model,
       modelSpeed: inputs.modelSpeed,
       projectPath: inputs.projectPath,
@@ -257,7 +260,13 @@ export const useCommitDraft = ({
   provider,
   reasoningEffort,
   status,
-}: CommitDraftInputs & { projectId: string }) => {
+}: Omit<CommitDraftInputs, "hostId"> & { projectId: string }) => {
+  const hostId = useIdeStore(
+    (state) =>
+      [...state.projects, ...state.closedProjects].find(
+        (project) => project.id === projectId,
+      )?.hostId ?? LOCAL_HOST_ID,
+  );
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
   const [draft] = useState(
@@ -278,6 +287,7 @@ export const useCommitDraft = ({
   useEffect(() => {
     draft.update({
       canGenerate,
+      hostId,
       model,
       modelSpeed,
       projectPath,
@@ -288,6 +298,7 @@ export const useCommitDraft = ({
   }, [
     canGenerate,
     draft,
+    hostId,
     model,
     modelSpeed,
     projectPath,
