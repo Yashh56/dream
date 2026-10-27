@@ -14,7 +14,8 @@ export interface WorkspaceRightPanelProps {
   onCloseRightPanel: () => void;
   onResizeEnd: (width: number) => void;
   onResizeStart: () => void;
-  onToggleRightPanel: () => void;
+  /** Double-click on the resize handle: size the panel to an equal share. */
+  onHandleDoubleClick: () => void;
   open: boolean;
   project: ProjectConfig;
   rightPanelRef: RefObject<HTMLDivElement | null>;
@@ -33,7 +34,7 @@ const WorkspaceRightPanelImpl = ({
   onCloseRightPanel,
   onResizeEnd,
   onResizeStart,
-  onToggleRightPanel,
+  onHandleDoubleClick,
   open,
   project,
   rightPanelRef,
@@ -49,7 +50,7 @@ const WorkspaceRightPanelImpl = ({
     handleVisible={panelExpanded ? false : handleVisible}
     maxWidth={maxWidth}
     minWidth={BROWSER_PANEL_MIN_WIDTH_PX}
-    onHandleDoubleClick={onToggleRightPanel}
+    onHandleDoubleClick={onHandleDoubleClick}
     onResizeEnd={onResizeEnd}
     onResizeStart={onResizeStart}
     open={open}
