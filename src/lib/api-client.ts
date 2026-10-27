@@ -137,7 +137,18 @@ import { resolveRequestHost } from "./host-routing";
 /** Whether and how paired devices reach a host (host/remote-access/). */
 export interface RemoteAccessStatus {
   enabled: boolean;
-  mode: "tailscale" | "origin";
+  mode: "tailscale" | "origin" | "cloudflare";
+  cloudflare?: {
+    managed: boolean;
+    installed: boolean;
+    version: string | null;
+    tokenSaved: boolean;
+    state: "idle" | "starting" | "connected" | "reconnecting" | "failed";
+    error: string | null;
+    retryAt: number | null;
+    /** The loopback port used when none is saved and it is free. */
+    defaultPort: number;
+  };
   /** The listener's loopback port. */
   port: number | null;
   httpsPort: number;
@@ -145,7 +156,7 @@ export interface RemoteAccessStatus {
   /** The public origin, only once a request through it reached this host. */
   origin: string | null;
   ready: boolean;
-  /** The reverse proxy's address the user entered (mode "origin"). */
+  /** The public address entered for an origin or Cloudflare route. */
   requestedOrigin: string | null;
   problem: { code: string; message: string; url: string | null } | null;
   checkedAt: string | null;
@@ -694,6 +705,9 @@ export const API_ROUTES = {
   ),
   remoteAccessCheck: post<Record<string, never>, RemoteAccessStatus>(
     "/api/remote/access/check",
+  ),
+  remoteCloudflareInstall: post<Record<string, never>, RemoteAccessStatus>(
+    "/api/remote/access/cloudflare/install",
   ),
   remotePairingCreate: post<
     Input<typeof remotePairingCreateRequestSchema>,

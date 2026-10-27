@@ -6,8 +6,14 @@
 //   remote [status]                  is remote access on, and where
 //   remote on [--tailscale] [--https-port n]
 //   remote on --origin https://...   behind your own HTTPS reverse proxy
+//   remote install-cloudflared      install/update the private connector
+//   remote on --cloudflare --origin https://... --token-file <path>
+//                                    run a user-owned persistent tunnel
+//   remote on --cloudflare --external --origin https://...
+//                                    use an independently managed connector
 //   remote off                       stop serving paired devices
 //   remote check                     check the setup again
+//   remote restart                   restart the Cloudflare connector Dream runs
 //   pair [--scopes view,operate] [--name name]
 //                                    a pairing link, its code and a QR code
 //   claims                           devices asking to pair with a code
@@ -16,6 +22,8 @@
 //   revoke <sessionId>               end a device's access
 //
 // `--json` prints the host's answer as one JSON line instead.
+
+import { readFileSync } from "node:fs";
 import { renderUnicodeCompact } from "uqr";
 import { API_SESSION_TOKEN_HEADER } from "../api/shared/session-token.js";
 
@@ -32,7 +40,7 @@ const connect =
         [API_SESSION_TOKEN_HEADER]: record.token,
       },
       method: "POST",
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(180_000),
     });
     if (!response.ok) {
       const reason = (await response.text().catch(() => "")).trim();
@@ -45,12 +53,18 @@ const describeAccess = (status) => {
   const lines = [];
   if (!status.enabled) {
     lines.push("Remote access is off.");
+    if (status.mode === "cloudflare" && !status.cloudflare?.managed)
+      lines.push(
+        "The external connector is not managed by Dream; stop it separately when needed.",
+      );
     return lines;
   }
   const via =
-    status.mode === "origin"
-      ? `your reverse proxy (${status.requestedOrigin ?? "no address set"})`
-      : `Tailscale Serve (HTTPS port ${status.httpsPort})`;
+    status.mode === "cloudflare"
+      ? `Cloudflare Tunnel (${status.cloudflare?.managed ? "managed by Dream" : "externally managed"})`
+      : status.mode === "origin"
+        ? `your reverse proxy (${status.requestedOrigin ?? "no address set"})`
+        : `Tailscale Serve (HTTPS port ${status.httpsPort})`;
   lines.push(`Remote access is on, through ${via}.`);
   lines.push(
     status.listening
@@ -58,6 +72,21 @@ const describeAccess = (status) => {
       : "Not listening.",
   );
   if (status.ready) lines.push(`Ready at ${status.origin}`);
+  if (status.mode === "cloudflare") {
+    lines.push(
+      `Cloudflare hostname: ${status.requestedOrigin ?? "not configured"}.`,
+    );
+    if (status.cloudflare?.managed)
+      lines.push(
+        `Connector: ${status.cloudflare.state}${status.cloudflare.version ? ` (${status.cloudflare.version})` : ""}.`,
+      );
+    else
+      lines.push(
+        "The external connector is not managed by Dream; stop it separately when needed.",
+      );
+    if (status.port)
+      lines.push(`Cloudflare service URL: http://127.0.0.1:${status.port}`);
+  }
   if (status.problem) {
     lines.push(`Not ready: ${status.problem.message}`);
     if (status.problem.url) lines.push(`  ${status.problem.url}`);
@@ -103,11 +132,43 @@ export async function runRemoteCommand({
       const action = args[0] ?? "status";
       let status;
       if (action === "status") status = await call("/api/remote/access");
+      else if (action === "install-cloudflared")
+        status = await call("/api/remote/access/cloudflare/install");
       else if (action === "check")
         status = await call("/api/remote/access/check");
-      else if (action === "off")
+      else if (action === "restart") {
+        status = await call("/api/remote/access/cloudflare/restart");
+        if (
+          !json &&
+          (!status.enabled ||
+            status.mode !== "cloudflare" ||
+            !status.cloudflare?.managed)
+        )
+          print(
+            "Nothing to restart: remote access is not on with a Cloudflare connector managed by Dream.",
+          );
+      } else if (action === "off")
         status = await call("/api/remote/access/disable");
       else if (action === "on") {
+        if (
+          (values.cloudflare && values.tailscale) ||
+          (values.external && !values.cloudflare) ||
+          (values["token-file"] && !values.cloudflare)
+        ) {
+          print(
+            "Choose --cloudflare or --tailscale; --external and --token-file apply only to --cloudflare.",
+          );
+          return 2;
+        }
+        let token;
+        if (values["token-file"]) {
+          try {
+            token = readFileSync(values["token-file"], "utf8").trim();
+          } catch {
+            print("The tunnel token file could not be read.");
+            return 2;
+          }
+        }
         const httpsPort =
           values["https-port"] === undefined
             ? undefined
@@ -116,13 +177,20 @@ export async function runRemoteCommand({
           values.port === undefined ? undefined : Number(values.port);
         status = await call("/api/remote/access/enable", {
           ...(values.origin ? { mode: "origin", origin: values.origin } : {}),
+          ...(values.cloudflare
+            ? {
+                mode: "cloudflare",
+                cloudflareManaged: !values.external,
+                ...(token ? { cloudflareToken: token } : {}),
+              }
+            : {}),
           ...(values.tailscale ? { mode: "tailscale" } : {}),
           ...(Number.isInteger(httpsPort) ? { httpsPort } : {}),
           ...(Number.isInteger(port) ? { port } : {}),
         });
       } else {
         print(
-          "Usage: dream-host remote [status|on|off|check] [--tailscale] [--origin https://...] [--https-port n] [--port n]",
+          "Usage: dream-host remote [status|on|off|check|restart|install-cloudflared] [--cloudflare [--external|--token-file path]] [--tailscale] [--origin https://...] [--https-port n] [--port n]",
         );
         return 2;
       }

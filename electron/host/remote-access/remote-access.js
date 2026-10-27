@@ -5,25 +5,29 @@
 //
 //   remote-access.json beside dream.db, or <database>.remote-access.json   0600
 //     enabled      whether to serve paired devices at all
-//     mode         "tailscale" (Tailscale Serve terminates HTTPS) or
-//                  "origin" (an HTTPS reverse proxy the user runs)
+//     mode         "tailscale", "cloudflare", or "origin" (a user proxy)
 //     port         the listener's loopback port, picked once and kept so a
 //                  proxy's configuration stays valid across restarts
 //     httpsPort    Tailscale's HTTPS port (443 by default)
-//     origin       the reverse proxy's public origin (mode "origin")
+//     origin       the reverse proxy's public origin (origin/cloudflare)
+//     cloudflareManaged  whether this host owns its cloudflared child
 //     servedBy     the Tailscale Serve entry Dream created, so turning
 //                  access off removes exactly that and nothing else
 //
 // A public address is reported ready only after a request through it
-// reached this host (its descriptor's host id matched): no address that
+// reached this host (Cloudflare also verifies its signed host-key proof): no address that
 // does not work is shown as one that does. The listener itself stays on
 // loopback; reaching it still requires pairing.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import getPort from "get-port";
+import { createVerifiedHttps } from "../../connections/https-route.js";
+import { createCloudflareConnector } from "./cloudflare.js";
 import { TailscaleProblem } from "./tailscale.js";
 
 const SETTINGS_FILE = "remote-access.json";
+/** The loopback port a Cloudflare route is set up with, when it is free. */
+export const CLOUDFLARE_PORT = 5410;
 const VERIFY_TIMEOUT_MS = 8_000;
 
 const DEFAULTS = Object.freeze({
@@ -33,6 +37,7 @@ const DEFAULTS = Object.freeze({
   origin: null,
   port: null,
   servedBy: null,
+  cloudflareManaged: true,
   version: 1,
 });
 
@@ -48,6 +53,7 @@ export const httpsOrigin = (value) => {
   try {
     const url = new URL(value.trim());
     if (url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
     if (url.pathname !== "/" || url.search || url.hash) return null;
     return url.origin;
   } catch {
@@ -66,7 +72,8 @@ const readSettings = (file) => {
   return {
     enabled: raw.enabled === true,
     httpsPort: validPort(raw.httpsPort) ?? DEFAULTS.httpsPort,
-    mode: raw.mode === "origin" ? "origin" : "tailscale",
+    mode: ["origin", "cloudflare"].includes(raw.mode) ? raw.mode : "tailscale",
+    cloudflareManaged: raw.cloudflareManaged !== false,
     origin: httpsOrigin(raw.origin),
     port: validPort(raw.port),
     servedBy:
@@ -109,9 +116,12 @@ const asProblem = (error) =>
  *   listen: (options: { port: number, publicOrigins: string[], trustForwardedHost: boolean }) => Promise<{ port: number, origins: string[] }>,
  *   close: () => Promise<void>,
  *   tailscale: ReturnType<typeof import("./tailscale.js").createTailscale>,
+ *   cloudflare?: ReturnType<typeof createCloudflareConnector>,
+ *   hostIdentity?: () => { hostId: string, fingerprint?: string, publicKey?: string },
  *   fetchImpl?: typeof fetch,
- *   pickPort?: () => Promise<number>,
+ *   pickPort?: (preferred?: number) => Promise<number>,
  *   now?: () => string,
+ *   monitorMs?: number,
  * }} options
  *   `listen` / `close`: the host's remote listener (index.js).
  */
@@ -122,9 +132,14 @@ export function createRemoteAccess({
   listen,
   close,
   tailscale,
+  cloudflare = createCloudflareConnector({
+    directory: `${settingsFile}.cloudflare`,
+  }),
+  hostIdentity = () => ({ hostId: hostId() }),
   fetchImpl = (...args) => fetch(...args),
-  pickPort = () => getPort({ host: "127.0.0.1" }),
+  pickPort = (preferred) => getPort({ host: "127.0.0.1", port: preferred }),
   now = () => new Date().toISOString(),
+  monitorMs = 10_000,
 }) {
   const file = settingsFile;
   let settings = readSettings(file);
@@ -132,6 +147,8 @@ export function createRemoteAccess({
   let origin = null; // the verified public origin
   let problem = null;
   let checkedAt = null;
+  let monitor = null;
+  let closing = false;
   // One change at a time: enable, disable and refresh never interleave.
   let queue = Promise.resolve();
   const serially = (work) => {
@@ -155,17 +172,38 @@ export function createRemoteAccess({
     origin,
     port: listening?.port ?? settings.port,
     problem,
-    ready: settings.enabled && listening !== null && origin !== null,
-    requestedOrigin: settings.mode === "origin" ? settings.origin : null,
+    ready:
+      settings.enabled &&
+      listening !== null &&
+      origin !== null &&
+      (settings.mode !== "cloudflare" ||
+        !settings.cloudflareManaged ||
+        cloudflare.status().state === "connected"),
+    requestedOrigin: settings.mode !== "tailscale" ? settings.origin : null,
+    cloudflare: {
+      ...cloudflare.status(),
+      managed: settings.cloudflareManaged,
+      defaultPort: CLOUDFLARE_PORT,
+    },
   });
 
-  /** Whether `candidate` reaches this host: its descriptor names it. */
+  /** Verify reachability; Cloudflare must also prove the installation key. */
   const verify = async (candidate) => {
+    const secure =
+      settings.mode === "cloudflare"
+        ? createVerifiedHttps({
+            origin: candidate,
+            expectedIdentity: hostIdentity(),
+          })
+        : null;
     try {
-      const response = await fetchImpl(`${candidate}/api/remote/descriptor`, {
-        redirect: "error",
-        signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
-      });
+      const response = await (secure?.request ?? fetchImpl)(
+        `${candidate}/api/remote/descriptor`,
+        {
+          redirect: "error",
+          signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
+        },
+      );
       if (!response.ok) {
         return `${candidate} answered ${response.status}, not this host.`;
       }
@@ -175,6 +213,8 @@ export function createRemoteAccess({
         : `${candidate} reaches a different Dream host.`;
     } catch (error) {
       return `${candidate} did not answer from this computer (${error instanceof Error ? error.message : error}).`;
+    } finally {
+      secure?.close();
     }
   };
 
@@ -186,10 +226,14 @@ export function createRemoteAccess({
 
   /** Starts (or restarts) the listener for `publicOrigin`. */
   const startListening = async (publicOrigin) => {
+    if (listening?.origin === publicOrigin && listening.port === settings.port)
+      return listening.port;
     await stopListening();
     let port = settings.port;
     if (!port) {
-      port = await pickPort();
+      port = await pickPort(
+        settings.mode === "cloudflare" ? CLOUDFLARE_PORT : undefined,
+      );
       save({ port });
     }
     try {
@@ -200,7 +244,7 @@ export function createRemoteAccess({
         // public host in X-Forwarded-Host.
         trustForwardedHost: true,
       });
-      listening = { port: started.port };
+      listening = { port: started.port, origin: publicOrigin };
       return started.port;
     } catch (error) {
       if (error?.code === "EADDRINUSE") {
@@ -215,18 +259,73 @@ export function createRemoteAccess({
     }
   };
 
+  const checkCloudflare = async () => {
+    checkedAt = now();
+    if (settings.cloudflareManaged) {
+      const connector = await cloudflare.check();
+      if (connector.state !== "connected") {
+        origin = null;
+        problem = {
+          code: "cloudflare-connector",
+          message:
+            connector.error ??
+            "Waiting for the Cloudflare connector to connect.",
+          url: null,
+        };
+        return;
+      }
+    }
+    const unreachable = await verify(settings.origin);
+    origin = unreachable ? null : settings.origin;
+    problem = unreachable
+      ? {
+          code: "unreachable",
+          message: `${unreachable} Configure this hostname's Cloudflare service URL as http://127.0.0.1:${listening?.port ?? settings.port}.`,
+          url: "https://one.dash.cloudflare.com/",
+        }
+      : null;
+  };
+  const clearMonitor = () => {
+    clearTimeout(monitor);
+    monitor = null;
+  };
+  // Only a started Cloudflare route is watched: when applying failed, its
+  // problem (a busy port, a missing address) stays until the next change.
+  const watching = () =>
+    !closing &&
+    settings.enabled &&
+    settings.mode === "cloudflare" &&
+    listening !== null;
+  const armMonitor = () => {
+    clearMonitor();
+    if (!watching()) return;
+    monitor = setTimeout(() => {
+      monitor = null;
+      void serially(async () => {
+        if (!watching()) return;
+        await checkCloudflare();
+        armMonitor();
+      }).catch(() => {});
+    }, monitorMs);
+    monitor.unref?.();
+  };
+
   /** Brings the saved settings into effect. */
   const apply = async () => {
+    clearMonitor();
     checkedAt = now();
     origin = null;
     problem = null;
     if (!settings.enabled) {
+      await cloudflare.stop();
       await stopListening();
       return status();
     }
     try {
+      if (settings.mode !== "cloudflare" || !settings.cloudflareManaged)
+        await cloudflare.stop();
       let candidate;
-      if (settings.mode === "origin") {
+      if (settings.mode === "origin" || settings.mode === "cloudflare") {
         if (!settings.origin) {
           throw Object.assign(
             new Error("Enter the HTTPS address your reverse proxy serves."),
@@ -240,6 +339,13 @@ export function createRemoteAccess({
         }
         await startListening(settings.origin);
         candidate = settings.origin;
+        if (settings.mode === "cloudflare") {
+          if (settings.cloudflareManaged)
+            await cloudflare.start({ retry: true });
+          await checkCloudflare();
+          armMonitor();
+          return status();
+        }
       } else {
         // The device's name first: it is the origin the listener accepts.
         const device = await tailscale.device();
@@ -281,6 +387,7 @@ export function createRemoteAccess({
         ? { code: error.problemCode, message: error.message, url: null }
         : asProblem(error);
     }
+    armMonitor();
     return status();
   };
 
@@ -288,45 +395,85 @@ export function createRemoteAccess({
     status,
 
     /** Applies the saved settings (at startup). */
-    start: () => serially(apply),
+    start: () =>
+      serially(() => {
+        closing = false;
+        // Show whether cloudflared is installed before a connector starts.
+        if (
+          !settings.enabled ||
+          settings.mode !== "cloudflare" ||
+          !settings.cloudflareManaged
+        )
+          void cloudflare.detect().catch(() => {});
+        return apply();
+      }),
 
     /** Checks again (after the user fixed a setup step). */
     refresh: () => serially(apply),
+    /** Starts the owned connector again; then checks the route. */
+    restartCloudflare: () =>
+      serially(async () => {
+        if (
+          !settings.enabled ||
+          settings.mode !== "cloudflare" ||
+          !settings.cloudflareManaged
+        ) {
+          return status();
+        }
+        await cloudflare.restart();
+        return apply();
+      }),
+    installCloudflare: () =>
+      serially(async () => {
+        await cloudflare.install();
+        return settings.enabled && settings.mode === "cloudflare"
+          ? apply()
+          : status();
+      }),
 
     /**
      * Turns remote access on with these settings.
-     * @param {{ mode?: "tailscale" | "origin", origin?: string, httpsPort?: number, port?: number | null }} options
+     * @param {{ mode?: "tailscale" | "origin" | "cloudflare", origin?: string, httpsPort?: number, port?: number | null, cloudflareManaged?: boolean, cloudflareToken?: string }} options
      */
     enable: (options = {}) =>
       serially(async () => {
-        const mode =
-          options.mode === "origin"
-            ? "origin"
-            : options.mode === "tailscale"
-              ? "tailscale"
-              : settings.mode;
+        const mode = ["origin", "tailscale", "cloudflare"].includes(
+          options.mode,
+        )
+          ? options.mode
+          : settings.mode;
         const requestedOrigin =
           options.origin === undefined
             ? settings.origin
             : httpsOrigin(options.origin);
         if (
-          mode === "origin" &&
-          options.origin !== undefined &&
-          !requestedOrigin
+          mode !== "tailscale" &&
+          (!requestedOrigin ||
+            (mode === "cloudflare" &&
+              /(^|\.)trycloudflare\.com$/i.test(
+                new URL(requestedOrigin).hostname,
+              )))
         ) {
           problem = {
             code: "needs-origin",
             message:
-              "The address must be an https:// origin, such as https://dream.example.com.",
+              mode === "cloudflare" && requestedOrigin
+                ? "Use a persistent Cloudflare tunnel with a stable hostname. Quick Tunnels do not support chat streaming."
+                : "The address must be an https:// origin, such as https://dream.example.com.",
             url: null,
           };
           return status();
         }
+        if (mode === "cloudflare")
+          await cloudflare.configure({ token: options.cloudflareToken });
+        closing = false;
         save({
           enabled: true,
           httpsPort: validPort(options.httpsPort) ?? settings.httpsPort,
           mode,
           origin: requestedOrigin,
+          cloudflareManaged:
+            options.cloudflareManaged ?? settings.cloudflareManaged,
           port:
             options.port === null
               ? null
@@ -343,6 +490,8 @@ export function createRemoteAccess({
     disable: () =>
       serially(async () => {
         save({ enabled: false });
+        clearMonitor();
+        await cloudflare.stop();
         await stopListening();
         origin = null;
         problem = null;
@@ -361,6 +510,13 @@ export function createRemoteAccess({
       }),
 
     /** Stops listening (the host is closing); settings stay as they are. */
-    close: () => serially(stopListening),
+    close: () => {
+      closing = true;
+      clearMonitor();
+      return serially(async () => {
+        await cloudflare.stop();
+        await stopListening();
+      });
+    },
   };
 }

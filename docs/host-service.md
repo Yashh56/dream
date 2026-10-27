@@ -4,6 +4,10 @@ Use a packaged `dream-host` runtime for your OS and CPU. Its archive includes
 Node, the host, database migrations, terminal support and the browser client.
 Agent CLIs and their credentials must already be available to the same OS user.
 
+For public HTTPS access without a VPN, configure a
+[Cloudflare Tunnel](cloudflare-tunnel.md). The service owns its connector and
+keeps it running without a desktop window; pairing still controls device access.
+
 Quit Dream before moving its local host into a service. Install using the
 desktop's existing data directory so its identity and catalog are preserved:
 

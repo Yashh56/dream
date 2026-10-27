@@ -3,14 +3,20 @@
 Build remote access around the existing Host, Host catalog and Chat run owners.
 The first release should let a phone browser pair with a Dream host over
 Tailscale, read chats, submit work, answer approvals and recover after suspension.
-Then add unattended hosting, multiple routes, managed cloud access, native mobile
-clients and a browser that runs on the host.
+Then add unattended hosting, multiple routes and Cloudflare Tunnel support.
+This connection effort covers the existing desktop and browser clients. A native
+mobile application requires a separate project with its own scope, architecture,
+estimates and release work; it is not a delivery milestone of this plan.
 
 Status: CONN-01 to CONN-06 implemented; CONN-06's native Windows/Linux update,
 login/reboot and live-provider walkthroughs remain unverified;
 CONN-07 implemented (physical-network and cross-platform walkthroughs pending);
-CONN-08 through CONN-11 proposed. Task numbers
-below resolve to CONN-01 through CONN-11.
+CONN-08 implemented, validation pending: the real-tunnel completion criteria
+and native Windows/Linux walkthroughs are unmet.
+CONN-09 and CONN-10
+are reserved references for a separate, unscheduled mobile project. CONN-11 is
+an independent future browser project. Current connection work ends at CONN-08.
+Task numbers below retain their stable CONN-01 through CONN-11 references.
 
 ## Delivery order
 
@@ -18,16 +24,20 @@ below resolve to CONN-01 through CONN-11.
 | --- | --- | --- |
 | 1 Phone browser over Tailscale | 01–05 | Pair from a QR code, work from a phone, reconnect and revoke that phone |
 | 2 Reliable unattended access | 06–07 | Keep the host running without its desktop window; reach one host through several routes |
-| 3 Dream Connect | 08 | Sign in and reach linked hosts without installing a VPN |
-| 4 Native mobile | 09–10 | Install a mobile app and receive notifications while it is suspended |
-| 5 Remote browser parity | 11 | Use and observe the host's browser from any client, including while desktop is closed |
+| 3 Cloudflare Tunnel support | 08 | Reach the host from existing desktop and browser clients through a stable HTTPS tunnel |
 
 Dependency order: 01 → 02 → 03 → 04 → 05. Task 06 follows 03 and 04;
-07 follows 05; 08 follows 06 and 07; 09 follows 07; 10 follows 08 and 09;
-11 follows 02, 03 and 06. Native mobile UI and the host browser can be developed
-independently of the cloud service once their prerequisites are complete.
+07 follows 05; 08 follows 06 and 07. CONN-11 may reuse 02, 03 and 06 but is not
+required to complete this effort. Mobile and push dependencies will be defined
+when the separate mobile project is scoped; they do not gate CONN-08.
 
-Ship milestone 1 before taking on cloud operations. It requires no Dream account
+Scope decision (2026-10-26): replace the proposed Dream Connect account,
+discovery and authorization service with Cloudflare Tunnel integration. Exclude
+native mobile development and mobile push delivery from this work. Existing
+phone-browser support remains part of the web client already implemented; it
+does not imply a native app, a selected mobile framework, or a mobile schedule.
+
+Ship milestone 1 before adding tunnel management. It requires no Dream account
 or cloud backend. Initially the desktop-hosted machine must keep Dream running;
 an existing standalone daemon can also serve the client. Its current idle timeout
 must be disabled explicitly for unattended use until task 06 owns that policy.
@@ -1299,113 +1309,197 @@ and the user's existing app was not restarted.
 
 Remaining/deferred: the managed route provider arrives in CONN-08.
 
-## CONN-08: Dream Connect cloud discovery and managed tunnels
+## CONN-08: Cloudflare Tunnel integration
 
-Status: proposed
+Status: implemented; validation pending. The first and third completion
+criteria (a real Cloudflare hostname end to end; recovery through that edge)
+and native Windows/Linux operation are unmet, so the task is not complete.
+Scope revised 2026-10-26.
 
-Problem and trigger: VPN-free access requires account discovery and a managed
-reachable endpoint, plus a lifecycle for linking and unlinking hosts.
+Implementation scope: complete the user-owned token/hostname integration,
+private connector runtime installation/detection, host-owned process lifecycle,
+bounded recovery, external-connector mode, desktop controls and headless CLI.
+Reuse the existing HTTPS identity/session and remote listener boundaries. Mobile,
+push and Dream-operated account/discovery infrastructure remain out of scope.
+No new repository tests or dev server; validate new scenarios in scratch programs
+and record real-tunnel/platform checks that cannot run separately.
 
-Scope: introduce a separately deployed Connect control service and
-`electron/host/connect/` connector. Use account authentication, a device-code
-CLI flow, user-to-host links, host signing identity and tunnel allocations.
-Provision managed HTTPS tunnels through a provider adapter. Cloudflare is a
-candidate matching the earlier T3 comparison; select the provider and identity
-vendor after checking operational constraints and current pricing.
+Problem and trigger: reach the host from the existing desktop or browser client
+without requiring both devices to join a VPN. A Dream-operated account,
+discovery or authorization service is outside this effort.
 
-The control service discovers hosts and brokers short-lived, one-time bootstrap
-credentials bound to a client proof key. The host exchanges them for its own
-session. Sign and nonce-bind host/broker exchanges, including the host identity,
-user, requested scopes and client proof key. Keep host session credentials out
-of the broker. The broker remains a trusted minting authority; this is not an
-end-to-end encryption claim. Application traffic uses the tunnel endpoint.
+Scope: integrate a persistent Cloudflare Tunnel with the existing remote-access
+owner and HTTPS route/session contracts. The initial setup uses a user-owned
+Cloudflare account, configured tunnel token and stable public hostname. Manage
+the local `cloudflared` connector alongside the host service, with private
+credential storage, setup/status controls and headless recovery commands.
+Retain support for an externally managed connector without taking ownership of
+its process or deleting its tunnel.
 
-Completion criteria:
-
-- Sign in on host and phone, link the host, then connect from a network without
-  Tailscale. A signed-in account without an active host link cannot obtain access.
-- Expired/replayed bootstrap proofs, wrong-host responses, malicious endpoint
-  hints and redirects cannot mint a usable session or turn the broker into an
-  arbitrary HTTP proxy.
-- Unlink revokes cloud-derived authorization before external cleanup. Directly
-  paired sessions remain independently manageable. Logout does not delete host data.
-- Provisioning is idempotent and records partial progress. Shutdown, sleep,
-  restart and concurrent unlink cannot delete a newer tunnel allocation.
-- Quotas, bounded retries, allocation reconciliation, rate limits, redacted
-  diagnostics and tunnel failure alerts exist before public rollout.
-- Pilot records tunnel usage and operating cost; it can disable managed exposure
-  while retaining local/SSH/Tailscale access. Recovery instructions are usable
-  from a headless host.
-
-Validation: pending; use an isolated deployment for link/unlink, account changes,
-tunnel loss and recovery, proof replay and provisioning failure scenarios.
-
-Remaining/deferred: team sharing, billing and automation webhook buffering are
-separate products; they are not prerequisites for connection parity.
-
-## CONN-09: Native mobile clients
-
-Status: proposed
-
-Problem and trigger: a responsive browser supplies early access, but native
-pairing, credential storage, lifecycle and phone interaction need platform UI.
-
-Scope: add a mobile application, with React Native/Expo as the initial candidate.
-Share connection contracts, runtime, transcript/domain logic and authorization;
-implement native screens instead of assuming React DOM components are portable.
-Prove streaming, secure storage and lifecycle support in a small vertical slice
-before committing to the framework. Add QR/deep-link pairing, host switching,
-chat and queue controls, approvals, attachments, files/diffs and terminal access.
+Expose only the remote-facing listener, with its existing pairing, host-key
+proof, device sessions, scopes and revocation. Cloudflare supplies reachability;
+the Dream host continues to authorize devices. A tunnel becomes an ordinary
+HTTPS route in CONN-07, rather than another host or execution model. Keep QR
+optional and reuse one-time links/device approval for initial authorization;
+normal reconnection does not need another pairing.
 
 Completion criteria:
 
-- iOS and Android pair directly or sign into Connect and load the same catalog.
-  Direct pairing remains usable without a cloud account.
-- Credentials use platform secure storage. Deep links validate their destination
-  and never transmit pairing secrets to an unrelated origin.
-- Background/foreground and network changes recover current state and drafts;
-  no persistent background socket is required for correctness.
-- Core tasks work with touch, keyboard, screen readers and large text. A terminal
-  input action is never duplicated after reconnect.
-- Install, upgrade and signed release delivery are documented for both platforms.
+- A configured stable hostname reaches the same host/catalog from the desktop
+  and browser clients on a network without Tailscale. Streaming chat, socket
+  channels, approvals, files and terminals work through the real tunnel.
+- Connector installation/detection, private token storage, start/stop, health,
+  bounded restart/backoff and useful errors work in the UI and headless service.
+  A desktop window is not required to keep the service's tunnel running.
+- Tunnel loss, host restart and sleep/resume recover through the existing
+  connection runtime without losing drafts or replaying writes.
+- Device authorization, identity proof, HTTPS requirements and revocation remain
+  enforced. The local launch token and local-only routes are never exposed.
+- Disabling tunnel exposure stops only a connector Dream owns. It preserves host
+  data, device records and other SSH/Tailscale/direct routes. An externally
+  managed connector is left running, with instructions to disable it separately.
+- Validate proxy Host/Origin handling, cache behavior, SSE and WebSocket
+  continuity, and token rotation against the configured Cloudflare hostname.
+  Quick Tunnels are not the supported production route.
 
-Validation: pending; complete the milestone-1 workflow on physical iOS and
-Android devices, then exercise long suspension and app termination.
+Implementation (2026-10-26):
+- `host/remote-access/cloudflared-runtime.js` detects a supported installed
+  binary or downloads the official OS/CPU release, checks the release SHA256
+  digest and executable version, and atomically publishes a private runtime.
+  It rejects unexpected assets/archive entries and preserves the prior runtime
+  on failure. Installation/update is explicit, including in headless mode.
+- `host/remote-access/cloudflare.js` owns the connector, its private token file,
+  loopback readiness checks, bounded restart/backoff and token rotation. Tokens
+  use `--token-file`, never process arguments, environment, settings or status.
+  Raw connector logs remain inside the owner; errors exposed to users are
+  sanitized. The bundled Node watchdog reaps its connector if the host dies.
+- Remote access adds a Cloudflare mode with a stable public origin and optional
+  external connector ownership. Managed readiness requires both a healthy
+  connector and a fresh signed host-key proof through HTTPS. Background checks
+  belong to the host and continue without an open desktop or Settings view.
+  Rechecking a healthy configuration keeps its listener and observers alive.
+- Settings > Connections adds hostname/token configuration, explicit runtime
+  installation/update, managed/external controls, status and setup guidance.
+  Token drafts clear after saving. The local-only management API never
+  registers on the remote listener. Existing device pairing, scopes, encrypted
+  desktop credentials, route recovery and revocation continue unchanged.
+- Headless commands add `remote install-cloudflared`, `remote on --cloudflare
+  --origin ... --token-file ...`, `--external`, and `remote restart`.
+  Disabling closes the listener and only the owned child; saved host, device
+  and credential data remain. See [setup and operations](../../cloudflare-tunnel.md).
 
-Remaining/deferred: notifications are CONN-10; host browser control is CONN-11.
+Validation (2026-10-26):
+- `pnpm check` passed scratch hygiene, lint, typecheck and all 1,259 tests
+  across 184 files. `pnpm vite:build` passed with the existing chunk-size
+  warning. The complete macOS arm64 host runtime built with the connector
+  watchdog. No repository tests or dev server were added/started.
+- Scratch diagnostics downloaded, checksum-verified and executed the official
+  cloudflared 2026.10.4 macOS arm64 release. A real invalid-token invocation
+  produced only a sanitized failure in Dream status. Private token mode 0600,
+  process arguments, environment/status boundaries, rotation, child crash
+  recovery, disable and parent SIGKILL cleanup passed with real child processes.
+  Controlled clock/process checks passed exponential retry limits, explicit
+  recovery, unhealthy-child replacement, cancelling pending restart and runtime
+  update replacement. Mocked release adapters verified Windows/Linux asset
+  selection and checksum rejection preserving the prior runtime; these are
+  not native-platform execution results.
+- A real host behind an isolated HTTPS reverse proxy passed signed public
+  readiness, device pairing/catalog, streaming and observer detach/replay,
+  native PTY start/stop, file API access, session-bound WebSocket revocation,
+  local-only API refusal and secret-free settings/status. External mode stopped
+  only the owned connector, left the external proxy running, and retained
+  identity/token/configuration through a full host restart. The connector was
+  a controlled stand-in; the proxy was not Cloudflare's edge.
+- An isolated native production Electron window passed the installer UI,
+  password field/empty-token guard, Quick Tunnel refusal with its unsaved token
+  draft preserved, token save/draft clearing, sanitized
+  rejected-token error, external controls and disable. Light and dark screenshots
+  were inspected. The user's app and data were not restarted or changed.
+- The final packaged runtime ran as a real isolated macOS LaunchAgent without
+  a desktop window. It detected the verified official runtime, reported the
+  invalid token without secrets, restarted with the same host identity and saved
+  token/configuration, and switched to external ownership before disabling.
+  The temporary service was uninstalled afterward; no diagnostic host or
+  connector process remains running.
 
-## CONN-10: Host notifications and mobile push
+Review fixes (2026-10-26):
+- Recovery no longer ends in a permanent failure. Exits and unhealthy
+  connectors are replaced with exponential backoff capped at one minute, and
+  retries continue while the tunnel is on. Only a rejected or missing token or
+  a missing runtime stops retries until the operator acts. A connector is
+  replaced after two minutes unhealthy since it started or was last connected,
+  so a long-running connector is not killed on its first failed poll.
+- The background check runs only for a started Cloudflare listener, so a
+  failed apply (a busy port, for example) keeps its own problem.
+- The host detects an installed cloudflared at startup, so Settings no longer
+  offers to install a copy already on PATH.
+- A successful runtime install removes earlier private runtimes; a failed one
+  removes its stage. The managed binary's digest is cached by size and mtime.
+- `remote restart` restarts the managed connector
+  (`/api/remote/access/cloudflare/restart`); it no longer aliases check.
+  A new Cloudflare route prefers loopback port 5410 when free (host-owned;
+  status reports it). A runtime download no longer blocks other Settings
+  controls. Labels no longer name the product; status no longer reports the
+  watchdog's pid.
+- Validation: lint, typecheck and all 1,259 tests passed. A scratch program
+  with a controlled clock and fake child processes passed unbounded capped
+  retries over 13 exits, no kill on the first failed poll after five minutes
+  connected, replacement after two minutes unhealthy, token-rejection blocking
+  and unblocking by a new token, restart, missing-token blocking, a busy-port
+  problem surviving the monitor, runtime stage cleanup on update and failure,
+  the cached digest path and the minimum version boundary. The Settings change
+  was not inspected in a running window.
 
-Status: proposed
+Remaining validation: an isolated user-owned Cloudflare tunnel/hostname was not
+configured in this session. Real edge Host/Origin/cache behavior, browser and
+desktop pairing, streaming/socket continuity, approvals/live-provider work,
+token rotation and sleep/network recovery through that edge remain unverified.
+Native Windows/Linux connector installation/service operation and OS
+login/reboot also remain unverified. These are unmet walkthrough criteria,
+not inferred passes from a controlled HTTPS proxy or macOS execution.
 
-Problem and trigger: current desktop activity notifications depend on a live
-renderer; suspended mobile clients need host-originated delivery.
+Out of scope: Dream accounts, host discovery/registry, a cloud authorization
+broker, centrally provisioned tunnel fleets, cloud billing/quotas, native mobile
+applications and mobile push. Automated Cloudflare account/DNS provisioning can
+be considered separately from the initial token-and-hostname integration.
 
-Scope: publish finished/failed/waiting events from host run and approval owners
-into a durable outbox. Add registered device destinations and an authenticated
-push delivery service, reusing Connect infrastructure. Deliver through platform
-push services or a selected provider; deduplicate by host, event and destination.
+Implementation references: [Cloudflare Tunnel setup](https://developers.cloudflare.com/tunnel/get-started/),
+[tunnel tokens](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/),
+and [Quick Tunnel limitations](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations).
+A stable tunnel is required: Quick Tunnels change hostname and do not support
+SSE. Provider behavior and current token-file/runtime parameters were checked
+against the official documentation during implementation.
 
-Completion criteria:
+## CONN-09: Native mobile project (outside this effort)
 
-- A suspended app receives completion and approval notifications; tapping one
-  opens the correct host/chat and checks current state before showing an action.
-- Retry, host restart and duplicate delivery do not produce duplicate logical
-  events. Revoked devices/account links receive no new notifications.
-- Push payloads omit prompts, secrets and file contents by default. Preferences,
-  invalid push tokens and retention are handled explicitly.
-- A notification cannot authorize an approval by itself; the app obtains a valid
-  host session and verifies the approval is still pending.
+Status: deferred to a separate, unscheduled project; not a remaining connection
+implementation item.
 
-Validation: pending; inspect physical-device delivery while suspended, stale
-approval taps, offline host recovery and device revocation.
+A native app is a substantial new product/client project. It needs its own
+project setup, platform and framework evaluation, UX and feature scope, secure
+storage and lifecycle integration, testing on physical devices, signing,
+distribution and release plan. No framework, repository location, delivery
+estimate or implementation commitment is selected by this connection plan.
 
-Remaining/deferred: browser Web Push can reuse this event pipeline; native push
-is the completion target for this candidate.
+The future project can reuse the host API, identity, device sessions and HTTPS
+routes delivered here. Those reusable contracts do not make mobile a small
+follow-up or part of CONN-08 acceptance. Retain this ID only for references from
+earlier plans; create the mobile project's own specification before starting it.
+
+## CONN-10: Mobile push (outside this effort)
+
+Status: deferred with the separate mobile project; not a remaining connection
+implementation item.
+
+Decide notification scope, background delivery, platform push services and any
+required sender/relay infrastructure within that project. No push service or
+native notification delivery is required to finish Cloudflare Tunnel support,
+and there is no dependency on the removed Dream Connect service.
 
 ## CONN-11: Host browser and remote control
 
-Status: proposed
+Status: proposed as an independent future project; not required to finish
+connection support through CONN-08.
 
 Problem and trigger: Dream currently lends the desktop window's browser to a
 remote host. Phone-only agents need a browser owned by the execution host.
@@ -1447,10 +1541,10 @@ checks that cannot run must remain explicit unmet criteria, not assumed passes.
 
 The largest uncertainty in milestone 1 is removing desktop assumptions from
 every request and persistence path. The largest later migrations are shared
-database ownership in CONN-06 and browser ownership in CONN-11. CONN-08 adds an
-operated service, while CONN-09 adds two release platforms. Estimate calendar
-delivery after the first identity/auth/runtime slice; these are separate release
-milestones rather than one feature-sized patch.
+database ownership in CONN-06 and browser ownership in the independent CONN-11
+project. CONN-08 adds a local Cloudflare connector integration, not a
+Dream-operated service. Native mobile and push require a separate project and
+estimate; they are excluded from this effort's scope and schedule.
 
 First implementation slice: CONN-01, followed by CONN-02. Establish identity and
 authorization while the application remains desktop-compatible, then use those
@@ -1461,6 +1555,8 @@ CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
 pending). CONN-06's four slices implemented; macOS service/update/recovery and
 native desktop quit/reopen checked. Cross-platform, reboot/login and live-provider
 validation remains as listed above. CONN-07's three slices are implemented;
-remaining validation is recorded beside the task. CONN-08 through CONN-11 proposed. Preserve
+remaining validation is recorded beside the task. Remaining implementation in
+this effort is CONN-08 Cloudflare Tunnel integration. CONN-09/10 belong to a
+separate, unscheduled mobile project; CONN-11 is an independent future project. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.
