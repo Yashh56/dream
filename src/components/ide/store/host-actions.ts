@@ -21,6 +21,7 @@ import {
   findHostConnection,
   forgetHostConnection,
 } from "../../../../electron/shared/host-connections.js";
+import { terminalSessions } from "../terminal-session";
 import {
   HostIdentityError,
   hostCatalogLifecycle,
@@ -261,6 +262,14 @@ export const createHostActions = (
 
     removeSshHost: async (hostId) => {
       stopFollowing(hostId);
+      const beforeRemoval = get();
+      for (const projectId of workspace.removeHostProjects(
+        beforeRemoval,
+        beforeRemoval.settings,
+        hostId,
+      ).removedProjectIds) {
+        terminalSessions.closeProject(projectId);
+      }
       // Its shells go with it, stopped while the host can still be reached.
       // A host that does not answer does not hold the removal up; one that
       // is not connected cannot be asked.

@@ -2,6 +2,7 @@ import { LOCAL_HOST_ID } from "@/lib/host-routing";
 import { terminalClient } from "@/lib/terminal-client";
 import type { ProjectConfig, ProjectWorktreeInfo } from "@/types/ide";
 import { deleteTerminalScrollback } from "../terminal-scrollback";
+import { terminalSessions } from "../terminal-session";
 import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
 import {
   commitWorkspaceRemoval,
@@ -90,6 +91,7 @@ export const createProjectLifecycleActions = (
   },
 
   stopProjectTerminals: async (projectId: string) => {
+    terminalSessions.closeProject(projectId);
     const terminalSessionIds =
       get().projectTerminalSessionIds?.[projectId] ?? [];
     const stops = terminalSessionIds.map(async (sessionId) => {

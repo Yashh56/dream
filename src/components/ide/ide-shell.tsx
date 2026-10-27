@@ -18,6 +18,7 @@ import { EmptyProjectWorkspace } from "./empty-project-workspace";
 import { IdeHeader } from "./ide-header";
 import { useIdeStore } from "./ide-store";
 import { OpenProjectDialog } from "./open-project/open-project-dialog";
+import { flushProjectPanelRefresh } from "./project-panel-refresh";
 import { ProjectWorkspace } from "./project-workspace";
 import { watchRendererUnload } from "./renderer-unload-guard";
 import { GlobalShortcuts } from "./shortcuts/global-shortcuts";
@@ -28,6 +29,7 @@ import {
   hasTerminalScrollback,
   publishTerminalOutput,
 } from "./terminal-scrollback";
+import { terminalSessions } from "./terminal-session";
 import { useBrowserAgentCommands } from "./use-browser-agent-commands";
 import { watchWindowReturn } from "./window-return";
 
@@ -231,9 +233,11 @@ export const IdeShell = () => {
   // has terminals too); the webview browser's errors, on the desktop.
   useEffect(() => {
     const desktopApi = getDesktopApi();
+    terminalSessions.setRefreshProject(flushProjectPanelRefresh);
 
     const removeTerminalData = terminalClient.onData((event) => {
       const { generation, sequence, sessionId } = event;
+      terminalSessions.output(sessionId);
       publishTerminalOutput(sessionId, event.chunk, () => {
         if (generation !== undefined && sequence !== undefined) {
           terminalClient.acknowledge({

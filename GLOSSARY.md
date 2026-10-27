@@ -341,6 +341,10 @@ volatile read; remembered facts catch up when they expire.
 
 A shell process attached to a project (`__project_terminal__:<projectId>:…`)
 or to the browser panel. Not related to a chat's provider session.
+The client tracks a typed command until its output goes quiet, then refreshes
+the Project's Git and Files panels. This observation follows the Terminal
+session when its view is hidden; closing the terminal settles a pending
+refresh, while removing its Project cancels it.
 
 ## Project resources
 

@@ -11,11 +11,8 @@ import {
   hasTerminalScrollback,
   resetTerminalScrollback,
 } from "../terminal-scrollback";
-import {
-  isTerminalSessionUntouched,
-  markTerminalSessionTouched,
-  markTerminalSessionUntouched,
-} from "../terminal-untouched";
+import { terminalSessions } from "../terminal-session";
+import { isTerminalSessionUntouched } from "../terminal-untouched";
 import {
   getDefaultTerminalSessionName,
   getTerminalOrdinalFromName,
@@ -49,6 +46,7 @@ export const createTerminalActions = (
           sessionId === getBrowserTerminalSessionId(project.id)),
     );
     if (!project) return;
+    terminalSessions.open(sessionId, project.id);
     if (!hasTerminalScrollback(sessionId)) resetTerminalScrollback(sessionId);
     if (sessionId === getBrowserTerminalSessionId(project.id)) return;
     set((state) => {
@@ -81,6 +79,7 @@ export const createTerminalActions = (
     if (!project) return;
 
     const sessionId = getBrowserTerminalSessionId(project.id);
+    terminalSessions.open(sessionId, project.id);
     resetTerminalScrollback(sessionId);
 
     set({
@@ -101,6 +100,7 @@ export const createTerminalActions = (
     if (!project) return;
 
     const sessionId = getBrowserTerminalSessionId(project.id);
+    terminalSessions.close(sessionId);
     resetTerminalScrollback(sessionId);
 
     set((state) => ({
@@ -153,9 +153,7 @@ export const createTerminalActions = (
 
     const sessionId = createProjectTerminalSessionId(projectId);
     resetTerminalScrollback(sessionId);
-    if (options.closeIfUntouched) {
-      markTerminalSessionUntouched(sessionId);
-    }
+    terminalSessions.open(sessionId, projectId, options.closeIfUntouched);
 
     set((state) => {
       const existingSessionIds =
@@ -263,7 +261,7 @@ export const createTerminalActions = (
   },
 
   closeProjectTerminal: async (projectId, sessionId, options = {}) => {
-    markTerminalSessionTouched(sessionId);
+    terminalSessions.close(sessionId);
     set((state) => {
       const currentSessionIds =
         state.projectTerminalSessionIds[projectId] ?? [];
