@@ -79,9 +79,11 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   client and phone layout, Tailscale and direct access setup; implemented),
   CONN-06 unattended hosting (all four slices implemented, including verified
   runtime updates and recovery; macOS service and desktop walkthrough checked,
-  cross-platform and live-provider validation pending) and
-  proposes CONN-07 through CONN-11: multiple routes, Dream Connect, native
-  mobile, push notifications and a host-owned browser.
+  cross-platform and live-provider validation pending), CONN-07 multiple routes
+  (in progress: route supervisor and desktop SSH adapter implemented; route
+  editing, direct pairing and remote-only desktop remain), and proposes CONN-08
+  through CONN-11: Dream Connect, native mobile, push notifications and a
+  host-owned browser.
 
 Module names and current ownership live in ../../GLOSSARY.md.
 

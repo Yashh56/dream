@@ -55,14 +55,15 @@ const FATAL_SSH_ERRORS =
 export class SshHostError extends Error {
   /**
    * @param {string} message
-   * @param {{ fatal?: boolean, detail?: string }} [options]
+   * @param {{ fatal?: boolean, detail?: string, cancelled?: boolean }} [options]
    *   `fatal`: retrying cannot help (authentication, host key, protocol).
    */
-  constructor(message, { fatal = false, detail = "" } = {}) {
+  constructor(message, { fatal = false, detail = "", cancelled = false } = {}) {
     super(message);
     this.name = "SshHostError";
     this.fatal = fatal;
     this.detail = detail;
+    this.cancelled = cancelled;
   }
 }
 
@@ -93,6 +94,8 @@ const lastLine = (text) =>
  *   runtimeBaseUrl?: string,
  *   runtimeCacheDirectory?: string | null,
  *   expectedIdentity?: { hostId: string, fingerprint?: string | null } | null,
+ *   autoReconnect?: boolean,
+ *   interactive?: boolean,
  * }} options
  *   `target`: what the user would type after `ssh` (an alias from
  *   ~/.ssh/config, or user@host).
@@ -114,6 +117,8 @@ export function createSshHostConnection({
   runtimeBaseUrl,
   runtimeCacheDirectory = null,
   expectedIdentity = null,
+  autoReconnect = true,
+  interactive = true,
   sshPath = "ssh",
   controlPath = null,
   env = process.env,
@@ -162,11 +167,17 @@ export function createSshHostConnection({
   };
 
   const spawnTracked = (args, stdio) => {
-    const child = spawnProcess(sshPath, args, {
-      env,
-      stdio,
-      windowsHide: true,
-    });
+    const child = spawnProcess(
+      sshPath,
+      interactive
+        ? args
+        : ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", ...args],
+      {
+        env,
+        stdio,
+        windowsHide: true,
+      },
+    );
     const processes = attemptProcesses;
     processes.add(child);
     const forget = () => processes.delete(child);
@@ -494,17 +505,30 @@ export function createSshHostConnection({
     );
   };
 
-  const forwardPort = async (remotePort) => {
+  // Forwards being opened, by remote port: concurrent callers (a page's
+  // parallel connections) share one forward instead of each opening one.
+  const openingForwards = new Map();
+
+  const forwardPort = (remotePort) => {
     const existing = portForwards.get(remotePort);
-    if (existing?.active) return existing.localPort;
-    const localPort = existing?.localPort ?? (await getLocalPort());
-    const held = await openPortForward(remotePort, localPort);
-    const entry = { active: true, held, localPort };
-    portForwards.set(remotePort, entry);
-    held?.once("exit", () => {
-      entry.active = false;
+    if (existing?.active) return Promise.resolve(existing.localPort);
+    const opening = openingForwards.get(remotePort);
+    if (opening) return opening;
+    const next = (async () => {
+      const localPort = existing?.localPort ?? (await getLocalPort());
+      const held = await openPortForward(remotePort, localPort);
+      const entry = { active: true, held, localPort };
+      portForwards.set(remotePort, entry);
+      held?.once("exit", () => {
+        entry.active = false;
+      });
+      return localPort;
+    })().finally(() => {
+      if (openingForwards.get(remotePort) === next)
+        openingForwards.delete(remotePort);
     });
-    return localPort;
+    openingForwards.set(remotePort, next);
+    return next;
   };
 
   /** After a reconnect: the forwards the old link carried, again. */
@@ -548,7 +572,7 @@ export function createSshHostConnection({
       if (attempt !== generation) return;
       if (now() - connectedAt >= STABLE_AFTER_MS) retryIndex = 0;
       setState("reconnecting");
-      scheduleRetry(attempt);
+      if (autoReconnect) scheduleRetry(attempt);
     });
     setState("connected", { endpoint: next });
     return true;
@@ -625,7 +649,7 @@ export function createSshHostConnection({
      */
     cancel(reason = "Cancelled.") {
       if (state !== "connecting" && state !== "reconnecting") return false;
-      const error = new SshHostError(reason, { fatal: true });
+      const error = new SshHostError(reason, { fatal: true, cancelled: true });
       cancellation = { attempt: generation, error };
       generation += 1;
       if (retryTimer !== null) clearTimer(retryTimer);
@@ -646,7 +670,10 @@ export function createSshHostConnection({
       endpoint = null;
       closePortForwards();
       portForwards.clear();
+      openingForwards.clear();
       held?.kill();
+      for (const child of attemptProcesses) child.kill();
+      attemptProcesses = new Set();
       if (state !== "idle") setState("disconnected");
     },
   };

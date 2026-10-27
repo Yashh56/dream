@@ -195,6 +195,13 @@ supervisor** keeps each host's connection state (`connecting`, `ready`,
 catalog readiness, and turns lifecycle signals into resumes: sockets
 replaced, catalogs refetched, running turns followed again.
 
+A connection's **selected route** is the verified route currently carrying its
+requests; a **fallback route** carries them while a more preferred route is
+unavailable. Its **route supervisor** (`electron/shared/route-supervisor.js`)
+owns that selection, and the **desktop connection adapter**
+(`electron/connections/desktop-connections.js`) owns its SSH endpoints and
+stable local port forwards, independently of the host's process lifetime.
+
 **Connection recovery** coordinates those resumes per host. Refused hosts
 remain quiet until their credential or route changes. Replacing a connection
 invalidates pending work from the old connection; chat observation resumes

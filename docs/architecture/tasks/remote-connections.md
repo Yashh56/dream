@@ -8,7 +8,8 @@ clients and a browser that runs on the host.
 
 Status: CONN-01 to CONN-06 implemented; CONN-06's native Windows/Linux update,
 login/reboot and live-provider walkthroughs remain unverified;
-CONN-07 through CONN-11 proposed. Task numbers
+CONN-07 in progress (route supervisor and desktop SSH adapter implemented);
+CONN-08 through CONN-11 proposed. Task numbers
 below resolve to CONN-01 through CONN-11.
 
 ## Delivery order
@@ -1143,7 +1144,8 @@ unmet criteria, not inferred passes from macOS or fake service-manager output.
 
 ## CONN-07: Multiple routes and unified connection management
 
-Status: proposed
+Status: implementing; slice 1 (route supervisor and desktop SSH adapter)
+implemented and validated. Slices 2-3 remain.
 
 Problem and trigger: one host should remain the same host when a client changes
 network or switches between SSH, Tailscale, LAN and managed access.
@@ -1152,6 +1154,23 @@ Scope: extend the shared supervisor with ordered routes, bounded attempts,
 backoff and cancellation. Move desktop SSH forwarding behind its platform
 adapter, reusing `electron/ssh/` installation, prompts and reconnection code.
 Keep process ownership separate from connection ownership.
+
+Implementation slices (2026-10-26; the original completion criteria below remain
+the full scope):
+1. Shared ordered-route supervisor, bounded attempts, cancellation, cooldowns,
+   verified preferred-route replacement, and desktop SSH transport adapter.
+   Preserve legacy single-route connections and the existing SSH prompts,
+   runtime installation and port forwards. Expose route status through the
+   existing bridge; do not replay writes during route replacement.
+2. Verified route merging and editing in one Connections UI, with existing
+   workspace/project ownership retained when routes are added or removed.
+3. Direct HTTPS desktop pairing, private device credentials and nonce-bound
+   host-key proof before credentials are attached; route loss/recovery across
+   transport kinds and a desktop with no local execution host.
+
+Slice 1 is implemented. Direct origins are not dialable by the
+SSH adapter; adding stored route metadata alone does not authorize a new
+credential destination. Slices 2-3 remain required to complete CONN-07.
 
 Completion criteria:
 
@@ -1168,8 +1187,58 @@ Completion criteria:
 - Removing an SSH route stops its forward, without stopping a shared service.
   Desktop can run with only remote hosts and no local execution host.
 
-Validation: pending; inspect route loss/recovery, a reassigned LAN address,
-revocation on a fallback route and SSH authentication cancellation.
+Slice 1 implementation (2026-10-26):
+- `electron/shared/route-supervisor.js` selects a verified ready handle from
+  ordered routes. Attempts time out after five minutes, transient failures use
+  capped, jittered 2-60 second backoff, and a healthy fallback keeps serving
+  during a preferred probe after a 30-second cooldown. Late attempts cannot
+  publish after replacement or cancellation. Fatal routes remain blocked until
+  explicit reconnection, which waits for any running recovery and then retries
+  every route; cancelling an SSH prompt ends the whole connect operation.
+- `electron/connections/desktop-connections.js` adapts the existing SSH manager
+  to that supervisor. SSH authenticates and checks the saved identity before
+  catalog readiness; mismatched catalogs and incompatible protocols are refused.
+  Only probes made while another route serves are silent: BatchMode, strict
+  host-key checking and an askpass helper without its secret. Recovering a
+  connection with no serving route may prompt, as single-route reconnects did.
+  Short per-connection ControlMaster names (16 hex characters, within socket
+  path limits) prevent two aliases for one machine from borrowing or closing
+  each other's master. Concurrent forwards of one port share one SSH forward.
+- Main now routes host proxies through that adapter. A bounded optional
+  `sshRoutes` bridge payload supplies ordered routes; legacy payloads remain
+  valid. Saved SSH routes are resolved against Settings by the store. Route
+  status contains ids, errors and retry times, never launch credentials.
+- Local TCP relays keep forwarded site URLs stable across route replacement.
+  A route switch closes old connections; new traffic uses the selected route.
+  Disconnect kills pending SSH work and forwards, leaving the daemon running.
+- Route changes invalidate renderer sockets/catalog reads before chat observers
+  reattach through Connection recovery. No request writes are resubmitted.
+
+Validation, slice 1 (2026-10-26): `pnpm check` passed scratch hygiene, lint,
+typecheck and 1,256 tests across 184 files. `pnpm vite:build` passed with the
+existing large-chunk warning. No tests were added to the repository.
+- Scratch diagnostics outside the checkout exercised ordered fallback,
+  cooldowns, delayed preferred readiness, dropped routes, copied ids with wrong
+  keys, terminal refusal, prompt cancellation, timeouts, late completion after
+  disconnect and a replacement attempt, upgrading a legacy pin with its first
+  verified key before fallback, and credential-free route status.
+- The desktop adapter preserved one local forwarded URL across fallback →
+  preferred → fallback using real HTTP/TCP traffic and controlled transports.
+- The production SSH manager connected to a real isolated daemon through the
+  existing scripted SSH stand-in and real TCP forwards. Losing the preferred
+  forward switched routes, retained host identity and the forwarded site's URL,
+  and left the daemon running after disconnect. The isolated daemon was stopped
+  explicitly at diagnostic cleanup.
+- A separate diagnostic checked distinct ControlMaster paths for two routes
+  to the same target and for two independent managers.
+- An askpass diagnostic kept a foreground password prompt pending while a
+  background probe ran; the prompt stayed assigned to the foreground host,
+  and declining it cancelled that host's attempt.
+
+Remaining validation: live remote SSH, native desktop route switching and
+draft/turn recovery, reassigned LAN endpoints and revocation on direct fallback
+routes. The last two depend on slice 3. The existing app was not restarted and
+no dev server was started.
 
 Remaining/deferred: the managed route provider arrives in CONN-08.
 
@@ -1334,7 +1403,8 @@ Recovery: `docs/architecture/tasks/remote-connections.md`. CONN-01 to
 CONN-05 implemented (desktop walkthrough, real phones, real Tailscale HTTPS
 pending). CONN-06's four slices implemented; macOS service/update/recovery and
 native desktop quit/reopen checked. Cross-platform, reboot/login and live-provider
-validation remains as listed above. Next implementation is CONN-07; CONN-07
-through CONN-11 proposed. Preserve
+validation remains as listed above. CONN-07 slice 1 is implemented and validated;
+next is slice 2, verified route merging/editing. Slice 3 (direct HTTPS pairing
+and remote-only desktop) also remains. CONN-08 through CONN-11 proposed. Preserve
 the user's no-new-tests and no-dev-server constraints; commits and pushes
 require explicit confirmation.

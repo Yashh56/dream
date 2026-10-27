@@ -11,7 +11,10 @@
  * disconnects it: nothing of a host that is not the one meant is used.
  */
 
-import { connectionSupervisor } from "@/lib/connections/runtime";
+import {
+  connectionRecovery,
+  connectionSupervisor,
+} from "@/lib/connections/runtime";
 import type { ConnectionStatus } from "@/lib/connections/supervisor";
 import { getDesktopApi } from "@/lib/electron";
 import { LOCAL_HOST_ID } from "@/lib/host-routing";
@@ -27,7 +30,12 @@ import {
   hostCatalogLifecycle,
 } from "./host-catalog-lifecycle";
 import { forgetLoadedHost } from "./ide-store-persistence";
-import type { IdeState, IdeStoreGet, IdeStoreSet } from "./ide-store-types";
+import type {
+  HostRuntimeState,
+  IdeState,
+  IdeStoreGet,
+  IdeStoreSet,
+} from "./ide-store-types";
 import { applyWorkspaceRemoval } from "./project-runtime-state";
 import { settleSettings } from "./settings-actions";
 import * as workspace from "./workspace-document";
@@ -81,14 +89,7 @@ export const createHostActions = (
     reconnecting: "reconnecting",
   };
 
-  const setHost = (
-    hostId: string,
-    patch: Partial<{
-      state: HostConnectionState;
-      error: string | null;
-      loaded: boolean;
-    }>,
-  ) => {
+  const setHost = (hostId: string, patch: Partial<HostRuntimeState>) => {
     if (patch.state) {
       connectionSupervisor.set(
         hostId,
@@ -160,8 +161,25 @@ export const createHostActions = (
 
       setHost(hostId, { error: null, loaded: false, state: "connecting" });
       const saved = findHostConnection(get().hostConnections, hostId);
+      const routes =
+        saved?.routes.flatMap((route) => {
+          if (route.kind !== "ssh") return [];
+          const configured = get().settings.sshHosts.find(
+            (host) => host.id === route.sshHostId,
+          );
+          return configured
+            ? [
+                {
+                  id: route.id,
+                  target: configured.target,
+                  hostCommand: configured.hostCommand,
+                },
+              ]
+            : [];
+        }) ?? [];
       try {
-        await desktopApi.connectHost({
+        const endpoint = await desktopApi.connectHost({
+          ...(routes.length > 1 ? { sshRoutes: routes } : {}),
           expectedFingerprint: saved?.fingerprint ?? null,
           expectedHostId: saved?.hostId ?? null,
           hostCommand: config.hostCommand,
@@ -169,7 +187,12 @@ export const createHostActions = (
           target: config.target,
         });
         if (!current()) return false;
-        setHost(hostId, { state: "connected" });
+        setHost(hostId, {
+          state: "connected",
+          ...(endpoint.routeId
+            ? { routeId: endpoint.routeId, routes: endpoint.routes }
+            : {}),
+        });
         await refreshCatalog(hostId);
         return current();
       } catch (error) {
@@ -324,15 +347,29 @@ export const createHostActions = (
       setHost(hostId, { error: null, state: "disconnected" });
     },
 
-    setHostStatus: ({ error, hostId, state }) => {
+    setHostStatus: ({ error, hostId, state, routeId, routes }) => {
       if (!get().settings.sshHosts.some((host) => host.id === hostId)) return;
       if (state === "connected" && stopped.has(hostId)) return;
       const previous = get().hosts[hostId]?.state;
+      const previousRoute = get().hosts[hostId]?.routeId;
+      const replaced =
+        state === "connected" &&
+        previousRoute &&
+        routeId &&
+        previousRoute !== routeId;
       if (state !== "connected" && state !== "connecting") {
         connecting.delete(hostId);
         catalogs.suspend(hostId);
       }
-      setHost(hostId, { error, state });
+      setHost(hostId, {
+        error,
+        state,
+        ...(routeId !== undefined ? { routeId, routes } : {}),
+      });
+      if (replaced && !connecting.has(hostId)) {
+        void connectionRecovery.replace(hostId);
+        return;
+      }
       // Connected without this window asking (back after a drop, or a
       // connection main had before this window reloaded): bring the
       // catalog in. A connect this window started does that itself.

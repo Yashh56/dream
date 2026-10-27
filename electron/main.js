@@ -29,6 +29,7 @@ import {
 } from "./app-screenshot.js";
 import { createBrowserAgentBridge } from "./browser-agent-bridge.js";
 import { createBrowserSessionManager } from "./browser-sessions.js";
+import { createDesktopHostConnections } from "./connections/desktop-connections.js";
 import {
   createDesktopHandlers,
   isHttpUrl,
@@ -61,7 +62,6 @@ import {
 import { DEV_RUNTIME_VERSION } from "./ssh/host-install.js";
 import { createSshPromptBroker } from "./ssh/prompt-broker.js";
 import { readSshConfigHosts } from "./ssh/ssh-config-hosts.js";
-import { createSshHostManager } from "./ssh/ssh-hosts.js";
 import { createStateSaveQueue } from "./state-save-queue.js";
 import { createThemeStore } from "./theme-store.js";
 import { initializeAutoUpdater } from "./updater.js";
@@ -176,7 +176,7 @@ const host =
     ? createServiceHostAttachment({
         dataDirectory: APP_USER_DATA_PATH,
         home: path.resolve(getHostHome()),
-        resolveRemoteHost: (hostId) => sshHosts.getEndpoint(hostId),
+        resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
         stateDatabasePath: STATE_DATABASE_PATH,
       })
     : createHost({
@@ -208,7 +208,7 @@ const host =
         version: dreamVersion,
         // Requests for SSH-host projects go through the local API to the host's
         // forwarded port (api/host-proxy-routes.js).
-        resolveRemoteHost: (hostId) => sshHosts.getEndpoint(hostId),
+        resolveRemoteHost: (hostId) => desktopConnections.getEndpoint(hostId),
       });
 
 let mainWindow = null;
@@ -254,24 +254,25 @@ setBrowserBridge(browserAgentBridge);
 
 const processSessionManager = host.processSessions;
 
-// Connections to SSH hosts' daemons, opened by the renderer (hosts:connect)
-// for its projects on those hosts. ssh's prompts (passwords, 2FA, unknown
-// host keys) are asked in the window and answered back (hosts:prompt).
+// Logical host connections select routes behind the desktop adapter. SSH
+// prompts (passwords, 2FA, unknown keys) still go through the window.
 const sshPrompts = createSshPromptBroker({
   canAsk: () => getAliveMainWindow() !== null,
   send: (prompt) => sendToRenderer(desktopChannel("onHostPrompt"), prompt),
 });
 
-const sshHosts = createSshHostManager({
+const desktopConnections = createDesktopHostConnections({
   onPrompt: (prompt) => sshPrompts.ask(prompt),
   onStatus: (status) => {
     console.log(
-      `[ssh] ${status.hostId}: ${status.state}${status.error ? ` (${status.error})` : ""}`,
+      `[connections] ${status.hostId}: ${status.state}${status.routeId ? ` via ${status.routeId}` : ""}${status.error ? ` (${status.error})` : ""}`,
     );
     sendToRenderer(desktopChannel("onHostStatus"), {
       error: status.error ?? null,
       hostId: status.hostId,
       state: status.state,
+      routeId: status.routeId,
+      routes: status.routes,
       version: status.endpoint?.version ?? null,
     });
   },
@@ -647,7 +648,7 @@ const desktop = createDesktopHandlers({
   getWindow: getAliveMainWindow,
   sendToRenderer,
   sshConfigHosts: () => readSshConfigHosts(),
-  sshHosts,
+  sshHosts: desktopConnections,
   sshPrompts,
   state: {
     loadWorkspace: () => getStateSaveQueue().loadWorkspace(),
@@ -763,7 +764,7 @@ app.on("before-quit", (event) => {
     .then(async () => {
       if (hostMode === "desktop") await stopCodexAppServer();
       await host.close();
-      await sshHosts.disconnectAll();
+      await desktopConnections.disconnectAll();
       await rendererServerManager?.stop();
       await stateSaveQueue?.flushAndClose();
       closePersistedStateDatabase();

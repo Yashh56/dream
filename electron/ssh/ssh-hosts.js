@@ -1,6 +1,7 @@
 // The SSH hosts this app is connected to, one connection per host id, and
 // what they share: the askpass server their prompts go through and the
 // private folder for ControlMaster sockets.
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import getPort from "get-port";
@@ -35,6 +36,7 @@ export function createSshHostManager({
   runtimeVersion = null,
 }) {
   const connections = new Map();
+  const controlNamespace = randomUUID();
   let askpass = null;
   // ssh does not say which connection a prompt belongs to; prompts are
   // asked one at a time, labelled with the host being connected.
@@ -66,12 +68,21 @@ export function createSshHostManager({
     return askpass;
   };
 
-  const getControlPath = () => {
+  const getControlPath = (hostId, target) => {
     if (!multiplex) return null;
     const directory = path.join(stateDirectory, "cm");
     mkdirSync(directory, { mode: 0o700, recursive: true });
-    // %C: a hash of host, port and user, expanded by ssh.
-    return path.join(directory, "%C");
+    // A preferred probe and its healthy fallback may resolve to the same
+    // machine, so %C (host, port and user) would alias their masters. One
+    // short name per connection instead: ssh adds a 17-character suffix
+    // while binding, and socket paths are limited to ~104 characters.
+    return path.join(
+      directory,
+      createHash("sha256")
+        .update(`${controlNamespace}\0${hostId}\0${target}`)
+        .digest("hex")
+        .slice(0, 16),
+    );
   };
 
   return {
@@ -85,6 +96,9 @@ export function createSshHostManager({
      *   target: string,
      *   hostCommand?: string,
      *   expectedIdentity?: { hostId: string, fingerprint?: string | null } | null,
+     *   signal?: AbortSignal,
+     *   autoReconnect?: boolean,
+     *   interactive?: boolean,
      * }} options
      */
     async connect({
@@ -92,14 +106,20 @@ export function createSshHostManager({
       target,
       hostCommand,
       expectedIdentity = null,
+      signal,
+      autoReconnect = true,
+      interactive = true,
     }) {
+      signal?.throwIfAborted();
       const hostId = requestedHostId ?? target;
       const existing = connections.get(hostId);
       if (existing?.getState() === "connected") {
         const endpoint = existing.getEndpoint();
         if (
           !expectedIdentity?.hostId ||
-          endpoint?.hostId === expectedIdentity.hostId
+          (endpoint?.hostId === expectedIdentity.hostId &&
+            (!expectedIdentity.fingerprint ||
+              endpoint?.fingerprint === expectedIdentity.fingerprint))
         ) {
           return endpoint;
         }
@@ -111,9 +131,19 @@ export function createSshHostManager({
       existing?.disconnect();
 
       const { env } = await getAskpass();
+      signal?.throwIfAborted();
       const connection = createSshHostConnection({
-        controlPath: getControlPath(),
-        env: { ...process.env, ...env },
+        autoReconnect,
+        interactive,
+        controlPath: getControlPath(hostId, target),
+        // A silent probe keeps askpass forced but without its secret, so the
+        // helper declines at once. A prompt from a hop BatchMode does not
+        // reach (ProxyJump) cannot be shown under a foreground host's name.
+        env: {
+          ...process.env,
+          ...env,
+          ...(interactive ? {} : { DREAM_ASKPASS_SECRET: "" }),
+        },
         expectedIdentity,
         getLocalPort: () => getPort({ host: "127.0.0.1" }),
         hostCommand: hostCommand || null,
@@ -125,10 +155,18 @@ export function createSshHostManager({
       });
       connections.set(hostId, connection);
       const asking = { cancelled: false, connection, hostId, target };
-      prompting = asking;
+      // Silent preferred probes cannot take ownership of a foreground
+      // connection's password/host-key prompt.
+      if (interactive) prompting = asking;
+      const cancel = () => {
+        connection.cancel();
+        connection.disconnect();
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
       try {
         return await connection.connect();
       } finally {
+        signal?.removeEventListener("abort", cancel);
         if (prompting === asking) prompting = null;
       }
     },

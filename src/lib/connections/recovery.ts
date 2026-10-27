@@ -104,6 +104,8 @@ export const createConnectionRecovery = (supervisor: ConnectionSupervisor) => {
 
   return {
     canConnect,
+    /** A verified replacement route invalidates observers of the old route. */
+    replace: (hostId: string) => recover(hostId, true),
     resume,
     start(options: {
       lifecycle: LifecycleSignals;
