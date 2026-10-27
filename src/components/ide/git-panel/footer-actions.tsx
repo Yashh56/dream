@@ -37,6 +37,7 @@ import {
 } from "../git-actions/worktree-action-dialog";
 import { useIdeStore } from "../ide-store";
 import { usePullRequestContext } from "../pull-requests/api";
+import { SourceControlIcon } from "../source-control-icon";
 import { useShowGitPanel } from "./show-git-panel";
 
 type WorktreeProject = ProjectConfig & { worktree: ProjectWorktreeInfo };
@@ -307,7 +308,7 @@ const GitFooterActionsImpl = ({
           {gitBusy ? (
             <Spinner className="size-3.5" />
           ) : (
-            <GitCommitHorizontal className="size-3.5" />
+            <SourceControlIcon className="size-3.5" />
           )}
         </DropdownMenuTrigger>
         {menu}
