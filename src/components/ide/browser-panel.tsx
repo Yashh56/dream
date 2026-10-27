@@ -822,7 +822,7 @@ const BrowserPanelImpl = ({
       id={`browser-panel-${projectId}`}
       className="flex h-full flex-col overflow-hidden"
     >
-      <div className="flex items-center gap-2 bg-surface-50 px-3 py-1.5 dark:bg-surface-900">
+      <div className="flex min-h-[50px] items-center gap-2 bg-surface-50 px-3 py-2 dark:bg-surface-900">
         <RightPanelHeaderIconButton icon={Globe} onClose={onClosePanel} />
         <StandardTabs
           activeId={activeTab?.id ?? null}
