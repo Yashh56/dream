@@ -1,6 +1,6 @@
 /**
  * Settings > Remote access (the desktop's): whether paired devices can reach
- * this computer and how (Tailscale, or the user's own HTTPS reverse proxy),
+ * this computer and how (Tailscale, Cloudflare, or an HTTPS reverse proxy),
  * pairing a device by QR code, link or code, confirming code requests, and
  * revoking paired devices. The host owns all of it (host/remote-access/,
  * host/auth/); this section is its local operator's view.
@@ -50,7 +50,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { StatusDot } from "@/components/ui/status-dot";
 import { Switch } from "@/components/ui/switch";
-import { getApiErrorMessage, type RemoteDeviceSession } from "@/lib/api-client";
+import {
+  getApiErrorMessage,
+  type RemoteAccessStatus,
+  type RemoteDeviceSession,
+} from "@/lib/api-client";
 import { getDesktopApi } from "@/lib/electron";
 import { useIdeStore } from "../ide-store";
 import { createRemoteAccessState } from "./remote-access-state";
@@ -108,6 +112,7 @@ export const RemoteAccessSection = () => {
     status,
     initialStatus,
     busy,
+    installing,
     error: failure,
     claims,
     devices,
@@ -134,7 +139,12 @@ export const RemoteAccessSection = () => {
         ),
       )
     : null;
-  const [modeDraft, setMode] = useState<"tailscale" | "origin" | null>(null);
+  const [modeDraft, setMode] = useState<RemoteAccessStatus["mode"] | null>(
+    null,
+  );
+  const [managedDraft, setManaged] = useState<boolean | null>(null);
+  const [tokenDraft, setToken] = useState("");
+  const managed = managedDraft ?? initialStatus?.cloudflare?.managed ?? true;
   const [originDraft, setOrigin] = useState<string | null>(null);
   const [portDraft, setHttpsPort] = useState<string | null>(null);
   const mode = modeDraft ?? initialStatus?.mode ?? "tailscale";
@@ -154,16 +164,45 @@ export const RemoteAccessSection = () => {
   const [pendingRevoke, setPendingRevoke] =
     useState<RemoteDeviceSession | null>(null);
   const port = localPort === "" ? null : Number(localPort);
-  const enable = () =>
-    remote.enable(
-      mode === "origin"
-        ? { mode, origin: origin.trim(), port }
+  const enable = async () => {
+    const changed = await remote.enable(
+      mode !== "tailscale"
+        ? {
+            mode,
+            origin: origin.trim(),
+            port,
+            ...(mode === "cloudflare"
+              ? {
+                  cloudflareManaged: managed,
+                  ...(tokenDraft.trim()
+                    ? { cloudflareToken: tokenDraft.trim() }
+                    : {}),
+                }
+              : {}),
+          }
         : { httpsPort: Number(httpsPort), mode, port },
     );
+    const applied = remote.getSnapshot().status;
+    if (
+      changed &&
+      mode === "cloudflare" &&
+      applied?.cloudflare?.tokenSaved &&
+      applied.problem?.code !== "needs-origin"
+    )
+      setToken("");
+    return changed;
+  };
   const enabled = status?.enabled ?? false;
   const portsValid =
     (localPort === "" || isValidPort(localPort)) &&
     (mode !== "tailscale" || isValidPort(httpsPort));
+  const configurationValid =
+    portsValid &&
+    (mode === "tailscale" || Boolean(origin.trim())) &&
+    (mode !== "cloudflare" ||
+      !managed ||
+      Boolean(tokenDraft.trim()) ||
+      Boolean(status?.cloudflare?.tokenSaved));
   const scopeLabel = (scopes: string[]) =>
     scopes.includes("manage")
       ? t("scopeManage")
@@ -213,7 +252,9 @@ export const RemoteAccessSection = () => {
           <Switch
             aria-label={t("accessToggle")}
             checked={enabled}
-            disabled={busy || status === null || (!enabled && !portsValid)}
+            disabled={
+              busy || status === null || (!enabled && !configurationValid)
+            }
             onCheckedChange={(checked) =>
               void (checked ? enable() : remote.disable())
             }
@@ -225,27 +266,41 @@ export const RemoteAccessSection = () => {
             <Label htmlFor="remote-access-mode">{t("modeLabel")}</Label>
             <Select
               onValueChange={(value) => {
-                if (value === "tailscale" || value === "origin") setMode(value);
+                if (
+                  value === "tailscale" ||
+                  value === "origin" ||
+                  value === "cloudflare"
+                )
+                  setMode(value);
               }}
               value={mode}
             >
               <SelectTrigger className="w-full sm:w-72" id="remote-access-mode">
                 <SelectValue>
-                  {mode === "tailscale" ? t("modeTailscale") : t("modeOrigin")}
+                  {mode === "tailscale"
+                    ? t("modeTailscale")
+                    : mode === "cloudflare"
+                      ? t("modeCloudflare")
+                      : t("modeOrigin")}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent align="start" alignItemWithTrigger={false}>
                 <SelectItem value="tailscale">{t("modeTailscale")}</SelectItem>
                 <SelectItem value="origin">{t("modeOrigin")}</SelectItem>
+                <SelectItem value="cloudflare">
+                  {t("modeCloudflare")}
+                </SelectItem>
               </SelectContent>
             </Select>
             <span className="text-muted-foreground text-xs">
               {mode === "tailscale"
                 ? t("modeTailscaleHint")
-                : t("modeOriginHint", { port: String(status?.port ?? "—") })}
+                : mode === "cloudflare"
+                  ? t("modeCloudflareHint")
+                  : t("modeOriginHint", { port: String(status?.port ?? "—") })}
             </span>
           </div>
-          {mode === "origin" ? (
+          {mode !== "tailscale" ? (
             <div className="grid gap-1.5">
               <Label htmlFor="remote-access-origin">{t("originLabel")}</Label>
               <Input
@@ -274,6 +329,96 @@ export const RemoteAccessSection = () => {
               />
             </div>
           )}
+          {mode === "cloudflare" ? (
+            <div className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="remote-cloudflare-managed">
+                  {t("cloudflareManaged")}
+                </Label>
+                <Switch
+                  id="remote-cloudflare-managed"
+                  checked={managed}
+                  onCheckedChange={setManaged}
+                  disabled={busy}
+                />
+              </div>
+              {managed ? (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="remote-cloudflare-token">
+                      {t("cloudflareToken")}
+                    </Label>
+                    <Input
+                      id="remote-cloudflare-token"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={tokenDraft}
+                      onChange={(event) => setToken(event.target.value)}
+                      placeholder={
+                        status?.cloudflare?.tokenSaved
+                          ? t("cloudflareTokenSaved")
+                          : "eyJ…"
+                      }
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {t("cloudflareTokenHint")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      disabled={installing}
+                      onClick={() => void remote.installCloudflare()}
+                    >
+                      {installing ? <Spinner className="size-3.5" /> : null}
+                      {t(
+                        status?.cloudflare?.installed
+                          ? "cloudflareUpdate"
+                          : "cloudflareInstall",
+                      )}
+                    </Button>
+                    <span className="text-muted-foreground text-xs">
+                      {status?.cloudflare?.version ?? t("cloudflareMissing")}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  {t("cloudflareExternal")}
+                </p>
+              )}
+              <p className="select-text break-words text-muted-foreground text-xs">
+                {t("cloudflareRouteHint", {
+                  port: String(
+                    status?.port ??
+                      (localPort || status?.cloudflare?.defaultPort || "—"),
+                  ),
+                })}
+              </p>
+              <Button
+                className="w-fit"
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  openExternalUrl("https://one.dash.cloudflare.com/")
+                }
+              >
+                <ExternalLink className="size-3.5" />
+                {t("openSetupPage")}
+              </Button>
+              {status?.mode === "cloudflare" && status.cloudflare && managed ? (
+                <p role="status" className="text-muted-foreground text-xs">
+                  {t("cloudflareState", {
+                    state: t(`cloudflare_${status.cloudflare.state}`),
+                  })}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-1.5">
             <Label htmlFor="remote-access-local-port">
               {t("localPortLabel")}
@@ -300,9 +445,7 @@ export const RemoteAccessSection = () => {
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              disabled={
-                busy || !portsValid || (mode === "origin" && !origin.trim())
-              }
+              disabled={busy || !configurationValid}
               onClick={() => void enable()}
               size="sm"
               type="button"
@@ -323,7 +466,7 @@ export const RemoteAccessSection = () => {
               </Button>
             ) : null}
           </div>
-          {enabled && status?.problem ? (
+          {status?.problem ? (
             <div className="grid gap-2 rounded-md border border-destructive-border bg-destructive-surface px-3 py-2 text-destructive text-sm">
               <span className="select-text break-words">
                 {status.problem.message}

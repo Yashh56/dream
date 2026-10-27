@@ -1,4 +1,6 @@
+import { getClientPlatform } from "@/lib/connections/platform";
 import type { HostConnectionState, ProjectConfig } from "@/types/ide";
+import { listHostChoices } from "../../../../electron/shared/host-connections.js";
 import type { IdeState } from "../store/ide-store-types";
 
 /** A project's SSH host while it is not there to work with. */
@@ -15,10 +17,14 @@ export interface HostAway {
  * snapshot). Null for a local project and for a host that is there.
  */
 export const isHostAway = (
-  state: Pick<IdeState, "hosts" | "settings">,
+  state: Pick<IdeState, "hosts" | "settings"> &
+    Partial<Pick<IdeState, "hostConnections">>,
   project: Pick<ProjectConfig, "hostId"> | null | undefined,
 ): HostAway | null => {
-  const hostId = project?.hostId;
+  const platform = getClientPlatform();
+  const hostId = project
+    ? (project.hostId ?? (platform.hasHomeHost ? undefined : "local"))
+    : undefined;
   if (!hostId) return null;
   const runtime = state.hosts[hostId];
   if (runtime?.state === "connected" && runtime.loaded) return null;
@@ -26,8 +32,9 @@ export const isHostAway = (
     error: runtime?.error ?? null,
     hostId,
     label:
-      state.settings.sshHosts.find((host) => host.id === hostId)?.label ??
-      hostId,
+      listHostChoices(state.hostConnections, state.settings.sshHosts).find(
+        (host) => host.id === hostId,
+      )?.label ?? hostId,
     state: runtime?.state ?? "idle",
   };
 };

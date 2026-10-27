@@ -4,6 +4,10 @@ Use a packaged `dream-host` runtime for your OS and CPU. Its archive includes
 Node, the host, database migrations, terminal support and the browser client.
 Agent CLIs and their credentials must already be available to the same OS user.
 
+For public HTTPS access without a VPN, configure a
+[Cloudflare Tunnel](cloudflare-tunnel.md). The service owns its connector and
+keeps it running without a desktop window; pairing still controls device access.
+
 Quit Dream before moving its local host into a service. Install using the
 desktop's existing data directory so its identity and catalog are preserved:
 
@@ -73,8 +77,9 @@ storage-format version and exact migration hashes. Updates preserve the installe
 environment and data location; flags from the updating shell do not replace them.
 
 Replacement interrupts running turns and terminals. Running turns become
-interrupted and queues pause; review the transcripts and explicitly retry or
-resume. Downloads and rejected candidates do not interrupt work. After starting
+interrupted and queues pause; review the transcripts and explicitly retry, or
+resume (sending a new message in the chat also resumes it). Downloads and
+rejected candidates do not interrupt work. After starting
 the replacement, the updater verifies its identity, database owner and catalog
 readiness. A failed startup restores the retained compatible runtime. It never
 restores an older database over newer data.

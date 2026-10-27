@@ -293,6 +293,40 @@ export function createRouteSupervisor({
     getState: snapshot,
     getEndpoint: () => active?.handle.endpoint ?? null,
     getHandle: () => active?.handle ?? null,
+    updateRoutes(next) {
+      if (
+        !next.length ||
+        next.length > 8 ||
+        new Set(next.map((route) => route.id)).size !== next.length
+      )
+        throw new Error(
+          "A connection needs between one and eight distinct routes.",
+        );
+      generation += 1;
+      attempt?.controller.abort();
+      attempt = null;
+      pending = null;
+      explicit = null;
+      clearWake();
+      const unchanged = (route) =>
+        next.some((item) => JSON.stringify(item) === JSON.stringify(route));
+      for (const route of routes)
+        if (!unchanged(route)) failures.delete(route.id);
+      routes = next;
+      if (active && !unchanged(active.route)) {
+        const previous = active;
+        active = null;
+        previous.handle.close();
+      }
+      if (!stopped) {
+        preferredAfter = 0;
+        state = active ? "connected" : "reconnecting";
+        emit();
+        return drive();
+      }
+      emit();
+      return Promise.resolve(null);
+    },
     connect() {
       if (active) return Promise.resolve(active.handle.endpoint);
       if (explicit) return explicit;

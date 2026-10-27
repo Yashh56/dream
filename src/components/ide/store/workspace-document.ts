@@ -139,6 +139,23 @@ const allProjectsOf = (doc: WorkspaceDocument) => [
   ...doc.closedProjects,
 ];
 
+/** Authentication merged two connection ids; retain every tab, chat and draft. */
+export const reassignHost = (
+  doc: WorkspaceDocument,
+  from: string,
+  to: string,
+): WorkspaceDocument => {
+  const reassign = (project: ProjectConfig) =>
+    getProjectHostId(project) === from
+      ? { ...project, hostId: to === "local" ? undefined : to }
+      : project;
+  return {
+    ...doc,
+    projects: doc.projects.map(reassign),
+    closedProjects: doc.closedProjects.map(reassign),
+  };
+};
+
 /** Everything that was in `before` and is not in `after`. */
 const removalBetween = (
   before: WorkspaceDocument,

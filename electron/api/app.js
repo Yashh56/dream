@@ -76,6 +76,7 @@ export function registerHostRoutes(
     resolveRemoteHost,
     turns,
     getHostDescriptor,
+    signHostProof,
     getHostInfo,
     hostSocket,
     terminals,
@@ -122,6 +123,7 @@ export function registerHostRoutes(
     registerRemoteAccessRoutes(app, {
       auth,
       describeHost: getHostDescriptor,
+      signHostProof,
       pairingUrls,
       remote,
       remoteAccess: remoteAccess ?? null,

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { HostConnectionState, ProjectConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
 import { useHostStateLabel } from "./ssh-hosts-settings-section";
+import { useHostChoices } from "./use-host-choices";
 
 const STATE_DOT: Record<HostConnectionState, string> = {
   connected: "bg-emerald-500",
@@ -52,11 +53,7 @@ export const ProjectHostLabel = ({
   const t = useTranslations("sshHosts");
   const stateLabel = useHostStateLabel();
   const hostId = project.hostId;
-  const config = useIdeStore((state) =>
-    hostId
-      ? state.settings.sshHosts.find((host) => host.id === hostId)
-      : undefined,
-  );
+  const config = useHostChoices().find((host) => host.id === hostId);
   const runtime = useIdeStore((state) =>
     hostId ? state.hosts[hostId] : undefined,
   );

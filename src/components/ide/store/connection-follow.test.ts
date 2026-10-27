@@ -16,6 +16,7 @@ vi.mock("./ide-store-persistence", () => ({
 }));
 vi.mock("@/lib/connections/platform", () => ({
   getClientPlatform: () => ({
+    hasHomeHost: true,
     homeRoute: { id: "local", kind: "local" },
     homeLabel: "Local",
   }),

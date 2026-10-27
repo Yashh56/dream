@@ -14,6 +14,11 @@ off. Thus development can save its own ports without changing the installed
 app's settings or removing its Tailscale Serve entry. The app data folder stays
 the same; keep the databases separate with `DREAM_DB_PATH`, as before.
 
+Cloudflare runtime/token files follow the same database-specific path. Use a
+different Cloudflare tunnel token and public hostname for each independent app;
+connectors sharing one tunnel can send requests to different hosts. See
+[Cloudflare Tunnel setup](cloudflare-tunnel.md).
+
 ## Inspect an existing app
 
 Run `pnpm inspect:dev` in this checkout. It probes existing session manifests and

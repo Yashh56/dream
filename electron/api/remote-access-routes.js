@@ -114,19 +114,51 @@ export { clearSessionCookie };
  */
 export const remoteAccessEnableSchema = z.object({
   httpsPort: z.number().int().min(1).max(65_535).optional(),
-  mode: z.enum(["tailscale", "origin"]).optional(),
+  mode: z.enum(["tailscale", "origin", "cloudflare"]).optional(),
+  cloudflareManaged: z.boolean().optional(),
+  cloudflareToken: z.string().max(16_384).optional(),
   origin: z.string().max(500).optional(),
   port: z.number().int().min(1).max(65_535).nullable().optional(),
 });
 
 export function registerRemoteAccessRoutes(
   app,
-  { auth, describeHost, remote, pairingUrls = () => [], remoteAccess = null },
+  {
+    auth,
+    describeHost,
+    signHostProof = null,
+    remote,
+    pairingUrls = () => [],
+    remoteAccess = null,
+  },
 ) {
   const principalOf = (c) => c.get("principal") ?? LOCAL_PRINCIPAL;
 
   if (remote) {
     app.get("/api/remote/descriptor", (c) => c.json(describeHost()));
+
+    app.post("/api/remote/proof", (c) =>
+      handleJsonRoute(
+        c,
+        z.object({
+          nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+          audience: z.string().url().max(500),
+        }),
+        ({ nonce, audience }) => {
+          if (!signHostProof)
+            throw new RouteError(
+              "Update the host to support native connections.",
+              426,
+            );
+          if (!pairingUrls("").some((url) => new URL(url).origin === audience))
+            throw new RouteError(
+              "The proof audience is not this host's origin.",
+              421,
+            );
+          return signHostProof({ nonce, audience, host: describeHost() });
+        },
+      ),
+    );
 
     app.post("/api/remote/pair", (c) =>
       handleJsonRoute(c, remotePairRequestSchema, (data) =>
@@ -269,5 +301,21 @@ export function registerRemoteAccessRoutes(
     handleJsonRoute(c, emptyRequestSchema, () => remoteAccess.refresh(), {
       missingBody: {},
     }),
+  );
+  app.post("/api/remote/access/cloudflare/install", (c) =>
+    handleJsonRoute(
+      c,
+      emptyRequestSchema,
+      () => remoteAccess.installCloudflare(),
+      { missingBody: {} },
+    ),
+  );
+  app.post("/api/remote/access/cloudflare/restart", (c) =>
+    handleJsonRoute(
+      c,
+      emptyRequestSchema,
+      () => remoteAccess.restartCloudflare(),
+      { missingBody: {} },
+    ),
   );
 }

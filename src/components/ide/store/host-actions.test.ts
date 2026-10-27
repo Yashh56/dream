@@ -167,7 +167,8 @@ test("editing a host keeps it, and a live connection reconnects when how it is r
   await store
     .getState()
     .updateSshHost("a", { hostCommand: "~/bin/dream-host" });
-  expect(desktop.disconnectHost).toHaveBeenCalledWith("a");
+  // The adapter replaces edited routes while keeping healthy fallbacks.
+  expect(desktop.disconnectHost).not.toHaveBeenCalled();
   expect(desktop.connectHost).toHaveBeenCalledWith({
     expectedFingerprint: null,
     expectedHostId: null,

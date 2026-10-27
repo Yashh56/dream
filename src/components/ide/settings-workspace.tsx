@@ -1545,7 +1545,7 @@ export const SettingsWorkspace = () => {
               platform.kind === "desktop" ? (
                 <div className="space-y-10">
                   <SshHostsSettingsSection />
-                  <RemoteAccessSection />
+                  {platform.hasHomeHost ? <RemoteAccessSection /> : null}
                 </div>
               ) : null}
 

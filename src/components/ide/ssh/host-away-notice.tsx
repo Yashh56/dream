@@ -2,23 +2,26 @@ import { PlugZap, WifiOff } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { getClientPlatform } from "@/lib/connections/platform";
 import type { ProjectConfig } from "@/types/ide";
 import { useIdeStore } from "../ide-store";
 import type { HostAway } from "./host-away";
+import { useHostChoices } from "./use-host-choices";
 
 /** `project`'s host while it is away (see isHostAway), or null. */
 export const useHostAway = (
   project: Pick<ProjectConfig, "hostId"> | null | undefined,
 ): HostAway | null => {
-  const hostId = project?.hostId;
+  const platform = getClientPlatform();
+  const hostId = project
+    ? (project.hostId ?? (platform.hasHomeHost ? undefined : "local"))
+    : undefined;
   const runtime = useIdeStore((state) =>
     hostId ? state.hosts[hostId] : undefined,
   );
-  const label = useIdeStore((state) =>
-    hostId
-      ? state.settings.sshHosts.find((host) => host.id === hostId)?.label
-      : undefined,
-  );
+  const label =
+    useHostChoices().find((host) => host.id === hostId)?.label ??
+    (hostId === "local" ? platform.homeLabel : undefined);
   if (!hostId) return null;
   if (runtime?.state === "connected" && runtime.loaded) return null;
   return {

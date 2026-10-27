@@ -80,10 +80,14 @@ The generated HTML goes to a temporary directory; Markdown remains authoritative
   CONN-06 unattended hosting (all four slices implemented, including verified
   runtime updates and recovery; macOS service and desktop walkthrough checked,
   cross-platform and live-provider validation pending), CONN-07 multiple routes
-  (in progress: route supervisor and desktop SSH adapter implemented; route
-  editing, direct pairing and remote-only desktop remain), and proposes CONN-08
-  through CONN-11: Dream Connect, native mobile, push notifications and a
-  host-owned browser.
+  (implemented: ordered route management, direct desktop pairing and remote-only
+  mode; live SSH/network and cross-platform walkthroughs remain), and CONN-08
+  Cloudflare Tunnel integration (implemented, validation pending: private
+  runtime/token management, host-owned lifecycle, desktop/headless controls;
+  the real-tunnel completion criteria and native Windows/Linux walkthroughs are
+  unmet).
+  CONN-09/10 are reserved for a separate, unscheduled mobile project and its
+  push notifications; CONN-11 is an independent future host-browser project.
 
 Module names and current ownership live in ../../GLOSSARY.md.
 

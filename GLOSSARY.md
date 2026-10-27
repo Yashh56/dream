@@ -163,13 +163,14 @@ vouch for it verifies the key instead.
 One client's record that a **client connection ID** reaches a persistent
 host, and by which **routes** (`electron/shared/host-connections.js`,
 `hostConnections` in persisted state). The connection ID is what that
-client's projects, workspace rows and requests name a host by: `local`, or
-an SSH host's id in Settings. A **route ID** names one way of reaching the
-host (the local route, an SSH host). The record is saved on the route's
+client's projects, workspace rows and requests name a host by: `local`, a
+legacy SSH id, or a remote connection id. A **route ID** names one way of
+reaching the host (local, SSH, or paired HTTPS). The record is saved on the route's
 first verified catalog load; until then a connection routes by its ID
 alone. After that, a route that reaches another host is refused. A second
-connection that reaches an already saved host is also refused, and so is a
-catalog whose project or chat IDs collide with another host's. The local
+connection that authenticates the same host merges its routes into the
+existing connection. A catalog whose project or chat IDs collide with another
+host's is refused. The local
 route is never refused. Device and session IDs belong to remote
 authorization, which is a separate concern.
 
@@ -181,6 +182,8 @@ host inside the app, or its installed service with `DREAM_HOST_MODE=service`
 the existing host identity before forwarding requests. In a browser it is the
 paired host serving the page (route `origin`), pinned like any address.
 Projects without a `hostId` live on the home host.
+A desktop in remote-only mode has no home execution host; its workspace stays
+on that desktop and it connects to remote hosts.
 
 ## Connection runtime
 
@@ -200,7 +203,9 @@ requests; a **fallback route** carries them while a more preferred route is
 unavailable. Its **route supervisor** (`electron/shared/route-supervisor.js`)
 owns that selection, and the **desktop connection adapter**
 (`electron/connections/desktop-connections.js`) owns its SSH endpoints and
-stable local port forwards, independently of the host's process lifetime.
+paired HTTPS transports and stable local port forwards, independently of the
+host's process lifetime. A native **device credential** is a private grant for
+one verified host and HTTPS origin, separate from exported connection metadata.
 
 **Connection recovery** coordinates those resumes per host. Refused hosts
 remain quiet until their credential or route changes. Replacing a connection
@@ -254,11 +259,15 @@ running. A fresh desktop discovers surviving terminals for its known projects.
 
 Whether a host serves paired devices, and how (`electron/host/remote-access/`).
 It is the host's setting, saved beside its state database: on or off; through
-**Tailscale Serve** (HTTPS on the tailnet) or the user's own HTTPS reverse
-proxy; and a stable loopback port for the remote listener. An address is
-**ready** only once a request through it reached this host. Dream changes
-only the Serve entry it created (`servedBy`). Configured in Settings > Remote
-access on the desktop, or with `dream-host remote` on a headless machine.
+**Tailscale Serve** (HTTPS on the tailnet), **Cloudflare Tunnel**, or the user's
+own HTTPS reverse proxy; and a stable loopback port for the remote listener.
+An address is **ready** only once a request through it reached this host;
+Cloudflare also requires proof of the host's installation key. A **managed
+connector** is the cloudflared process owned by this host; an **external
+connector** is operated independently and left running when access is disabled.
+Dream changes only its own connector and the Serve entry it created (`servedBy`).
+Configured in Settings > Connections on the desktop, or with `dream-host remote`
+on a headless machine.
 
 ## Remote access state
 
@@ -471,8 +480,11 @@ A **chat run** is the durable submission around a turn: its request ID,
 queue position, captured input/model/permissions, and lifecycle state.
 `electron/host/run-store.js` owns its rows; `electron/api/chat/run-scheduler.js`
 dispatches one run per chat, after the preceding transcript has settled.
-Stop pauses pending work, and a host restart marks active work interrupted
-and pauses queues. An interrupted run retries only by explicit action.
+Stop ends the live turn as cancelled and holds queued work; Pause holds queued
+work and lets the live turn finish. A failure or a host restart marks the run
+failed or interrupted and pauses the queue. A failed or interrupted run
+retries only by explicit action; sending a new message instead dismisses it
+and resumes the queue.
 
 ## Delegated task
 

@@ -23,6 +23,62 @@ import {
   readInstalledServiceName,
 } from "./host/service/service.js";
 
+/** A desktop edge with workspace/UI services, but no local execution owner. */
+export function createRemoteOnlyHost({
+  resolveRemoteHost,
+  resolveProviderHost,
+}) {
+  let server = null;
+  return {
+    processSessions: {
+      hasActiveSessions: () => false,
+      stopAllProcesses: async () => {},
+    },
+    startRemoteAccess: async () => {},
+    async listen({ apiToken, port }) {
+      const app = new Hono();
+      app.use("/api/*", async (c, next) => {
+        if (
+          !isProxiedHostSocketPath(c.req.path) &&
+          c.req.header(API_SESSION_TOKEN_HEADER) !== apiToken
+        )
+          return c.text("Unauthorized", 401);
+        return next();
+      });
+      registerBrowserToolCallRoutes(app);
+      registerHostProxyRoutes(app, {
+        resolveHost: resolveRemoteHost,
+        upgradeWebSocket,
+      });
+      // Global provider settings belong to the first connected remote host.
+      registerEndpointProxyRoutes(app, {
+        path: "/api/provider-*",
+        socketPath: "/__no_socket__",
+        targetPath: (c) => c.req.path,
+        resolveEndpoint: resolveProviderHost,
+      });
+      registerEndpointProxyRoutes(app, {
+        path: "/api/cli-*",
+        socketPath: "/__no_cli_socket__",
+        targetPath: (c) => c.req.path,
+        resolveEndpoint: resolveProviderHost,
+      });
+      app.all("/api/*", (c) =>
+        c.text(
+          "This desktop has no local execution host. Select a remote connection.",
+          503,
+        ),
+      );
+      server = await serveApp(app, { hostname: "127.0.0.1", port });
+      return server.port;
+    },
+    async close() {
+      await server?.close();
+      server = null;
+    },
+  };
+}
+
 /** Only the owner of this desktop's database and identity may be its home host. */
 export function createServiceHostAttachment({
   home,

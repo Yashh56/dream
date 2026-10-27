@@ -1,4 +1,6 @@
 /** Binds existing store owners to the Connection runtime's recovery policy. */
+
+import { getClientPlatform } from "@/lib/connections/platform";
 import type { ConnectionRecovery } from "@/lib/connections/recovery";
 import {
   connectionRecovery,
@@ -25,7 +27,7 @@ export const followConnections = (
     hosts: () =>
       store.getState().stateHydrated
         ? [
-            LOCAL_HOST_ID,
+            ...(getClientPlatform().hasHomeHost ? [LOCAL_HOST_ID] : []),
             ...Object.entries(store.getState().hosts)
               .filter(([, host]) => host.state === "connected")
               .map(([id]) => id),
